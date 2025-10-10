@@ -135,7 +135,7 @@ class QueryOrchestrator:
         Returns:
             Structured intent containing task type, data needs, scope, and goals
         """
-        print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Stage 1: Analyzing user intent...")
+        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Stage 1: Analyzing user intent...")
         
         # Build MCP capabilities summary
         capabilities_summary = []
@@ -202,13 +202,13 @@ Intent Analysis:"""
             if json_start >= 0 and json_end > json_start:
                 json_str = response[json_start:json_end]
                 intent = json.loads(json_str)
-                print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Intent extracted: task_type={intent.get('task_type')}, time_scope={intent.get('data_requirements', {}).get('time_scope')}")
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Intent extracted: task_type={intent.get('task_type')}, time_scope={intent.get('data_requirements', {}).get('time_scope')}")
                 return intent
             else:
                 raise ValueError("No JSON found in response")
         except (json.JSONDecodeError, ValueError) as e:
-            print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Failed to parse intent: {e}")
-            print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Response was: {response}")
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Failed to parse intent: {e}")
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Response was: {response}")
             return {
                 "task_type": "general_info",
                 "primary_goal": user_query,
@@ -218,29 +218,29 @@ Intent Analysis:"""
     
     def _get_client_for_model(self, model_name: Optional[str]):
         """Determine which client to use based on model name prefix"""
-        print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] _get_client_for_model called with: '{model_name}'")
+        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] _get_client_for_model called with: '{model_name}'")
         
         if not model_name:
             # Smart fallback: prefer OpenRouter if configured, otherwise Ollama
             if self.openrouter_client and self.openrouter_client.api_key:
-                print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] No model specified, using OpenRouter default")
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] No model specified, using OpenRouter default")
                 return self.openrouter_client, self.openrouter_client.general_model
-            print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] No model specified, using Ollama default")
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] No model specified, using Ollama default")
             return self.ollama_client, self.ollama_client.general_model
         
         if model_name.startswith("Ollama:"):
             stripped = model_name.replace("Ollama: ", "")
-            print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Using Ollama with model: '{stripped}'")
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Using Ollama with model: '{stripped}'")
             return self.ollama_client, stripped
         elif model_name.startswith("OpenRouter:"):
             if not self.openrouter_client:
                 raise ValueError("OpenRouter client not configured")
             stripped = model_name.replace("OpenRouter: ", "")
-            print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Using OpenRouter with model: '{stripped}'")
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Using OpenRouter with model: '{stripped}'")
             return self.openrouter_client, stripped
         else:
             # Default to Ollama for backward compatibility
-            print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] No prefix detected, defaulting to Ollama with model: '{model_name}'")
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] No prefix detected, defaulting to Ollama with model: '{model_name}'")
             return self.ollama_client, model_name
     
     def create_execution_plan(self, user_query: str, planner_model: Optional[str] = None, intent: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -251,14 +251,14 @@ Intent Analysis:"""
             planner_model: Model to use for planning (format: "Provider: model_name")
             intent: Structured intent from Stage 1 (if None, will run Stage 1 first)
         """
-        print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] create_execution_plan called with planner_model: '{planner_model}'")
+        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] create_execution_plan called with planner_model: '{planner_model}'")
         
         # Stage 1: Analyze user intent if not provided
         if not intent:
-            print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] No intent provided, running Stage 1 first...")
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] No intent provided, running Stage 1 first...")
             intent = self.analyze_user_intent(user_query, planner_model)
         
-        print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Stage 2: Creating technical execution plan from intent...")
+        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Stage 2: Creating technical execution plan from intent...")
         
         # Build capabilities description with API specifications
         capabilities_desc = self._build_capabilities_description()
@@ -405,8 +405,8 @@ Technical Execution Plan:"""
         required_servers = plan.get("required_servers", [])
         all_servers = self.mcp_manager.get_all_servers()
         
-        print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] All configured servers: {list(all_servers.keys())}")
-        print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Required servers: {required_servers}")
+        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] All configured servers: {list(all_servers.keys())}")
+        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Required servers: {required_servers}")
         
         # Query each required server
         # The LLM returns server names (like "management-logs"), so match directly
@@ -467,7 +467,7 @@ Technical Execution Plan:"""
                     
                     # Log API errors but continue with successful tools
                     if api_errors:
-                        print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Server '{server_name}' had {len(api_errors)} API errors but {len(successful_tools)} successful tools")
+                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Server '{server_name}' had {len(api_errors)} API errors but {len(successful_tools)} successful tools")
                         server_data["api_errors"] = api_errors
                     
                     results["data_collected"][server_name] = server_data
@@ -512,7 +512,7 @@ Technical Execution Plan:"""
             for key in ['S1C_URL', 'API_KEY', 'CLOUD_INFRA_TOKEN', 'MANAGEMENT_HOST', 'PORT', 'USERNAME', 'PASSWORD']:
                 if key in mgmt_env and key not in env_vars:
                     env_vars[key] = mgmt_env[key]
-            print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Copied management credentials to quantum-gw-cli: {list(mgmt_env.keys())}")
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Copied management credentials to quantum-gw-cli: {list(mgmt_env.keys())}")
         
         # Use the simplified MCP client to query the server
         # This will start its own subprocess, connect, query, and clean up
@@ -525,7 +525,7 @@ Technical Execution Plan:"""
             return results
             
         except Exception as e:
-            print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Error querying MCP server {server_name}: {e}")
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Error querying MCP server {server_name}: {e}")
             import traceback
             traceback.print_exc()
             return {"error": str(e), "server_name": server_name}
@@ -583,10 +583,10 @@ Technical Execution Plan:"""
             current_size = len(current_json)
             
             if current_size <= max_chars:
-                print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Context fits within budget after {attempts} reduction passes")
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Context fits within budget after {attempts} reduction passes")
                 break
             
-            print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Reduction pass {attempts+1}: {current_size} chars, target {max_chars}")
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Reduction pass {attempts+1}: {current_size} chars, target {max_chars}")
             
             # Calculate per-tool char budget based on remaining size
             char_budget_per_tool = max(500, 2000 // (attempts + 1))
@@ -633,7 +633,7 @@ Technical Execution Plan:"""
         # Final safety check: if still oversized, do emergency truncation
         final_json = json.dumps(reduced_data, indent=2)
         if len(final_json) > max_chars:
-            print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] EMERGENCY: Still {len(final_json)} chars after {attempts} passes, applying final truncation")
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] EMERGENCY: Still {len(final_json)} chars after {attempts} passes, applying final truncation")
             # Aggressive emergency truncation: keep only critical error info
             emergency_data = {}
             for server_name, server_data in list(reduced_data.items())[:1]:
@@ -653,7 +653,7 @@ Technical Execution Plan:"""
                     emergency_data[server_name]["api_errors"] = server_data["api_errors"][:3]  # Max 3 API errors
             
             reduced_data = emergency_data
-            print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Emergency truncation complete: {len(json.dumps(reduced_data)):,} chars")
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Emergency truncation complete: {len(json.dumps(reduced_data)):,} chars")
         
         return reduced_data
     
@@ -688,7 +688,7 @@ Technical Execution Plan:"""
         Returns:
             Final analysis result from LLM
         """
-        print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Starting sequential chunked analysis...")
+        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Starting sequential chunked analysis...")
         
         # Calculate chunks
         chunk_size_chars = chunk_size_tokens * 4
@@ -715,7 +715,7 @@ Technical Execution Plan:"""
             current_pos = end_pos
         
         total_chunks = len(chunks)
-        print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Split context into {total_chunks} chunks (~{chunk_size_tokens:,} tokens each)")
+        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Split context into {total_chunks} chunks (~{chunk_size_tokens:,} tokens each)")
         
         # TRUE multi-turn conversation for sequential chunk processing
         # Each API call builds on previous conversation history
@@ -723,7 +723,7 @@ Technical Execution Plan:"""
         
         # Check if client supports conversation history
         if not hasattr(client, 'generate_response_with_history'):
-            print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Client doesn't support conversation history - using single-request chunking")
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Client doesn't support conversation history - using single-request chunking")
             # Fallback: send all chunks in one request with markers
             return self._single_request_chunked_analysis(chunks, total_chunks, user_query, analysis_prompt, client, model_name)
         
@@ -781,7 +781,7 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             # Add user message to conversation
             messages.append({"role": "user", "content": user_message})
             
-            print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Sending chunk {chunk_num}/{total_chunks} to LLM (conversation turn {len(messages)//2})...")
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Sending chunk {chunk_num}/{total_chunks} to LLM (conversation turn {len(messages)//2})...")
             
             # Make API call with full conversation history
             response = client.generate_response_with_history(
@@ -798,11 +798,11 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             messages.append({"role": "assistant", "content": response})
             
             if is_final:
-                print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] ✓ Sequential conversation complete - analyzed all {total_chunks} chunks")
-                print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Final conversation: {len(messages)} messages, {len(messages)//2} turns")
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ✓ Sequential conversation complete - analyzed all {total_chunks} chunks")
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Final conversation: {len(messages)} messages, {len(messages)//2} turns")
                 return response
             else:
-                print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] ✓ Chunk {chunk_num} stored in conversation (response: {len(response)} chars)")
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ✓ Chunk {chunk_num} stored in conversation (response: {len(response)} chars)")
         
         return "Sequential chunked conversation completed but no final analysis received."
     
@@ -815,7 +815,7 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         
         accumulated_context += f"\n{'='*80}\nANALYSIS REQUIRED\n{'='*80}\n\nUser's Question: \"{user_query}\"\n\n{analysis_prompt}\n\nAnalyze ALL {total_chunks} chunks above."
         
-        print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Sending {total_chunks} chunks in single request (~{len(accumulated_context)//4:,} tokens)")
+        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Sending {total_chunks} chunks in single request (~{len(accumulated_context)//4:,} tokens)")
         
         response = client.generate_response(
             prompt="",
@@ -1058,7 +1058,7 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             else:
                 final_model = f"Ollama: {self.ollama_client.general_model}"
         
-        print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] analyze_with_model using: '{final_model}'")
+        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] analyze_with_model using: '{final_model}'")
         
         # Build context from execution results - keep MCP data intact
         data_collected = execution_results.get('data_collected', {})
@@ -1720,11 +1720,11 @@ Be concise and focus on what's actually in the data. If the data doesn't fully a
         # Determine which client to use based on model prefix
         if isinstance(final_model, str) and (":" in final_model):
             client, model_name = self._get_client_for_model(final_model)
-            print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Client type: {client.__class__.__name__}, Model: {model_name}")
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Client type: {client.__class__.__name__}, Model: {model_name}")
         else:
             client = self.ollama_client
             model_name = final_model
-            print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Using Ollama client (no prefix detected), Model: {model_name}")
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Using Ollama client (no prefix detected), Model: {model_name}")
         
         # FINAL UUID CLEANUP PASS - Aggressively remove ALL CheckPoint UID variants from context
         # This ensures the LLM never sees UIDs even if cleaning missed some
@@ -1760,9 +1760,9 @@ Be concise and focus on what's actually in the data. If the data doesn't fully a
         # Use 90% for input, 10% for output (output is capped at 8K anyway for OpenRouter)
         max_input_tokens = int(model_context_limit * 0.9)
         
-        print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Analysis type: {'log/threat' if is_log_analysis else 'standard'}")
-        print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Model context limit: {model_context_limit:,} tokens (max input: {max_input_tokens:,})")
-        print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Current data size: ~{estimated_tokens:,} tokens")
+        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Analysis type: {'log/threat' if is_log_analysis else 'standard'}")
+        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Model context limit: {model_context_limit:,} tokens (max input: {max_input_tokens:,})")
+        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Current data size: ~{estimated_tokens:,} tokens")
         
         # Check if truncation is required
         truncation_needed = estimated_tokens > max_input_tokens
@@ -1805,7 +1805,7 @@ The analysis below is based on statistical aggregation (counts, distributions) r
                     keep_start = int(max_chars * 0.6)
                     keep_end = int(max_chars * 0.2)
                     context = context[:keep_start] + f"\n\n... [Log details truncated - {data_loss_pct}% of data omitted] ...\n\n" + context[-keep_end:]
-                    print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Context truncated from ~{estimated_tokens:,} to ~{len(context) // 4:,} tokens")
+                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Context truncated from ~{estimated_tokens:,} to ~{len(context) // 4:,} tokens")
             else:
                 # Standard analysis truncation
                 data_loss_pct = int(((estimated_tokens - max_input_tokens) / estimated_tokens) * 100)
@@ -1829,7 +1829,7 @@ Your query returned **{estimated_tokens:,} tokens** of data, which exceeds the m
                     keep_end = int(max_chars * 0.2)
                     truncation_msg = f"\n\n... [Data truncated - {data_loss_pct}% omitted to fit model limits] ...\n\n"
                     context = context[:keep_start] + truncation_msg + context[-keep_end:]
-                    print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] Context truncated from ~{estimated_tokens:,} to ~{len(context) // 4:,} tokens")
+                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Context truncated from ~{estimated_tokens:,} to ~{len(context) // 4:,} tokens")
         
         # Generate final analysis with low temperature for precise formatting
         # max_tokens is auto-calculated based on model's context window for OpenRouter
@@ -1863,7 +1863,7 @@ Your query returned **{estimated_tokens:,} tokens** of data, which exceeds the m
         # Prepend user warning if truncation occurred
         if user_warning:
             analysis_text = user_warning + "\n" + analysis_text
-            print(f"[QueryOrchestrator] [{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] User warning prepended to analysis response")
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] User warning prepended to analysis response")
         
         return (analysis_text, final_model)
     
