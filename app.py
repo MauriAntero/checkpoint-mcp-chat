@@ -753,7 +753,7 @@ def show_chat_interface():
             
             # Gateway Credential Sharing
             st.markdown("### Gateway Credential Sharing")
-            st.caption("Automatically share SSH credentials with discovered gateways in the same management domain")
+            st.caption("Automatically share SSH and GAIA credentials with discovered gateways in the same management domain")
             
             # Load current consent setting
             config_data = st.session_state.file_manager.load_config() or {}
@@ -762,7 +762,7 @@ def show_chat_interface():
             consent_enabled = st.checkbox(
                 "Enable automatic gateway credential sharing",
                 value=current_consent,
-                help="When enabled, SSH credentials from configured gateways will automatically be shared with other gateways discovered from the management server",
+                help="When enabled, SSH and GAIA credentials from configured gateways will automatically be shared with other gateways discovered from the management server. GAIA web API credentials are auto-filled from SSH credentials to prevent browser prompts.",
                 key="auto_share_gateway_credentials"
             )
             
