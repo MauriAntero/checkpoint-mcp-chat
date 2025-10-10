@@ -806,6 +806,14 @@ Technical Execution Plan:"""
                                     print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ✓ Auto-shared SSH credentials for gateway '{gateway_name}' ({gateway_ip}) from '{srv_name}'")
                                     break
         
+        # AUTO-PASS GAIA WEB CREDENTIALS (same as SSH)
+        # quantum-gaia MCP connects to GAIA web API which uses same credentials as SSH
+        if server_name == 'quantum-gaia' and env_vars.get('SSH_USERNAME') and env_vars.get('SSH_PASSWORD'):
+            # GAIA web API uses SSH credentials
+            env_vars['GAIA_USERNAME'] = env_vars['SSH_USERNAME']
+            env_vars['GAIA_PASSWORD'] = env_vars['SSH_PASSWORD']
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ✓ Auto-passed SSH credentials to GAIA web API (username: {env_vars['SSH_USERNAME']})")
+        
         # CRITICAL FIX: quantum-gw-cli needs BOTH gateway SSH + management server credentials
         # Copy management credentials from quantum-management if querying quantum-gw-cli
         if server_name == 'quantum-gw-cli' and 'quantum-management' in servers:
