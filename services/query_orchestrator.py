@@ -1089,24 +1089,43 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             filtered_server_data = {}
             
             for key, value in server_data.items():
-                # Keep discovered_resources and non-log data as-is
-                if key == 'discovered_resources' or key == 'content':
-                    if key == 'content' and isinstance(value, list):
-                        # Filter log arrays
-                        filtered_logs = []
-                        for item in value:
-                            if isinstance(item, dict):
-                                # Filter log object to keep only essential fields
-                                filtered_log = {k: v for k, v in item.items() if k in ESSENTIAL_FIELDS}
-                                if filtered_log:  # Only add if not empty
-                                    filtered_logs.append(filtered_log)
-                            else:
-                                filtered_logs.append(item)
-                        filtered_server_data[key] = filtered_logs
-                    else:
-                        filtered_server_data[key] = value
+                # Filter log data in 'content' arrays (MCP response format)
+                if key == 'content' and isinstance(value, list):
+                    filtered_content = []
+                    for item in value:
+                        if isinstance(item, dict) and item.get('type') == 'text':
+                            # Parse JSON from text field
+                            try:
+                                text_data = json.loads(item['text'])
+                                
+                                # Filter log/object arrays in the parsed JSON
+                                for field in ['logs', 'objects', 'gateways', 'servers', 'hosts', 'networks']:
+                                    if field in text_data and isinstance(text_data[field], list):
+                                        # Filter each log/object to keep only essential fields
+                                        filtered_items = []
+                                        for log_item in text_data[field]:
+                                            if isinstance(log_item, dict):
+                                                filtered_item = {k: v for k, v in log_item.items() if k in ESSENTIAL_FIELDS}
+                                                if filtered_item:
+                                                    filtered_items.append(filtered_item)
+                                            else:
+                                                filtered_items.append(log_item)
+                                        text_data[field] = filtered_items
+                                
+                                # Re-serialize filtered data back to JSON string
+                                filtered_content.append({
+                                    'type': 'text',
+                                    'text': json.dumps(text_data)
+                                })
+                            except (json.JSONDecodeError, KeyError):
+                                # Keep item as-is if parsing fails
+                                filtered_content.append(item)
+                        else:
+                            # Keep non-text items as-is
+                            filtered_content.append(item)
+                    filtered_server_data[key] = filtered_content
                 else:
-                    # Keep other metadata (tool_calls, errors, etc.)
+                    # Keep other metadata (tool_calls, errors, discovered_resources, etc.)
                     filtered_server_data[key] = value
             
             filtered_data[server_name] = filtered_server_data
