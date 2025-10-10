@@ -651,7 +651,7 @@ Technical Execution Plan:"""
                         
                         # Query quantum-management for gateways (package_name, env_vars, data_points)
                         discover_result = asyncio.run(query_mcp_server_async(
-                            'quantum-management',
+                            '@chkp/quantum-management-mcp',
                             mgmt_env,
                             ['show_gateways_and_servers']
                         ))

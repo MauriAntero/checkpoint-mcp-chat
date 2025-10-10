@@ -238,35 +238,52 @@ class GatewayScriptExecutor:
         
         # Execute via quantum-management MCP run-script tool
         try:
-            # Check if quantum-management MCP server is active
-            if 'quantum-management' not in self.mcp_manager.get_active_servers():
-                result['error'] = "quantum-management MCP server not active. Please configure it in MCP Servers."
+            # Get quantum-management server config
+            all_servers = self.mcp_manager.get_all_servers()
+            if 'quantum-management' not in all_servers:
+                result['error'] = "quantum-management MCP server not configured. Please configure it in Settings."
                 self._log_execution(result)
                 return result
             
-            # Call run-script tool via MCP Manager
-            mcp_result = self.mcp_manager.call_tool(
-                server_name='quantum-management',
-                tool_name='run-script',
-                arguments={
-                    'script-name': f"Diagnostic: {command[:50]}",
-                    'script': command,
-                    'targets': [gateway_name]
-                }
-            )
+            mgmt_config = all_servers['quantum-management']
+            mgmt_env = mgmt_config.get('env', {})
+            
+            # Import async MCP client
+            from services.mcp_client_simple import query_mcp_server_async
+            import asyncio
+            
+            # Prepare run-script parameters as user selections
+            user_params = {
+                'script-name': f"Diagnostic: {command[:50]}",
+                'script': command,
+                'targets': gateway_name  # String for single gateway
+            }
+            
+            # Execute MCP query (package_name, env_vars, data_points, user_params)
+            mcp_result = asyncio.run(query_mcp_server_async(
+                '@chkp/quantum-management-mcp',
+                mgmt_env,
+                ['run-script'],
+                user_parameter_selections=user_params
+            ))
             
             # Parse MCP response
-            if mcp_result and not mcp_result.get('error'):
+            if mcp_result and 'content' in mcp_result:
                 result['success'] = True
-                # MCP tools return content as text or structured data
-                output = mcp_result.get('content', [{}])[0].get('text', '') if mcp_result.get('content') else str(mcp_result)
+                # Extract text from content
+                output = ''
+                for item in mcp_result.get('content', []):
+                    if item.get('type') == 'text':
+                        output += item.get('text', '')
                 result['output'] = output
                 result['task_id'] = mcp_result.get('task-id', '')
             else:
-                result['error'] = mcp_result.get('error', 'Unknown MCP error')
+                result['error'] = mcp_result.get('error', 'No content returned from MCP server')
         
         except Exception as e:
             result['error'] = f"Execution error: {str(e)}"
+            import traceback
+            traceback.print_exc()
         
         # Log execution
         self._log_execution(result)
