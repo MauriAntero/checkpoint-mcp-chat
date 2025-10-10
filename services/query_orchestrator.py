@@ -1532,31 +1532,37 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
                                         # Parse JSON from text field
                                         try:
                                             text_data = json.loads(text_str)
-                                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Parsed JSON, keys: {list(text_data.keys())}")
                                             
-                                            # Filter log/object arrays in the parsed JSON
-                                            for field in ['logs', 'objects', 'gateways', 'servers', 'hosts', 'networks']:
-                                                if field in text_data and isinstance(text_data[field], list):
-                                                    original_count = len(text_data[field])
-                                                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Filtering {field}: {original_count} items")
-                                                    # Filter each log/object to keep only essential fields
-                                                    filtered_items = []
-                                                    sample_original_fields = 0
-                                                    sample_filtered_fields = 0
-                                                    for log_item in text_data[field]:
-                                                        if isinstance(log_item, dict):
-                                                            if sample_original_fields == 0:
-                                                                sample_original_fields = len(log_item)
-                                                            filtered_item = {k: v for k, v in log_item.items() if k in ESSENTIAL_FIELDS}
-                                                            if sample_filtered_fields == 0 and filtered_item:
-                                                                sample_filtered_fields = len(filtered_item)
-                                                            if filtered_item:
-                                                                filtered_items.append(filtered_item)
-                                                        else:
-                                                            filtered_items.append(log_item)
-                                                    text_data[field] = filtered_items
-                                                    total_logs_filtered += len(filtered_items)
-                                                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Filtered {field}: kept {len(filtered_items)} items, reduced fields from ~{sample_original_fields} to ~{sample_filtered_fields}")
+                                            # Handle both dict and list responses
+                                            if isinstance(text_data, dict):
+                                                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Parsed JSON dict, keys: {list(text_data.keys())}")
+                                            elif isinstance(text_data, list):
+                                                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Parsed JSON list, length: {len(text_data)}")
+                                            
+                                            # Filter log/object arrays in the parsed JSON (only for dicts)
+                                            if isinstance(text_data, dict):
+                                                for field in ['logs', 'objects', 'gateways', 'servers', 'hosts', 'networks']:
+                                                    if field in text_data and isinstance(text_data[field], list):
+                                                        original_count = len(text_data[field])
+                                                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Filtering {field}: {original_count} items")
+                                                        # Filter each log/object to keep only essential fields
+                                                        filtered_items = []
+                                                        sample_original_fields = 0
+                                                        sample_filtered_fields = 0
+                                                        for log_item in text_data[field]:
+                                                            if isinstance(log_item, dict):
+                                                                if sample_original_fields == 0:
+                                                                    sample_original_fields = len(log_item)
+                                                                filtered_item = {k: v for k, v in log_item.items() if k in ESSENTIAL_FIELDS}
+                                                                if sample_filtered_fields == 0 and filtered_item:
+                                                                    sample_filtered_fields = len(filtered_item)
+                                                                if filtered_item:
+                                                                    filtered_items.append(filtered_item)
+                                                            else:
+                                                                filtered_items.append(log_item)
+                                                        text_data[field] = filtered_items
+                                                        total_logs_filtered += len(filtered_items)
+                                                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Filtered {field}: kept {len(filtered_items)} items, reduced fields from ~{sample_original_fields} to ~{sample_filtered_fields}")
                                             
                                             # Re-serialize filtered data back to JSON string
                                             filtered_content.append({
