@@ -762,7 +762,7 @@ def show_chat_interface():
             consent_enabled = st.checkbox(
                 "Enable automatic gateway credential sharing",
                 value=current_consent,
-                help="When enabled, SSH and GAIA credentials from configured gateways will automatically be shared with other gateways discovered from the management server. GAIA web API credentials are auto-filled from SSH credentials to prevent browser prompts.",
+                help="When enabled, SSH and GAIA credentials from configured gateways will automatically be shared with other gateways discovered from the management server. Works for quantum-gw-cli, quantum-gaia, and quantum-gw-connection-analysis MCPs. GAIA web API credentials are auto-filled from SSH credentials to prevent browser prompts.",
                 key="auto_share_gateway_credentials"
             )
             
