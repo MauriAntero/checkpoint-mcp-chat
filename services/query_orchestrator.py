@@ -641,25 +641,34 @@ Technical Execution Plan:"""
                     print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] No gateway specified, discovering gateways from quantum-management...")
                     # Quick query to discover gateways
                     try:
-                        discover_result = self.mcp_manager.call_tool(
+                        from services.mcp_client_simple import query_mcp_server_async
+                        import asyncio
+                        import json as json_module
+                        
+                        # Prepare server config
+                        mgmt_server_config = all_servers.get('quantum-management', {})
+                        mgmt_env = mgmt_server_config.get('env', {})
+                        
+                        # Query quantum-management for gateways (package_name, env_vars, data_points)
+                        discover_result = asyncio.run(query_mcp_server_async(
                             'quantum-management',
-                            'show_gateways_and_servers',
-                            {}
-                        )
+                            mgmt_env,
+                            ['show_gateways_and_servers']
+                        ))
+                        
                         if discover_result and 'content' in discover_result:
                             for item in discover_result['content']:
                                 if item.get('type') == 'text':
-                                    import json
                                     try:
-                                        gw_data = json.loads(item['text'])
+                                        gw_data = json_module.loads(item['text'])
                                         if isinstance(gw_data, dict) and 'objects' in gw_data:
                                             gateways = [obj['name'] for obj in gw_data['objects'] if obj.get('type') == 'simple-gateway']
                                             if gateways:
                                                 gateway_name = gateways[0]
                                                 print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Discovered and using gateway: {gateway_name}")
                                                 break
-                                    except:
-                                        pass
+                                    except Exception as parse_error:
+                                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Parse error: {parse_error}")
                     except Exception as e:
                         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Gateway discovery failed: {e}")
                 
