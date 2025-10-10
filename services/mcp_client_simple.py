@@ -986,8 +986,9 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                     tool_name_lower = tool.name.lower()
                     tool_desc_lower = (tool.description or "").lower()
                     
-                    # Combine data points into search text
-                    search_keywords = ' '.join(data_points).lower()
+                    # Combine data points into search text (filter to strings only)
+                    string_data_points = [str(dp) for dp in data_points if isinstance(dp, str)]
+                    search_keywords = ' '.join(string_data_points).lower()
                     
                     # Exact keyword matches in tool name (highest priority)
                     # CRITICAL: Include HTTPS/SSL/TLS keywords for inspection tools
