@@ -1094,56 +1094,80 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             filtered_server_data = {}
             
             for key, value in server_data.items():
-                # Filter log data in 'content' arrays (MCP response format)
-                if key == 'content' and isinstance(value, list):
-                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Found 'content' array with {len(value)} items in {server_name}")
-                    filtered_content = []
-                    for idx, item in enumerate(value):
-                        if isinstance(item, dict) and item.get('type') == 'text':
-                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Processing text item {idx}, length: {len(item.get('text', ''))} chars")
-                            # Parse JSON from text field
-                            try:
-                                text_data = json.loads(item['text'])
-                                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Parsed JSON, keys: {list(text_data.keys())}")
+                # Filter log data in 'tool_results' (actual MCP response location)
+                if key == 'tool_results' and isinstance(value, list):
+                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Found 'tool_results' array with {len(value)} tools in {server_name}")
+                    filtered_tool_results = []
+                    
+                    for tool_idx, tool_result in enumerate(value):
+                        if isinstance(tool_result, dict) and 'result' in tool_result:
+                            tool_name = tool_result.get('tool', f'tool_{tool_idx}')
+                            result = tool_result['result']
+                            
+                            # Look for 'content' array inside result
+                            if isinstance(result, dict) and 'content' in result and isinstance(result['content'], list):
+                                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Tool '{tool_name}' has content array with {len(result['content'])} items")
+                                filtered_content = []
                                 
-                                # Filter log/object arrays in the parsed JSON
-                                for field in ['logs', 'objects', 'gateways', 'servers', 'hosts', 'networks']:
-                                    if field in text_data and isinstance(text_data[field], list):
-                                        original_count = len(text_data[field])
-                                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Filtering {field}: {original_count} items")
-                                        # Filter each log/object to keep only essential fields
-                                        filtered_items = []
-                                        sample_original_fields = 0
-                                        sample_filtered_fields = 0
-                                        for log_item in text_data[field]:
-                                            if isinstance(log_item, dict):
-                                                if sample_original_fields == 0:
-                                                    sample_original_fields = len(log_item)
-                                                filtered_item = {k: v for k, v in log_item.items() if k in ESSENTIAL_FIELDS}
-                                                if sample_filtered_fields == 0 and filtered_item:
-                                                    sample_filtered_fields = len(filtered_item)
-                                                if filtered_item:
-                                                    filtered_items.append(filtered_item)
-                                            else:
-                                                filtered_items.append(log_item)
-                                        text_data[field] = filtered_items
-                                        total_logs_filtered += len(filtered_items)
-                                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Filtered {field}: kept {len(filtered_items)} items, reduced fields from ~{sample_original_fields} to ~{sample_filtered_fields}")
+                                for idx, item in enumerate(result['content']):
+                                    if isinstance(item, dict) and item.get('type') == 'text':
+                                        text_str = item.get('text', '')
+                                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Processing text item {idx}, length: {len(text_str)} chars")
+                                        # Parse JSON from text field
+                                        try:
+                                            text_data = json.loads(text_str)
+                                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Parsed JSON, keys: {list(text_data.keys())}")
+                                            
+                                            # Filter log/object arrays in the parsed JSON
+                                            for field in ['logs', 'objects', 'gateways', 'servers', 'hosts', 'networks']:
+                                                if field in text_data and isinstance(text_data[field], list):
+                                                    original_count = len(text_data[field])
+                                                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Filtering {field}: {original_count} items")
+                                                    # Filter each log/object to keep only essential fields
+                                                    filtered_items = []
+                                                    sample_original_fields = 0
+                                                    sample_filtered_fields = 0
+                                                    for log_item in text_data[field]:
+                                                        if isinstance(log_item, dict):
+                                                            if sample_original_fields == 0:
+                                                                sample_original_fields = len(log_item)
+                                                            filtered_item = {k: v for k, v in log_item.items() if k in ESSENTIAL_FIELDS}
+                                                            if sample_filtered_fields == 0 and filtered_item:
+                                                                sample_filtered_fields = len(filtered_item)
+                                                            if filtered_item:
+                                                                filtered_items.append(filtered_item)
+                                                        else:
+                                                            filtered_items.append(log_item)
+                                                    text_data[field] = filtered_items
+                                                    total_logs_filtered += len(filtered_items)
+                                                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Filtered {field}: kept {len(filtered_items)} items, reduced fields from ~{sample_original_fields} to ~{sample_filtered_fields}")
+                                            
+                                            # Re-serialize filtered data back to JSON string
+                                            filtered_content.append({
+                                                'type': 'text',
+                                                'text': json.dumps(text_data)
+                                            })
+                                        except (json.JSONDecodeError, KeyError) as e:
+                                            # Keep item as-is if parsing fails
+                                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Failed to parse JSON: {e}")
+                                            filtered_content.append(item)
+                                    else:
+                                        # Keep non-text items as-is
+                                        filtered_content.append(item)
                                 
-                                # Re-serialize filtered data back to JSON string
-                                filtered_content.append({
-                                    'type': 'text',
-                                    'text': json.dumps(text_data)
-                                })
-                            except (json.JSONDecodeError, KeyError):
-                                # Keep item as-is if parsing fails
-                                filtered_content.append(item)
+                                # Update result with filtered content
+                                filtered_result = {**result, 'content': filtered_content}
+                                filtered_tool_results.append({**tool_result, 'result': filtered_result})
+                            else:
+                                # No content to filter, keep tool result as-is
+                                filtered_tool_results.append(tool_result)
                         else:
-                            # Keep non-text items as-is
-                            filtered_content.append(item)
-                    filtered_server_data[key] = filtered_content
+                            # Keep tool result as-is if structure unexpected
+                            filtered_tool_results.append(tool_result)
+                    
+                    filtered_server_data[key] = filtered_tool_results
                 else:
-                    # Keep other metadata (tool_calls, errors, discovered_resources, etc.)
+                    # Keep other metadata (package, data_type, discovered_resources, etc.)
                     filtered_server_data[key] = value
             
             filtered_data[server_name] = filtered_server_data
