@@ -7,13 +7,13 @@
 
 ---
 
-## 🔒 Safety Guarantees
+## Safety Guarantees
 
 All commands in this whitelist:
-- ✅ **Read-only** - Cannot modify any configuration
-- ✅ **Non-destructive** - Cannot stop/restart services or processes
-- ✅ **Non-disruptive** - Won't impact production traffic
-- ✅ **Audit-safe** - Only retrieve information for diagnostics
+- **Read-only** - Cannot modify any configuration
+- **Non-destructive** - Cannot stop/restart services or processes
+- **Non-disruptive** - Won't impact production traffic
+- **Audit-safe** - Only retrieve information for diagnostics
 
 ---
 
@@ -248,7 +248,7 @@ cpstat                            # List all available application flags
 
 ---
 
-## 🚫 Commands NOT in Whitelist (Unsafe - Modifying/Disruptive)
+## Commands NOT in Whitelist (Unsafe - Modifying/Disruptive)
 
 The following commands are **BLOCKED** as they can modify configuration or disrupt services:
 

@@ -14,11 +14,11 @@ SAFETY GUARANTEES
 ================================================================================
 
 All commands in this list:
-✓ Read-only - Cannot modify any configuration
-✓ Non-destructive - Cannot stop/restart services or processes  
-✓ Non-disruptive - Won't impact production traffic
-✓ Non-interactive - No shells, TUIs, or menus
-✓ Audit-safe - Only retrieve information for diagnostics
+- Read-only - Cannot modify any configuration
+- Non-destructive - Cannot stop/restart services or processes  
+- Non-disruptive - Won't impact production traffic
+- Non-interactive - No shells, TUIs, or menus
+- Audit-safe - Only retrieve information for diagnostics
 
 ================================================================================
 CATEGORY 1: SYSTEM INFORMATION & STATUS

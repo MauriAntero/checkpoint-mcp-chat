@@ -131,7 +131,7 @@ Integrate with Check Point's open-source Model Context Protocol servers for comp
 
 ## Advanced Features
 
-### 🛡️ Gateway Script Executor (Optional)
+### Gateway Script Executor (Optional)
 
 The Gateway Script Executor provides a secure way to execute diagnostic commands directly on Check Point gateways using the Management API's `run-script` function. This advanced feature enables LLM-driven diagnostics while maintaining enterprise-grade safety through multi-layer validation.
 
@@ -145,21 +145,21 @@ The Gateway Script Executor provides a secure way to execute diagnostic commands
 5. **Audit Logging** - Every command execution is logged with timestamps
 
 **What's Allowed (120+ Safe Commands):**
-- ✅ System info: `show version`, `fw ver`, `uptime`
-- ✅ Network status: `ifconfig`, `show interfaces`, `netstat -rn`
-- ✅ Firewall status: `fw stat`, `fw ctl pstat`, `fwaccel stat`
-- ✅ Cluster HA: `cphaprob state`, `cphaprob -a if`
-- ✅ Performance: `top -n 1`, `ps aux`, `cpstat os -f all`
-- ✅ VPN status: `vpn tu tlist`, `cpstat vpn`
-- ✅ Logs (read-only): `fw log`, `cat $FWDIR/log/fw.elg`
+- System info: `show version`, `fw ver`, `uptime`
+- Network status: `ifconfig`, `show interfaces`, `netstat -rn`
+- Firewall status: `fw stat`, `fw ctl pstat`, `fwaccel stat`
+- Cluster HA: `cphaprob state`, `cphaprob -a if`
+- Performance: `top -n 1`, `ps aux`, `cpstat os -f all`
+- VPN status: `vpn tu tlist`, `cpstat vpn`
+- Logs (read-only): `fw log`, `cat $FWDIR/log/fw.elg`
 
 **What's Blocked:**
-- ❌ Service control: `cpstop`, `cpstart`, `api restart`
-- ❌ Process control: `kill`, `pkill`, `killall`
-- ❌ File operations: `rm`, `mv`, `chmod`, `dd`
-- ❌ Configuration changes: `set`, `add`, `delete`, `commit`
-- ❌ Interactive shells: `vpn shell`, `cpview`, `cpconfig`
-- ❌ Command chaining: pipes `|`, redirects `>`, substitution `$()`
+- Service control: `cpstop`, `cpstart`, `api restart`
+- Process control: `kill`, `pkill`, `killall`
+- File operations: `rm`, `mv`, `chmod`, `dd`
+- Configuration changes: `set`, `add`, `delete`, `commit`
+- Interactive shells: `vpn shell`, `cpview`, `cpconfig`
+- Command chaining: pipes `|`, redirects `>`, substitution `$()`
 
 **Complete command list:** `docs/GATEWAY_SAFE_COMMANDS_LIST.txt`
 
@@ -167,8 +167,8 @@ The Gateway Script Executor provides a secure way to execute diagnostic commands
 
 Your Management API administrator user requires these permissions:
 
-1. **Management API Login** ✓ (You already have this if using Management MCP)
-2. **Gateways → Scripts (Write)** ← Required for run-script
+1. **Management API Login** (You already have this if using Management MCP)
+2. **Gateways → Scripts (Write)** (Required for run-script)
 
 **Setup in SmartConsole:**
 ```
@@ -180,7 +180,7 @@ Your Management API administrator user requires these permissions:
 6. Click OK and Publish changes
 ```
 
-**⚠️ Security Note**: `run-script` executes commands at expert/root level on gateways. Check Point acknowledges this limitation - there are no granular command restrictions at the API level. That's why this application implements its own strict validation layer.
+**Security Note**: `run-script` executes commands at expert/root level on gateways. Check Point acknowledges this limitation - there are no granular command restrictions at the API level. That's why this application implements its own strict validation layer.
 
 #### How to Enable
 
