@@ -739,13 +739,6 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         if tool.name == 'show_logs':
                             log_type = "audit" if 'audit' in search_text else "logs"
                         
-                        new_query = {
-                            "time-frame": time_frame,
-                            "max-logs-per-request": max_logs
-                        }
-                        if log_type:
-                            new_query["type"] = log_type
-                        
                         # Blade filter detection for security blade-specific logs
                         # CheckPoint Threat Prevention includes multiple security blades
                         # CRITICAL: CheckPoint API requires filter nested under filter.search-expression
@@ -770,10 +763,22 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         elif any(kw in search_text for kw in ['https inspection', 'ssl inspection', 'tls inspection']):
                             blade_filter = 'blade:"HTTPS Inspection"'
                         
+                        # Create new_query dict AFTER max_logs adjustment from blade filters
+                        new_query = {
+                            "time-frame": time_frame,
+                            "max-logs-per-request": max_logs
+                        }
+                        if log_type:
+                            new_query["type"] = log_type
+                        
                         if blade_filter:
                             # MCP server expects flat string - it handles CheckPoint API transformation internally
                             new_query["filter"] = blade_filter
                             print(f"[MCP_DEBUG] [{_ts()}] Added blade filter: {blade_filter}")
+                            
+                            # Mark VPN queries for special handling (verbose logs)
+                            if 'VPN' in blade_filter or 'IKE' in blade_filter:
+                                args["_vpn_query"] = True  # Internal flag for pagination control
                         
                         args["new-query"] = new_query
                         print(f"[MCP_DEBUG] [{_ts()}] Auto-constructed new-query for {tool.name}: {new_query}")
@@ -1049,14 +1054,18 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             print(f"[MCP_DEBUG] [{_ts()}] ⏸️  Rate limiting: waiting {delay}s before next tool...")
                             await asyncio.sleep(delay)
                         
-                        print(f"[MCP_DEBUG] [{_ts()}] Calling tool {idx+1}/{len(tools_to_call)}: {tool.name} with args: {args}")
+                        # Remove internal flags before API call
+                        internal_flags = {k: v for k, v in args.items() if k.startswith('_')}
+                        api_args = {k: v for k, v in args.items() if not k.startswith('_')}
+                        
+                        print(f"[MCP_DEBUG] [{_ts()}] Calling tool {idx+1}/{len(tools_to_call)}: {tool.name} with args: {api_args}")
                         
                         # UNIVERSAL PAGINATION SUPPORT
                         # CheckPoint API returns max 100 items per request with query-id for pagination
                         # Works for show_logs, show_threat_logs, show_objects, show_gateways_and_servers, etc.
                         
-                        # First request
-                        tool_result = await call_tool_with_retry(session, tool.name, arguments=args)
+                        # First request (use api_args without internal flags)
+                        tool_result = await call_tool_with_retry(session, tool.name, arguments=api_args)
                         content_dict = convert_to_dict(tool_result.content)
                         
                         # Try to detect pagination support (query-id OR offset-based)
@@ -1068,7 +1077,8 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         first_page_data = []
                         all_data = []
                         page_count = 1
-                        MAX_PAGES = 10  # Limit to prevent excessive queries
+                        # VPN logs are extremely verbose (~1000+ tokens per log) - limit pagination
+                        MAX_PAGES = 3 if args.get('_vpn_query') else 10  # Limit to prevent excessive queries
                         
                         # Parse first response and detect structure
                         print(f"[MCP_DEBUG] [{_ts()}] 📊 Analyzing response structure for pagination detection...")
