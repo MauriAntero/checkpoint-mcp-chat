@@ -568,7 +568,9 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                     
                     # REPUTATION SERVICE: Extract IOC parameters (URL, IP, hash) from user query FIRST
                     # This must happen before parameter checking loop
-                    search_text = f"{user_query} {' '.join(data_points)}"
+                    # Build search text from user_query and string data_points only (skip dicts)
+                    string_data_points = [str(dp) for dp in data_points if isinstance(dp, str)]
+                    search_text = f"{user_query} {' '.join(string_data_points)}"
                     
                     if 'url' in required:
                         # Extract URL from query - handles both with and without protocol

@@ -1110,18 +1110,22 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
                                         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Filtering {field}: {original_count} items")
                                         # Filter each log/object to keep only essential fields
                                         filtered_items = []
+                                        sample_original_fields = 0
+                                        sample_filtered_fields = 0
                                         for log_item in text_data[field]:
                                             if isinstance(log_item, dict):
-                                                original_fields = len(log_item)
+                                                if sample_original_fields == 0:
+                                                    sample_original_fields = len(log_item)
                                                 filtered_item = {k: v for k, v in log_item.items() if k in ESSENTIAL_FIELDS}
-                                                filtered_fields = len(filtered_item)
+                                                if sample_filtered_fields == 0 and filtered_item:
+                                                    sample_filtered_fields = len(filtered_item)
                                                 if filtered_item:
                                                     filtered_items.append(filtered_item)
                                             else:
                                                 filtered_items.append(log_item)
                                         text_data[field] = filtered_items
                                         total_logs_filtered += len(filtered_items)
-                                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Filtered {field}: kept {len(filtered_items)} items, reduced fields from ~{original_fields if 'original_fields' in locals() else 'unknown'} to ~{filtered_fields if 'filtered_fields' in locals() else 'unknown'}")
+                                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Filtered {field}: kept {len(filtered_items)} items, reduced fields from ~{sample_original_fields} to ~{sample_filtered_fields}")
                                 
                                 # Re-serialize filtered data back to JSON string
                                 filtered_content.append({
