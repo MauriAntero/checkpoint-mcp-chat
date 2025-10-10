@@ -780,7 +780,6 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         else:
                             # No gateways discovered - try to extract from user query or use GATEWAY_HOST
                             # Look for gateway name in user query (e.g., "routing on cp-gw", "diagnose gateway01")
-                            import re
                             if user_query:
                                 # Pattern 1: "on <gateway>" or "for <gateway>" or "in <gateway>"
                                 match = re.search(r'\b(?:on|for|in|from|at)\s+([a-zA-Z0-9][a-zA-Z0-9._-]+)', user_query, re.IGNORECASE)
