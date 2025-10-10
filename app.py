@@ -778,6 +778,53 @@ def show_chat_interface():
             
             st.markdown("---")
             
+            # Gateway Script Executor Configuration
+            st.markdown("### 🛡️ Gateway Script Executor (Advanced)")
+            st.caption("Execute safe diagnostic commands directly on gateways via Management API")
+            
+            # Load current setting
+            config_data = st.session_state.file_manager.load_config() or {}
+            script_executor_enabled = config_data.get('enable_gateway_script_executor', False)
+            
+            enable_executor = st.checkbox(
+                "Enable Gateway Script Executor",
+                value=script_executor_enabled,
+                help="When enabled, allows LLM to execute pre-approved safe diagnostic commands on gateways using Management API run-script. All commands are read-only and validated against a strict whitelist.",
+                key="enable_gateway_script_executor"
+            )
+            
+            # Save setting if changed
+            if enable_executor != script_executor_enabled:
+                config_data['enable_gateway_script_executor'] = enable_executor
+                if st.session_state.file_manager.save_config(config_data):
+                    if enable_executor:
+                        st.success("✓ Gateway Script Executor enabled")
+                    else:
+                        st.info("Gateway Script Executor disabled")
+                    st.rerun()
+            
+            # Show configuration instructions if enabled
+            if enable_executor:
+                st.info("📋 **Management API Permissions Required:**")
+                st.markdown("""
+                Your Management API admin user needs these permissions:
+                1. **Management API Login** ✓ (you already have this)
+                2. **Gateways → Scripts (Write)** ← Verify in SmartConsole
+                
+                **Setup in SmartConsole:**
+                - Go to: Manage & Settings → Permissions & Administrators
+                - Select your API admin user
+                - Edit Permission Profile
+                - Navigate to: Gateways → Scripts
+                - Enable: **Write** permission
+                - Click **OK** and **Publish** changes
+                
+                **Safe Commands:** Only ~120 pre-approved read-only commands will execute.  
+                See: `docs/GATEWAY_SAFE_COMMANDS_LIST.txt`
+                """)
+            
+            st.markdown("---")
+            
             # Check Point MCP Server Configuration
             st.markdown("### Check Point MCP Servers")
             

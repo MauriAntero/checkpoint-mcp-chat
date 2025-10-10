@@ -1,0 +1,283 @@
+================================================================================
+CHECK POINT GATEWAY - SAFE READ-ONLY COMMANDS LIST
+================================================================================
+
+This file contains all whitelisted commands that can be auto-executed by the
+Gateway Script Executor feature. These commands are verified safe, read-only,
+and non-disruptive.
+
+Last Updated: October 10, 2025
+Source: Check Point R81/R82 CLI Reference Guide
+Security Status: Architect-Approved
+
+================================================================================
+SAFETY GUARANTEES
+================================================================================
+
+All commands in this list:
+✓ Read-only - Cannot modify any configuration
+✓ Non-destructive - Cannot stop/restart services or processes  
+✓ Non-disruptive - Won't impact production traffic
+✓ Non-interactive - No shells, TUIs, or menus
+✓ Audit-safe - Only retrieve information for diagnostics
+
+================================================================================
+CATEGORY 1: SYSTEM INFORMATION & STATUS
+================================================================================
+
+CLISH Commands:
+--------------
+show version
+show version all
+show version os build
+show version os edition
+show hostname
+show uptime
+show asset all
+show sysenv all
+show sysenv fans
+show sysenv temp
+show sysenv volt
+show sysenv ps
+show commands
+show configuration
+
+Expert Mode Commands:
+--------------------
+uname -a
+hostname
+date
+uptime
+df -h
+free -m
+
+================================================================================
+CATEGORY 2: NETWORK INFORMATION
+================================================================================
+
+CLISH Commands:
+--------------
+show interfaces
+show interfaces all
+show interface <name>
+show configuration interface
+show route
+show ipv6 route
+show arp dynamic
+show dns all
+show ntp active
+show bonding groups
+
+Expert Mode Commands:
+--------------------
+ifconfig
+ip addr show
+ip route show
+netstat -rn
+netstat -i
+netstat -tulnp
+arp -a
+
+================================================================================
+CATEGORY 3: CHECK POINT FIREWALL STATUS
+================================================================================
+
+fw stat
+fw stat -l
+fw stat -s
+fw ver
+fw getifs
+fw ctl iflist
+fw ctl pstat
+fw ctl chain
+fw ctl conn
+
+================================================================================
+CATEGORY 4: CONNECTION TABLES & STATISTICS
+================================================================================
+
+fw tab -s
+fw tab -t connections -s
+fw tab -t connections -f
+fw tab -t <table_name>
+fw ctl conntab
+fw ctl conntab -v
+
+================================================================================
+CATEGORY 5: SECUREXL ACCELERATION
+================================================================================
+
+fwaccel stat
+fwaccel6 stat
+fwaccel stat -v
+fwaccel stats
+fwaccel stats -s
+fwaccel stats -d
+fwaccel stats -p
+fwaccel stats -n
+fwaccel stats -m
+fwaccel ver
+fwaccel conns
+
+================================================================================
+CATEGORY 6: CLUSTER HIGH AVAILABILITY (CLUSTERXL)
+================================================================================
+
+cphaprob state
+cphaprob stat
+cphaprob -a if
+cphaprob -ia list
+cphaprob -l list
+cphaprob list
+cphaprob syncstat
+cphaprob ldstat
+cphaprob mmagic
+cphaprob show_bond
+fw hastat
+show cluster state
+show cluster members
+show cluster members interfaces all
+show cluster members ips
+show routed cluster-mode state
+
+================================================================================
+CATEGORY 7: VPN & IPSEC
+================================================================================
+
+vpn tu tlist
+cpstat vpn
+cpstat -f all vpn
+cpstat ike -f all
+fw tab -t vpn_enc_domain_valid -f -u
+
+Note: vpn shell is EXCLUDED (opens interactive maintenance shell)
+Note: vpn debug commands excluded (generate large log files)
+
+================================================================================
+CATEGORY 8: LOGGING & MONITORING
+================================================================================
+
+fw log
+fw log -f
+fw log -t <start> <end>
+fw log -s <source_IP>
+fw log -d <dest_IP>
+fw log -c <action>
+fw log -n
+fw lslogs
+
+Log File Access (Read-Only):
+----------------------------
+cat /var/log/messages
+tail -100 /var/log/messages
+cat $FWDIR/log/fw.elg
+cat $FWDIR/log/vpnd.elg
+cat $FWDIR/log/ike.elg
+cat $FWDIR/log/cpd.elg
+
+================================================================================
+CATEGORY 9: PERFORMANCE & RESOURCE MONITORING
+================================================================================
+
+top -n 1
+ps aux
+vmstat 1 1
+free -m
+cpstat os -f all
+cpstat os -f cpu
+cpstat os -f multi_cpu
+cpstat os -f memory
+cpstat os -f ifconfig
+cpstat os -f routing
+cpstat os -f sensors
+cpstat fw
+cpstat fw -f policy
+cpstat fw -f sync
+cpstat ha
+cpstat blades
+
+Note: Interactive versions (top, cpview, vmstat without limits) are EXCLUDED
+
+================================================================================
+CATEGORY 10: CHECK POINT SERVICES & PROCESSES
+================================================================================
+
+cpwd_admin list
+cpwd_admin monitor_list
+api status
+cplic print
+
+================================================================================
+CATEGORY 11: MANAGEMENT & SIC
+================================================================================
+
+cpca_client lscert
+
+================================================================================
+CATEGORY 12: DIAGNOSTIC UTILITIES
+================================================================================
+
+cpinfo
+cpstat
+
+Note: cpview is EXCLUDED (opens interactive full-screen TUI)
+
+================================================================================
+CATEGORY 13: ENVIRONMENT VARIABLES (SAFE TO READ)
+================================================================================
+
+echo $FWDIR
+echo $CPDIR
+echo $FWDIR/conf
+echo $FWDIR/log
+
+================================================================================
+BLOCKED COMMANDS - NEVER EXECUTED
+================================================================================
+
+Service Control:
+  cpstop, cpstart, cphastop, api restart
+
+Firewall Control:
+  fw unload, fw load, fw kill
+
+VPN Control:
+  vpn shell, vpn tu tlist del, vpn tunnelutil, vpn debug on
+
+Interactive Tools:
+  top (without -n 1), cpview, vmstat (without count), fw monitor
+
+Configuration Changes:
+  Any set/add/delete/commit commands, cpconfig
+
+File Operations:
+  rm, rmdir, unlink, cp, mv, dd, chmod, chown, chgrp, mkfs, fdisk
+
+Process Control:
+  kill, pkill, killall
+
+Debug Commands:
+  fw ctl debug, fwaccel stats -r
+
+Cluster Operations:
+  clusterXL_admin down
+
+================================================================================
+VALIDATION RULES
+================================================================================
+
+1. Commands must exactly match whitelist (including required flags)
+2. No command chaining allowed (no pipes |, redirects >, substitution $())
+3. No special characters (;, &, &&, ||, `, backticks)
+4. Only single-snapshot commands (no continuous/interactive modes)
+5. No interactive shells, menus, or TUIs permitted
+
+================================================================================
+TOTAL SAFE COMMANDS: ~120
+================================================================================
+
+For detailed documentation, see: docs/SAFE_GATEWAY_COMMANDS_WHITELIST.md
+
+================================================================================
+END OF LIST
+================================================================================

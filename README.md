@@ -129,6 +129,88 @@ Integrate with Check Point's open-source Model Context Protocol servers for comp
 
 **Check Point MCP GitHub Repository**: [https://github.com/CheckPointSW](https://github.com/CheckPointSW)
 
+## Advanced Features
+
+### 🛡️ Gateway Script Executor (Optional)
+
+The Gateway Script Executor provides a secure way to execute diagnostic commands directly on Check Point gateways using the Management API's `run-script` function. This advanced feature enables LLM-driven diagnostics while maintaining enterprise-grade safety through multi-layer validation.
+
+#### Safety Architecture
+
+**Multi-Layer Command Validation:**
+1. **Whitelist Validation** - Only pre-approved commands from Check Point R81/R82 CLI Reference Guide
+2. **Pattern Blocking** - Regex-based detection of dangerous operations (cpstop, kill, rm, etc.)
+3. **Special Character Filtering** - Blocks command chaining, redirects, and code injection
+4. **Non-Interactive Enforcement** - Only snapshot commands allowed (e.g., `top -n 1`, no interactive TUIs)
+5. **Audit Logging** - Every command execution is logged with timestamps
+
+**What's Allowed (120+ Safe Commands):**
+- ✅ System info: `show version`, `fw ver`, `uptime`
+- ✅ Network status: `ifconfig`, `show interfaces`, `netstat -rn`
+- ✅ Firewall status: `fw stat`, `fw ctl pstat`, `fwaccel stat`
+- ✅ Cluster HA: `cphaprob state`, `cphaprob -a if`
+- ✅ Performance: `top -n 1`, `ps aux`, `cpstat os -f all`
+- ✅ VPN status: `vpn tu tlist`, `cpstat vpn`
+- ✅ Logs (read-only): `fw log`, `cat $FWDIR/log/fw.elg`
+
+**What's Blocked:**
+- ❌ Service control: `cpstop`, `cpstart`, `api restart`
+- ❌ Process control: `kill`, `pkill`, `killall`
+- ❌ File operations: `rm`, `mv`, `chmod`, `dd`
+- ❌ Configuration changes: `set`, `add`, `delete`, `commit`
+- ❌ Interactive shells: `vpn shell`, `cpview`, `cpconfig`
+- ❌ Command chaining: pipes `|`, redirects `>`, substitution `$()`
+
+**Complete command list:** `docs/GATEWAY_SAFE_COMMANDS_LIST.txt`
+
+#### Prerequisites
+
+Your Management API administrator user requires these permissions:
+
+1. **Management API Login** ✓ (You already have this if using Management MCP)
+2. **Gateways → Scripts (Write)** ← Required for run-script
+
+**Setup in SmartConsole:**
+```
+1. Navigate to: Manage & Settings → Permissions & Administrators
+2. Select your API admin user → Edit
+3. Select Permission Profile → Edit Profile
+4. Go to: Gateways → Scripts
+5. Enable: Write permission
+6. Click OK and Publish changes
+```
+
+**⚠️ Security Note**: `run-script` executes commands at expert/root level on gateways. Check Point acknowledges this limitation - there are no granular command restrictions at the API level. That's why this application implements its own strict validation layer.
+
+#### How to Enable
+
+1. **Enable in Settings UI:**
+   - Open Settings page (⚙️ icon)
+   - Scroll to "Gateway Script Executor (Advanced)"
+   - Check "Enable Gateway Script Executor"
+   - Review the Management API permissions instructions
+
+2. **Verify Permissions:**
+   - Ensure your API user has "Scripts (Write)" permission in SmartConsole
+   - Test with a safe command: `"Show gateway version on cp-gw"`
+
+3. **Usage:**
+   ```
+   User: "Check gateway version on prod-gw-01"
+   AI: [Validates command] → Executes "fw ver" → Returns output
+   
+   User: "Show cluster status"
+   AI: [Validates command] → Executes "cphaprob state" → Analyzes results
+   ```
+
+The LLM automatically suggests appropriate diagnostic commands based on your query. All commands are validated before execution - even if the LLM suggests an unsafe command, it will be blocked by the validation system.
+
+**Audit & Compliance:**
+- All executions logged with timestamps, gateway names, and commands
+- Only commands from audited whitelist (approved by security architect)
+- Zero-risk: Cannot modify configurations or disrupt services
+- Full transparency: See exactly what commands run
+
 ## Installation
 
 ### Prerequisites
