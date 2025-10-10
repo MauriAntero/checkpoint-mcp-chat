@@ -1176,13 +1176,22 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                         print(f"[MCP_DEBUG] [{_ts()}] ⚠️ Traceback: {traceback.format_exc()}")
                         
                         # QUERY-ID BASED PAGINATION (logs, threat logs)
-                        if query_id and data_field and len(first_page_data) >= 100:
-                            print(f"[MCP_DEBUG] [{_ts()}] 📄 Starting pagination for {tool.name} (max {MAX_PAGES} pages)")
+                        # Extract max-logs-per-request from args to check for full pages
+                        max_logs_requested = 100  # Default
+                        if 'new-query' in args and isinstance(args['new-query'], dict):
+                            max_logs_requested = args['new-query'].get('max-logs-per-request', 100)
+                        
+                        # Start pagination if we have query-id AND got a full page (>=90% of max requested)
+                        # This handles cases where API might return slightly less than requested
+                        full_page_threshold = max(1, int(max_logs_requested * 0.9))
+                        
+                        if query_id and data_field and len(first_page_data) >= full_page_threshold:
+                            print(f"[MCP_DEBUG] [{_ts()}] 📄 Starting pagination for {tool.name} (max {MAX_PAGES} pages, page size: {max_logs_requested})")
                             all_data.extend(first_page_data)
                             current_page_data = first_page_data
                             
                             # Continue pagination while we have query-id and full pages
-                            while query_id and len(current_page_data) >= 100 and page_count < MAX_PAGES:
+                            while query_id and len(current_page_data) >= full_page_threshold and page_count < MAX_PAGES:
                                 page_count += 1
                                 print(f"[MCP_DEBUG] [{_ts()}] 📄 Fetching page {page_count} using query-id...")
                                 
