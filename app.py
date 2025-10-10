@@ -275,11 +275,25 @@ def initialize_app():
         st.session_state.llm_provider = "ollama"  # Default to Ollama
     
     if 'query_orchestrator' not in st.session_state:
-        # Initialize orchestrator with both clients
+        # Check if gateway script executor is enabled
+        config_data = st.session_state.file_manager.load_config() or {}
+        executor_enabled = config_data.get('enable_gateway_script_executor', False)
+        
+        # Initialize gateway script executor if enabled
+        gateway_executor = None
+        if executor_enabled:
+            from services.gateway_script_executor import GatewayScriptExecutor
+            gateway_executor = GatewayScriptExecutor(
+                mcp_manager=st.session_state.mcp_manager,
+                log_dir="./logs"
+            )
+        
+        # Initialize orchestrator with all clients
         st.session_state.query_orchestrator = QueryOrchestrator(
             st.session_state.ollama_client,
             st.session_state.mcp_manager,
-            st.session_state.openrouter_client
+            st.session_state.openrouter_client,
+            gateway_script_executor=gateway_executor
         )
     
     if 'chat_history' not in st.session_state:

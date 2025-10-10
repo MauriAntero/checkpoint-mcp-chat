@@ -121,8 +121,9 @@ class QueryOrchestrator:
         )
     }
     
-    def __init__(self, ollama_client, mcp_manager, openrouter_client=None):
+    def __init__(self, ollama_client, mcp_manager, openrouter_client=None, gateway_script_executor=None):
         self.ollama_client = ollama_client
+        self.gateway_script_executor = gateway_script_executor
         self.openrouter_client = openrouter_client
         self.mcp_manager = mcp_manager
         
@@ -471,12 +472,18 @@ Intent Analysis:"""
         filters = data_requirements.get('filters', [])
         file_path = intent.get('file_path', None)
         
+        # Add gateway script executor instructions if enabled
+        gateway_executor_instructions = ""
+        if self.gateway_script_executor:
+            from services.gateway_script_executor import GATEWAY_EXECUTOR_LLM_PROMPT
+            gateway_executor_instructions = f"\n\n{GATEWAY_EXECUTOR_LLM_PROMPT}"
+        
         planning_prompt = f"""You are a technical planner for CheckPoint MCP servers. Your job is to create a precise execution plan based on user intent.
 
 Available MCP Servers and Their Capabilities:
 {capabilities_desc}
 
-Currently Active Servers: {', '.join(active_server_types) if active_server_types else 'None'}
+Currently Active Servers: {', '.join(active_server_types) if active_server_types else 'None'}{gateway_executor_instructions}
 
 USER INTENT ANALYSIS (from Stage 1):
 - Task Type: {task_type}

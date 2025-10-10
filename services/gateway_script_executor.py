@@ -182,13 +182,13 @@ class GatewayScriptExecutor:
     Execute safe diagnostic commands on Check Point gateways via Management API
     """
     
-    def __init__(self, management_api_client, log_dir: str = "./logs"):
+    def __init__(self, mcp_manager, log_dir: str = "./logs"):
         """
         Args:
-            management_api_client: Instance of ManagementAPIClient or similar
+            mcp_manager: Instance of MCPManager to call quantum-management MCP tools
             log_dir: Directory to store persistent audit logs
         """
-        self.api_client = management_api_client
+        self.mcp_manager = mcp_manager
         self.validator = CommandValidator()
         self.execution_log = []  # In-memory for fast access
         self.log_dir = Path(log_dir)
@@ -236,22 +236,34 @@ class GatewayScriptExecutor:
         
         result['validated'] = True
         
-        # Execute via Management API run-script
+        # Execute via quantum-management MCP run-script tool
         try:
-            # Call Management API run-script
-            api_result = self.api_client.run_script(
-                script_name=f"Diagnostic: {command[:50]}",
-                script=command,
-                targets=[gateway_name],
-                session_id=session_id
+            # Check if quantum-management MCP server is active
+            if 'quantum-management' not in self.mcp_manager.get_active_servers():
+                result['error'] = "quantum-management MCP server not active. Please configure it in MCP Servers."
+                self._log_execution(result)
+                return result
+            
+            # Call run-script tool via MCP Manager
+            mcp_result = self.mcp_manager.call_tool(
+                server_name='quantum-management',
+                tool_name='run-script',
+                arguments={
+                    'script-name': f"Diagnostic: {command[:50]}",
+                    'script': command,
+                    'targets': [gateway_name]
+                }
             )
             
-            if api_result.get('success'):
+            # Parse MCP response
+            if mcp_result and not mcp_result.get('error'):
                 result['success'] = True
-                result['output'] = api_result.get('output', '')
-                result['task_id'] = api_result.get('task_id', '')
+                # MCP tools return content as text or structured data
+                output = mcp_result.get('content', [{}])[0].get('text', '') if mcp_result.get('content') else str(mcp_result)
+                result['output'] = output
+                result['task_id'] = mcp_result.get('task-id', '')
             else:
-                result['error'] = api_result.get('error', 'Unknown API error')
+                result['error'] = mcp_result.get('error', 'Unknown MCP error')
         
         except Exception as e:
             result['error'] = f"Execution error: {str(e)}"
