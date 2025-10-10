@@ -749,7 +749,7 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                     if tool.name in ['show_logs', 'show_threat_logs'] and 'new-query' not in args:
                         time_frame = "last-7-days"
                         log_type = None
-                        max_logs = 100  # Will be reduced for VPN queries below
+                        max_logs = 70  # With log field filtering: 10 pages × 70 logs = 700 logs (175K tokens)
                         
                         search_text = f"{user_query} {' '.join(data_points)}".lower()
                         
@@ -1126,9 +1126,9 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         first_page_data = []
                         all_data = []
                         page_count = 1
-                        # Connection/traffic logs are verbose (~800-1000 tokens per log) - limit pagination
-                        # VPN logs: 3 pages max (150 logs), Generic traffic logs: 5 pages max (500 logs)
-                        MAX_PAGES = 3 if args.get('_vpn_query') else 5  # Reduced from 10 to prevent excessive queries
+                        # With log field filtering (70% token reduction: 850→250 tokens/log), we can retrieve more logs
+                        # VPN logs: 10 pages (500 logs), Traffic/General logs: 10 pages (500-700 logs)
+                        MAX_PAGES = 10  # Increased from 3/5 to 10 with intelligent log field filtering
                         
                         # Parse first response and detect structure
                         print(f"[MCP_DEBUG] [{_ts()}] 📊 Analyzing response structure for pagination detection...")
