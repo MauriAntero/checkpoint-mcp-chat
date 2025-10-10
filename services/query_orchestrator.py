@@ -1059,8 +1059,9 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             # NAT information
             'xlatesrc', 'xlatedst', 'xlatesport', 'xlatedport', 'nat_addtnl_rulenum', 'nat_rulenum',
             
-            # User/Application
-            'user', 'src_user_name', 'application', 'app_category', 'app_risk',
+            # User/Application - CRITICAL for identity tracking
+            'user', 'src_user_name', 'dst_user_name', 'username', 'identity',
+            'application', 'app_category', 'app_risk',
             
             # Traffic details
             'bytes', 'sent_bytes', 'received_bytes', 'packets', 'duration', 'conn_direction',
