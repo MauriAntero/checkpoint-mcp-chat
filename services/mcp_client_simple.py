@@ -707,7 +707,7 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                     if tool.name in ['show_logs', 'show_threat_logs'] and 'new-query' not in args:
                         time_frame = "last-7-days"
                         log_type = None
-                        max_logs = 100
+                        max_logs = 100  # Will be reduced for VPN queries below
                         
                         search_text = f"{user_query} {' '.join(data_points)}".lower()
                         
@@ -751,8 +751,15 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         # CRITICAL: CheckPoint API requires filter nested under filter.search-expression
                         blade_filter = None
                         
+                        # VPN connection logs - filter by service or blade
+                        if any(kw in search_text for kw in ['vpn', 'vpn tunnel', 'vpn connection', 'remote access', 
+                                                             'site-to-site', 'ipsec', 'ikev2', 'ikev1']):
+                            # VPN logs can be filtered by service (VPN) or specific VPN-related attributes
+                            blade_filter = 'service:"VPN" OR service:"IKE" OR service:"ISAKMP" OR product:"VPN"'
+                            # VPN traffic is typically lower volume - reduce max logs to prevent excessive pagination
+                            max_logs = 50
                         # Threat Prevention umbrella (includes Anti-Bot, Anti-Virus, IPS, Threat Emulation, etc.)
-                        if any(kw in search_text for kw in ['threat prevention', 'threat', 'ips', 'intrusion', 
+                        elif any(kw in search_text for kw in ['threat prevention', 'threat', 'ips', 'intrusion', 
                                                              'threat emulation', 'threat extraction', 'zero-phishing', 
                                                              'zero phishing', 'anti-bot', 'anti bot', 'bot protection',
                                                              'anti-virus', 'antivirus', 'malware']):
