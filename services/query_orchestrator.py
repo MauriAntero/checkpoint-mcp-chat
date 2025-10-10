@@ -226,12 +226,28 @@ class QueryOrchestrator:
         
         return time_since_last_query < timeout
     
-    def _update_session_context(self, user_query: str):
-        """Update session context with gateway name from current query"""
+    def _update_session_context(self, user_query: str, plan: Optional[Dict[str, Any]] = None):
+        """Update session context with gateway name from plan or query
+        
+        Args:
+            user_query: User's natural language query
+            plan: Optional execution plan from Stage 2 (preferred source for gateway extraction)
+        """
         self.session_context["last_query_time"] = datetime.now()
         
-        # Try to extract gateway name from query
-        gateway_name = self._extract_gateway_from_query(user_query)
+        gateway_name = None
+        
+        # Method 1 (PREFERRED): Extract from LLM execution plan (more reliable)
+        if plan:
+            gateway_name = self._extract_gateway_from_plan(plan)
+        
+        # Method 2 (FALLBACK): Extract from user query using regex (less reliable)
+        if not gateway_name:
+            gateway_name = self._extract_gateway_from_query(user_query)
+            if gateway_name:
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Extracted gateway from query (regex fallback): '{gateway_name}'")
+        
+        # Update session context if gateway was found
         if gateway_name:
             self.session_context["last_gateway"] = gateway_name
             print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Session context updated: gateway='{gateway_name}'")
@@ -561,7 +577,7 @@ Technical Execution Plan:"""
         # Update session context with current query (for conversational caching)
         # Use parameter user_query if provided, otherwise fall back to plan['user_query']
         query_text = user_query if user_query else plan.get("user_query", "")
-        self._update_session_context(query_text)
+        self._update_session_context(query_text, plan)  # Pass plan for LLM-based gateway extraction
         
         # Apply session context to data_to_fetch (inject cached gateway if applicable)
         data_to_fetch = self._apply_session_context(plan.get("data_to_fetch", []), query_text)
