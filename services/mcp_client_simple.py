@@ -863,8 +863,8 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                         print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from identifier pattern: {args['target_gateway']}")
                             
                             # Fallback: use GATEWAY_HOST environment variable if available
-                            if 'target_gateway' not in args and 'GATEWAY_HOST' in env:
-                                args['target_gateway'] = env['GATEWAY_HOST']
+                            if 'target_gateway' not in args and 'GATEWAY_HOST' in env_vars:
+                                args['target_gateway'] = env_vars['GATEWAY_HOST']
                                 print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from GATEWAY_HOST env: {args['target_gateway']}")
                     
                     # 3. GAIA: Requires gateway_ip parameter for authentication
