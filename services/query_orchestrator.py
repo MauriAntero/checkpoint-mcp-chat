@@ -169,6 +169,52 @@ class QueryOrchestrator:
         
         return None
     
+    def _extract_gateway_from_plan(self, plan: Dict[str, Any]) -> Optional[str]:
+        """Extract gateway name from LLM execution plan (more reliable than regex)
+        
+        Args:
+            plan: Execution plan from Stage 2 LLM
+            
+        Returns:
+            Gateway name if found in plan, None otherwise
+        """
+        # Time-related words to exclude (same as regex method)
+        excluded_words = {
+            'last', 'this', 'today', 'yesterday', 'week', 'month', 'hour', 
+            'day', 'year', 'past', 'recent', 'current', 'previous', 'next',
+            'all', 'any', 'some', 'every', 'each'
+        }
+        
+        # 1. Check data_to_fetch array for gateway_identifier entries
+        data_to_fetch = plan.get("data_to_fetch", [])
+        for item in data_to_fetch:
+            item_str = str(item)
+            if "gateway_identifier:" in item_str:
+                # Extract gateway name after the colon
+                gateway_name = item_str.split("gateway_identifier:", 1)[1].strip()
+                if gateway_name and gateway_name.lower() not in excluded_words:
+                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Extracted gateway from plan (data_to_fetch): '{gateway_name}'")
+                    return gateway_name
+            elif "gateway_name:" in item_str:
+                # Alternative format
+                gateway_name = item_str.split("gateway_name:", 1)[1].strip()
+                if gateway_name and gateway_name.lower() not in excluded_words:
+                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Extracted gateway from plan (data_to_fetch): '{gateway_name}'")
+                    return gateway_name
+        
+        # 2. Check execution_steps for gateway parameters (backup)
+        execution_steps = plan.get("execution_steps", [])
+        for step in execution_steps:
+            if isinstance(step, dict):
+                # Check for gateway-related parameters
+                for key, value in step.items():
+                    if "gateway" in key.lower() and isinstance(value, str):
+                        if value and value.lower() not in excluded_words:
+                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Extracted gateway from plan (execution_steps): '{value}'")
+                            return value
+        
+        return None
+    
     def _is_session_active(self) -> bool:
         """Check if session context is still active (within timeout window)"""
         if not self.session_context["last_query_time"]:
