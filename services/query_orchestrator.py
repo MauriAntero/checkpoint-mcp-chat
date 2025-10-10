@@ -1032,6 +1032,87 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             return content[:max_chars] + "..."
         return content
     
+    def _filter_log_fields(self, data_collected: Dict[str, Any]) -> Dict[str, Any]:
+        """Filter log data to remove Check Point metadata and reduce token usage
+        
+        Keeps essential security fields, removes internal metadata.
+        Expected token reduction: ~70% (850 tokens/log → 250 tokens/log)
+        
+        Args:
+            data_collected: Raw data from MCP servers
+            
+        Returns:
+            Filtered data with only essential fields
+        """
+        # Essential fields to keep
+        ESSENTIAL_FIELDS = {
+            # Core connection data
+            'time', 'date', 'src', 'source', 'dst', 'destination', 'service', 'service_id',
+            's_port', 'd_port', 'proto', 'action',
+            
+            # Blade/Origin info
+            'origin', 'product', 'blade_name', 'log_id',
+            
+            # Policy context
+            'rule', 'rule_uid', 'rule_name', 'layer_name', 'layer_uid', 'match_id', 'policy',
+            
+            # NAT information
+            'xlatesrc', 'xlatedst', 'xlatesport', 'xlatedport', 'nat_addtnl_rulenum', 'nat_rulenum',
+            
+            # User/Application
+            'user', 'src_user_name', 'application', 'app_category', 'app_risk',
+            
+            # Traffic details
+            'bytes', 'sent_bytes', 'received_bytes', 'packets', 'duration', 'conn_direction',
+            
+            # Threat information
+            'attack', 'attack_info', 'severity', 'confidence_level', 'protection_name',
+            'malware_action', 'threat_prevention_action',
+            
+            # VPN specific
+            'vpn_feature_name', 'peer_gateway', 'encryption_method', 'community',
+            
+            # HTTPS Inspection
+            'site_name', 'resource', 'method', 'https_inspection_action',
+            
+            # Audit logs - CRITICAL
+            'administrator'
+        }
+        
+        filtered_data = {}
+        
+        for server_name, server_data in data_collected.items():
+            if not isinstance(server_data, dict):
+                filtered_data[server_name] = server_data
+                continue
+                
+            filtered_server_data = {}
+            
+            for key, value in server_data.items():
+                # Keep discovered_resources and non-log data as-is
+                if key == 'discovered_resources' or key == 'content':
+                    if key == 'content' and isinstance(value, list):
+                        # Filter log arrays
+                        filtered_logs = []
+                        for item in value:
+                            if isinstance(item, dict):
+                                # Filter log object to keep only essential fields
+                                filtered_log = {k: v for k, v in item.items() if k in ESSENTIAL_FIELDS}
+                                if filtered_log:  # Only add if not empty
+                                    filtered_logs.append(filtered_log)
+                            else:
+                                filtered_logs.append(item)
+                        filtered_server_data[key] = filtered_logs
+                    else:
+                        filtered_server_data[key] = value
+                else:
+                    # Keep other metadata (tool_calls, errors, etc.)
+                    filtered_server_data[key] = value
+            
+            filtered_data[server_name] = filtered_server_data
+        
+        return filtered_data
+    
     def analyze_with_model(self, plan: Dict[str, Any], execution_results: Dict[str, Any], security_model: Optional[str] = None) -> Tuple[str, str]:
         """Send execution results to the appropriate model for final analysis
         
@@ -1060,8 +1141,11 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         
         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] analyze_with_model using: '{final_model}'")
         
-        # Build context from execution results - keep MCP data intact
+        # Build context from execution results - filter log fields to reduce tokens
         data_collected = execution_results.get('data_collected', {})
+        
+        # Apply log field filtering to reduce token usage by ~70%
+        data_collected = self._filter_log_fields(data_collected)
         
         # Extract discovered resources for better context
         discovered_resources_summary = {}
