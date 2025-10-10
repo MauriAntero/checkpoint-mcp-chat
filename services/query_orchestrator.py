@@ -1079,7 +1079,9 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             'administrator'
         }
         
+        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] _filter_log_fields: Starting log field filtering...")
         filtered_data = {}
+        total_logs_filtered = 0
         
         for server_name, server_data in data_collected.items():
             if not isinstance(server_data, dict):
@@ -1091,26 +1093,35 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             for key, value in server_data.items():
                 # Filter log data in 'content' arrays (MCP response format)
                 if key == 'content' and isinstance(value, list):
+                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Found 'content' array with {len(value)} items in {server_name}")
                     filtered_content = []
-                    for item in value:
+                    for idx, item in enumerate(value):
                         if isinstance(item, dict) and item.get('type') == 'text':
+                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Processing text item {idx}, length: {len(item.get('text', ''))} chars")
                             # Parse JSON from text field
                             try:
                                 text_data = json.loads(item['text'])
+                                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Parsed JSON, keys: {list(text_data.keys())}")
                                 
                                 # Filter log/object arrays in the parsed JSON
                                 for field in ['logs', 'objects', 'gateways', 'servers', 'hosts', 'networks']:
                                     if field in text_data and isinstance(text_data[field], list):
+                                        original_count = len(text_data[field])
+                                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Filtering {field}: {original_count} items")
                                         # Filter each log/object to keep only essential fields
                                         filtered_items = []
                                         for log_item in text_data[field]:
                                             if isinstance(log_item, dict):
+                                                original_fields = len(log_item)
                                                 filtered_item = {k: v for k, v in log_item.items() if k in ESSENTIAL_FIELDS}
+                                                filtered_fields = len(filtered_item)
                                                 if filtered_item:
                                                     filtered_items.append(filtered_item)
                                             else:
                                                 filtered_items.append(log_item)
                                         text_data[field] = filtered_items
+                                        total_logs_filtered += len(filtered_items)
+                                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Filtered {field}: kept {len(filtered_items)} items, reduced fields from ~{original_fields if 'original_fields' in locals() else 'unknown'} to ~{filtered_fields if 'filtered_fields' in locals() else 'unknown'}")
                                 
                                 # Re-serialize filtered data back to JSON string
                                 filtered_content.append({
@@ -1130,6 +1141,7 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             
             filtered_data[server_name] = filtered_server_data
         
+        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] _filter_log_fields: Complete! Filtered {total_logs_filtered} total log/object items")
         return filtered_data
     
     def analyze_with_model(self, plan: Dict[str, Any], execution_results: Dict[str, Any], security_model: Optional[str] = None) -> Tuple[str, str]:
