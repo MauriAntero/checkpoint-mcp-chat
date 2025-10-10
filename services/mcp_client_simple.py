@@ -6,11 +6,16 @@ import json
 import asyncio
 import time
 import random
+from datetime import datetime
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+
+def _ts():
+    """Return timestamp string for debug logging"""
+    return datetime.now().strftime("%H:%M:%S.%f")[:-3]
 
 @dataclass
 class MCPTool:
@@ -73,17 +78,17 @@ async def call_tool_with_retry(
                     jitter = random.uniform(0, delay * 0.1)  # Add 10% jitter
                     total_delay = delay + jitter
                     
-                    print(f"[MCP_DEBUG] ⏳ Rate limit detected in response for {tool_name} (attempt {attempt + 1}/{max_retries + 1}). Retrying in {total_delay:.2f}s...")
+                    print(f"[MCP_DEBUG] [{_ts()}] ⏳ Rate limit detected in response for {tool_name} (attempt {attempt + 1}/{max_retries + 1}). Retrying in {total_delay:.2f}s...")
                     await asyncio.sleep(total_delay)
                     continue  # Try again
                 else:
                     # All retries exhausted
-                    print(f"[MCP_DEBUG] ✗ All {max_retries + 1} attempts failed for {tool_name} due to rate limiting")
+                    print(f"[MCP_DEBUG] [{_ts()}] ✗ All {max_retries + 1} attempts failed for {tool_name} due to rate limiting")
                     raise last_exception
             
             # Success - log if it was a retry
             if attempt > 0:
-                print(f"[MCP_DEBUG] ✓ Retry successful for {tool_name} on attempt {attempt + 1}")
+                print(f"[MCP_DEBUG] [{_ts()}] ✓ Retry successful for {tool_name} on attempt {attempt + 1}")
             
             return result
             
@@ -111,11 +116,11 @@ async def call_tool_with_retry(
                 jitter = random.uniform(0, delay * 0.1)  # Add 10% jitter
                 total_delay = delay + jitter
                 
-                print(f"[MCP_DEBUG] ⏳ Rate limit hit for {tool_name} (attempt {attempt + 1}/{max_retries + 1}). Retrying in {total_delay:.2f}s...")
+                print(f"[MCP_DEBUG] [{_ts()}] ⏳ Rate limit hit for {tool_name} (attempt {attempt + 1}/{max_retries + 1}). Retrying in {total_delay:.2f}s...")
                 await asyncio.sleep(total_delay)
             else:
                 # All retries exhausted
-                print(f"[MCP_DEBUG] ✗ All {max_retries + 1} attempts failed for {tool_name}: {last_exception}")
+                print(f"[MCP_DEBUG] [{_ts()}] ✗ All {max_retries + 1} attempts failed for {tool_name}: {last_exception}")
                 raise last_exception
 
 def clean_uuids_from_data(obj: Any) -> Any:
@@ -276,7 +281,7 @@ def extract_resource_identifiers(tool_name: str, content: Any) -> List[Dict[str,
                                 'uid': pkg.get('uid', ''),
                                 'ipv4-address': ''
                             })
-                            print(f"[MCP_DEBUG] ✓ Discovered policy package '{pkg.get('name')}' from gateway '{obj.get('name')}'")
+                            print(f"[MCP_DEBUG] [{_ts()}] ✓ Discovered policy package '{pkg.get('name')}' from gateway '{obj.get('name')}'")
                 
                 # Also check for array of policies
                 if 'policies' in obj and isinstance(obj['policies'], list):
@@ -288,7 +293,7 @@ def extract_resource_identifiers(tool_name: str, content: Any) -> List[Dict[str,
                                 'uid': pkg.get('uid', ''),
                                 'ipv4-address': ''
                             })
-                            print(f"[MCP_DEBUG] ✓ Discovered policy package '{pkg.get('name')}' from gateway '{obj.get('name')}'")
+                            print(f"[MCP_DEBUG] [{_ts()}] ✓ Discovered policy package '{pkg.get('name')}' from gateway '{obj.get('name')}'")
         
         # Recursively check nested arrays (like "packages": [...], "objects": [...], "gateways": [...])
         for key, value in obj.items():
@@ -342,11 +347,11 @@ def extract_resource_identifiers(tool_name: str, content: Any) -> List[Dict[str,
                 seen.add(key)
                 unique_resources.append(r)
         
-        print(f"[MCP_DEBUG] Extracted {len(unique_resources)} unique resources from {tool_name}")
+        print(f"[MCP_DEBUG] [{_ts()}] Extracted {len(unique_resources)} unique resources from {tool_name}")
         return unique_resources
         
     except Exception as e:
-        print(f"[MCP_DEBUG] Error extracting resources: {e}")
+        print(f"[MCP_DEBUG] [{_ts()}] Error extracting resources: {e}")
         import traceback
         traceback.print_exc()
         return []
@@ -371,43 +376,43 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
     """
     try:
         print(f"\n[MCP_DEBUG] ========== Starting MCP Query ==========")
-        print(f"[MCP_DEBUG] Package: {package_name}")
-        print(f"[MCP_DEBUG] Data points requested: {data_points}")
+        print(f"[MCP_DEBUG] [{_ts()}] Package: {package_name}")
+        print(f"[MCP_DEBUG] [{_ts()}] Data points requested: {data_points}")
         
         # Log environment variables (mask sensitive data)
         env_keys = list(env_vars.keys()) if env_vars else []
-        print(f"[MCP_DEBUG] Environment variables provided: {env_keys}")
+        print(f"[MCP_DEBUG] [{_ts()}] Environment variables provided: {env_keys}")
         
         # Merge environment variables with os.environ to preserve PATH and other essentials
         # This ensures npx can be found and executed
         merged_env = {**os.environ, **(env_vars or {})}
-        print(f"[MCP_DEBUG] Merged environment has {len(merged_env)} variables")
-        print(f"[MCP_DEBUG] PATH in merged env: {'Yes' if 'PATH' in merged_env else 'No'}")
+        print(f"[MCP_DEBUG] [{_ts()}] Merged environment has {len(merged_env)} variables")
+        print(f"[MCP_DEBUG] [{_ts()}] PATH in merged env: {'Yes' if 'PATH' in merged_env else 'No'}")
         
         # Create server parameters
-        print(f"[MCP_DEBUG] Creating StdioServerParameters...")
+        print(f"[MCP_DEBUG] [{_ts()}] Creating StdioServerParameters...")
         server_params = StdioServerParameters(
             command="npx",
             args=[package_name],
             env=merged_env
         )
-        print(f"[MCP_DEBUG] Server params created: command=npx, args={package_name}")
+        print(f"[MCP_DEBUG] [{_ts()}] Server params created: command=npx, args={package_name}")
         
         # Connect to server
-        print(f"[MCP_DEBUG] Attempting to connect to MCP server via stdio...")
+        print(f"[MCP_DEBUG] [{_ts()}] Attempting to connect to MCP server via stdio...")
         async with stdio_client(server_params) as (read, write):
-            print(f"[MCP_DEBUG] ✓ Connected to MCP server successfully")
+            print(f"[MCP_DEBUG] [{_ts()}] ✓ Connected to MCP server successfully")
             async with ClientSession(read, write) as session:
                 # Initialize the session
-                print(f"[MCP_DEBUG] Initializing MCP session...")
+                print(f"[MCP_DEBUG] [{_ts()}] Initializing MCP session...")
                 init_result = await session.initialize()
-                print(f"[MCP_DEBUG] ✓ Session initialized successfully")
-                print(f"[MCP_DEBUG] Server info: {init_result}")
+                print(f"[MCP_DEBUG] [{_ts()}] ✓ Session initialized successfully")
+                print(f"[MCP_DEBUG] [{_ts()}] Server info: {init_result}")
                 
                 # List available tools
-                print(f"[MCP_DEBUG] Requesting list of available tools...")
+                print(f"[MCP_DEBUG] [{_ts()}] Requesting list of available tools...")
                 tools_result = await session.list_tools()
-                print(f"[MCP_DEBUG] ✓ Received {len(tools_result.tools)} tools from server")
+                print(f"[MCP_DEBUG] [{_ts()}] ✓ Received {len(tools_result.tools)} tools from server")
                 
                 results = {
                     "package": package_name,
@@ -418,7 +423,7 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                 
                 # Store available tools info
                 for idx, tool in enumerate(tools_result.tools):
-                    print(f"[MCP_DEBUG] Tool {idx+1}: {tool.name} - {tool.description or 'No description'}")
+                    print(f"[MCP_DEBUG] [{_ts()}] Tool {idx+1}: {tool.name} - {tool.description or 'No description'}")
                     results["available_tools"].append({
                         "name": tool.name,
                         "description": tool.description or "",
@@ -426,13 +431,13 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                     })
                     # Special logging for show_logs to understand its schema
                     if tool.name == 'show_logs':
-                        print(f"[MCP_DEBUG] *** SHOW_LOGS SCHEMA ***")
-                        print(f"[MCP_DEBUG] Full inputSchema: {json.dumps(tool.inputSchema, indent=2)}")
+                        print(f"[MCP_DEBUG] [{_ts()}] *** SHOW_LOGS SCHEMA ***")
+                        print(f"[MCP_DEBUG] [{_ts()}] Full inputSchema: {json.dumps(tool.inputSchema, indent=2)}")
                 
                 # Phase 1: Discovery - identify and call discovery tools first
                 discovered_resources = {}
                 if discovery_mode:
-                    print(f"[MCP_DEBUG] === Phase 1: Resource Discovery ===")
+                    print(f"[MCP_DEBUG] [{_ts()}] === Phase 1: Resource Discovery ===")
                     # Identify discovery tools (tools that list/show available resources)
                     # Normalize both hyphens and underscores for matching
                     discovery_keywords = ['show.gateways', 'list.packages', 'show.packages', 
@@ -440,12 +445,12 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                     discovery_tools = [t for t in tools_result.tools 
                                       if any(kw in t.name.lower().replace('-', '.').replace('_', '.') for kw in discovery_keywords)]
                     
-                    print(f"[MCP_DEBUG] Found {len(discovery_tools)} discovery tools: {[t.name for t in discovery_tools]}")
+                    print(f"[MCP_DEBUG] [{_ts()}] Found {len(discovery_tools)} discovery tools: {[t.name for t in discovery_tools]}")
                     
                     # Call ALL discovery tools (no limit) to ensure we find policy packages, gateways, etc.
                     for tool in discovery_tools:
                         try:
-                            print(f"[MCP_DEBUG] Discovery: Calling {tool.name}")
+                            print(f"[MCP_DEBUG] [{_ts()}] Discovery: Calling {tool.name}")
                             tool_result = await call_tool_with_retry(session, tool.name, arguments={})
                             content_serializable = convert_to_dict(tool_result.content)
                             
@@ -456,16 +461,16 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             content_serializable = clean_uuids_from_data(content_serializable)
                             if resources:
                                 discovered_resources[tool.name] = resources
-                                print(f"[MCP_DEBUG] ✓ Discovered {len(resources)} resources from {tool.name}")
+                                print(f"[MCP_DEBUG] [{_ts()}] ✓ Discovered {len(resources)} resources from {tool.name}")
                         except Exception as e:
-                            print(f"[MCP_DEBUG] Discovery tool {tool.name} failed: {e}")
+                            print(f"[MCP_DEBUG] [{_ts()}] Discovery tool {tool.name} failed: {e}")
                     
                     # EXPLICIT POLICY PACKAGE DISCOVERY
                     # Call show_objects with type='package' to get policy packages
                     show_objects_tool = next((t for t in tools_result.tools if t.name == 'show_objects'), None)
                     if show_objects_tool:
                         try:
-                            print(f"[MCP_DEBUG] Discovery: Calling show_objects with type='package' for policy packages")
+                            print(f"[MCP_DEBUG] [{_ts()}] Discovery: Calling show_objects with type='package' for policy packages")
                             tool_result = await call_tool_with_retry(session, 'show_objects', arguments={'type': 'package'})
                             content_serializable = convert_to_dict(tool_result.content)
                             
@@ -476,15 +481,15 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             content_serializable = clean_uuids_from_data(content_serializable)
                             if resources:
                                 discovered_resources['show_packages'] = resources
-                                print(f"[MCP_DEBUG] ✓ Discovered {len(resources)} policy packages from show_objects(type='package')")
+                                print(f"[MCP_DEBUG] [{_ts()}] ✓ Discovered {len(resources)} policy packages from show_objects(type='package')")
                         except Exception as e:
-                            print(f"[MCP_DEBUG] show_objects(type='package') failed: {e}")
+                            print(f"[MCP_DEBUG] [{_ts()}] show_objects(type='package') failed: {e}")
                     
                     results["discovered_resources"] = discovered_resources
-                    print(f"[MCP_DEBUG] === Discovery Complete: {len(discovered_resources)} resource types found ===")
+                    print(f"[MCP_DEBUG] [{_ts()}] === Discovery Complete: {len(discovered_resources)} resource types found ===")
                 
                 # Phase 2: Targeted queries using discovered resources
-                print(f"[MCP_DEBUG] === Phase 2: Targeted Queries ===")
+                print(f"[MCP_DEBUG] [{_ts()}] === Phase 2: Targeted Queries ===")
                 
                 # Build a flat list of discovered resources for easy lookup
                 all_discovered = []
@@ -492,9 +497,9 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                     all_discovered.extend(tool_resources)
                 
                 # Debug: Log all discovered resources to understand structure
-                print(f"[MCP_DEBUG] All discovered resources ({len(all_discovered)}):")
+                print(f"[MCP_DEBUG] [{_ts()}] All discovered resources ({len(all_discovered)}):")
                 for idx, res in enumerate(all_discovered[:10]):  # Show first 10
-                    print(f"[MCP_DEBUG]   {idx+1}. name={res.get('name')}, type={res.get('type')}, uid={res.get('uid')}")
+                    print(f"[MCP_DEBUG] [{_ts()}]   {idx+1}. name={res.get('name')}, type={res.get('type')}, uid={res.get('uid')}")
                 
                 # Prepare tools with appropriate arguments
                 tools_with_args = []
@@ -514,7 +519,7 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                     optional_params = [p for p in properties.keys() if p not in all_params]
                     
                     if required:
-                        print(f"[MCP_DEBUG] Tool '{tool.name}' required params: {required}")
+                        print(f"[MCP_DEBUG] [{_ts()}] Tool '{tool.name}' required params: {required}")
                     
                     # Initialize gateways list for auto-construction logic (used later)
                     gateways = [r for r in all_discovered if r.get('type') == 'gateway']
@@ -531,7 +536,7 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         
                         if url_match:
                             args['url'] = url_match.group(0)
-                            print(f"[MCP_DEBUG] Pre-extracted URL with protocol: {args['url']}")
+                            print(f"[MCP_DEBUG] [{_ts()}] Pre-extracted URL with protocol: {args['url']}")
                         else:
                             # Try domain patterns without protocol (www.example.com, checkpoint.com, example.xn--p1ai)
                             # Negative lookbehind (?<!@) ensures no @ before (avoids emails like user@domain.com)
@@ -546,7 +551,7 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                     # Prepend https:// for API compatibility
                                     extracted_domain = domain_match.group(0)
                                     args['url'] = f"https://{extracted_domain}"
-                                    print(f"[MCP_DEBUG] Pre-extracted domain '{extracted_domain}', using URL: {args['url']}")
+                                    print(f"[MCP_DEBUG] [{_ts()}] Pre-extracted domain '{extracted_domain}', using URL: {args['url']}")
                     
                     if 'ip' in required:
                         # Extract IP address from query (IPv4)
@@ -554,7 +559,7 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         ip_match = re.search(ip_pattern, search_text)
                         if ip_match:
                             args['ip'] = ip_match.group(0)
-                            print(f"[MCP_DEBUG] Pre-extracted IP parameter: {args['ip']}")
+                            print(f"[MCP_DEBUG] [{_ts()}] Pre-extracted IP parameter: {args['ip']}")
                     
                     if 'hash' in required:
                         # Extract file hash from query (MD5: 32 hex, SHA-1: 40 hex, SHA-256: 64 hex)
@@ -562,7 +567,7 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         hash_match = re.search(hash_pattern, search_text)
                         if hash_match:
                             args['hash'] = hash_match.group(0)
-                            print(f"[MCP_DEBUG] Pre-extracted hash parameter: {args['hash']}")
+                            print(f"[MCP_DEBUG] [{_ts()}] Pre-extracted hash parameter: {args['hash']}")
                     
                     # Track if we've set a name-based identifier to avoid uid/name conflicts
                     has_name_identifier = False
@@ -572,7 +577,7 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                     params_to_check = all_params + [p for p in optional_params if p in ['name', 'uid', 'layer', 'package', 'policy-package', 'package-name', 'gateway', 'gateway-name']]
                     
                     for param in params_to_check:
-                        print(f"[MCP_DEBUG] Checking param '{param}' for tool '{tool.name}'")
+                        print(f"[MCP_DEBUG] [{_ts()}] Checking param '{param}' for tool '{tool.name}'")
                         
                         # CONTEXT parameters: layer, package, policy-package, package-name
                         # These specify which policy package or layer to query
@@ -580,26 +585,26 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             # PACKAGE PARAMETERS: Only use policy-package types (NOT access-layers)
                             # e.g., show_nat_rulebase needs 'package' = policy package name
                             packages = [r for r in all_discovered if r.get('type') in ['policy-package', 'package']]
-                            print(f"[MCP_DEBUG]   Found {len(packages)} policy packages for param '{param}'")
+                            print(f"[MCP_DEBUG] [{_ts()}]   Found {len(packages)} policy packages for param '{param}'")
                             
                             # If no policy packages discovered, check if this parameter is required
                             if not packages:
                                 # If package is a REQUIRED parameter for this tool, skip the entire tool
                                 if param in required:
-                                    print(f"[MCP_DEBUG]   ⚠️ No policy packages discovered - skipping {tool.name} (required param)")
-                                    print(f"[MCP_DEBUG]   Note: This MCP server version may not expose 'show-packages' tool")
+                                    print(f"[MCP_DEBUG] [{_ts()}]   ⚠️ No policy packages discovered - skipping {tool.name} (required param)")
+                                    print(f"[MCP_DEBUG] [{_ts()}]   Note: This MCP server version may not expose 'show-packages' tool")
                                     skip_tool = True
                                     break  # Exit param loop
                                 else:
                                     # Package is optional - just skip filling this parameter
-                                    print(f"[MCP_DEBUG]   No policy packages found - skipping optional '{param}' parameter for {tool.name}")
+                                    print(f"[MCP_DEBUG] [{_ts()}]   No policy packages found - skipping optional '{param}' parameter for {tool.name}")
                                     continue  # Continue to next parameter
                             
                             if packages:
                                 # Check if user has already selected a value
                                 if user_parameter_selections and param in user_parameter_selections:
                                     args[param] = user_parameter_selections[param]
-                                    print(f"[MCP_DEBUG] Using user-selected package '{args[param]}' for {tool.name}.{param}")
+                                    print(f"[MCP_DEBUG] [{_ts()}] Using user-selected package '{args[param]}' for {tool.name}.{param}")
                                 elif len(packages) > 1:
                                     # Multiple options - need user input
                                     if param not in parameter_options:
@@ -607,21 +612,21 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                             {'value': p.get('name'), 'display': f"{p.get('name')} ({p.get('type', 'package')})"} 
                                             for p in packages
                                         ]
-                                    print(f"[MCP_DEBUG] Multiple packages found ({len(packages)}) - need user selection for {tool.name}.{param}")
+                                    print(f"[MCP_DEBUG] [{_ts()}] Multiple packages found ({len(packages)}) - need user selection for {tool.name}.{param}")
                                 else:
                                     args[param] = packages[0].get('name')
-                                    print(f"[MCP_DEBUG] Using discovered {packages[0].get('type')} '{args[param]}' for {tool.name}.{param}")
+                                    print(f"[MCP_DEBUG] [{_ts()}] Using discovered {packages[0].get('type')} '{args[param]}' for {tool.name}.{param}")
                         
                         elif param == 'layer':
                             # LAYER PARAMETER: Only use access-layer types (NOT policy-packages)
                             # e.g., show_access_rulebase needs 'layer' = access layer name
                             layers = [r for r in all_discovered if r.get('type') == 'access-layer']
-                            print(f"[MCP_DEBUG]   Found {len(layers)} access layers for param '{param}'")
+                            print(f"[MCP_DEBUG] [{_ts()}]   Found {len(layers)} access layers for param '{param}'")
                             if layers:
                                 # Check if user has already selected a value
                                 if user_parameter_selections and param in user_parameter_selections:
                                     args[param] = user_parameter_selections[param]
-                                    print(f"[MCP_DEBUG] Using user-selected layer '{args[param]}' for {tool.name}.{param}")
+                                    print(f"[MCP_DEBUG] [{_ts()}] Using user-selected layer '{args[param]}' for {tool.name}.{param}")
                                 elif len(layers) > 1:
                                     # Multiple options - need user input
                                     if param not in parameter_options:
@@ -629,10 +634,10 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                             {'value': l.get('name'), 'display': f"{l.get('name')} ({l.get('type', 'layer')})"} 
                                             for l in layers
                                         ]
-                                    print(f"[MCP_DEBUG] Multiple layers found ({len(layers)}) - need user selection for {tool.name}.{param}")
+                                    print(f"[MCP_DEBUG] [{_ts()}] Multiple layers found ({len(layers)}) - need user selection for {tool.name}.{param}")
                                 else:
                                     args[param] = layers[0].get('name')
-                                    print(f"[MCP_DEBUG] Using discovered {layers[0].get('type')} '{args[param]}' for {tool.name}.{param}")
+                                    print(f"[MCP_DEBUG] [{_ts()}] Using discovered {layers[0].get('type')} '{args[param]}' for {tool.name}.{param}")
                         
                         # RESOURCE identifier: name
                         # This identifies a specific resource (rule, object, gateway, etc.)
@@ -645,28 +650,28 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                     if user_parameter_selections and param in user_parameter_selections:
                                         args[param] = user_parameter_selections[param]
                                         has_name_identifier = True
-                                        print(f"[MCP_DEBUG] Using user-selected access-layer '{args[param]}' for {tool.name}.{param}")
+                                        print(f"[MCP_DEBUG] [{_ts()}] Using user-selected access-layer '{args[param]}' for {tool.name}.{param}")
                                     elif len(access_layers) == 1:
                                         args[param] = access_layers[0].get('name')
                                         has_name_identifier = True
-                                        print(f"[MCP_DEBUG] Using discovered access-layer '{args[param]}' for {tool.name}.{param}")
+                                        print(f"[MCP_DEBUG] [{_ts()}] Using discovered access-layer '{args[param]}' for {tool.name}.{param}")
                                     else:
-                                        print(f"[MCP_DEBUG] Multiple access-layers found - need user selection for {tool.name}.{param}")
+                                        print(f"[MCP_DEBUG] [{_ts()}] Multiple access-layers found - need user selection for {tool.name}.{param}")
                                 else:
-                                    print(f"[MCP_DEBUG] No access-layers found for {tool.name}.{param}")
+                                    print(f"[MCP_DEBUG] [{_ts()}] No access-layers found for {tool.name}.{param}")
                             # For other tools, don't auto-fill 'name' to avoid conflicts
                             elif user_parameter_selections and param in user_parameter_selections:
                                 args[param] = user_parameter_selections[param]
                                 has_name_identifier = True
-                                print(f"[MCP_DEBUG] Using user-selected name '{args[param]}' for {tool.name}.{param}")
+                                print(f"[MCP_DEBUG] [{_ts()}] Using user-selected name '{args[param]}' for {tool.name}.{param}")
                             else:
-                                print(f"[MCP_DEBUG] Skipping auto-fill for 'name' parameter (requires explicit specification)")
+                                print(f"[MCP_DEBUG] [{_ts()}] Skipping auto-fill for 'name' parameter (requires explicit specification)")
                         
                         elif param in ['uid']:
                             # CheckPoint APIs require EITHER name OR uid, not both
                             # Skip uid if we've already set a name-based identifier
                             if has_name_identifier:
-                                print(f"[MCP_DEBUG] Skipping uid parameter (already have name-based identifier) for {tool.name}")
+                                print(f"[MCP_DEBUG] [{_ts()}] Skipping uid parameter (already have name-based identifier) for {tool.name}")
                                 continue
                             
                             # Use any discovered UID only if no name was set
@@ -674,16 +679,16 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             if with_uid:
                                 if user_parameter_selections and param in user_parameter_selections:
                                     args[param] = user_parameter_selections[param]
-                                    print(f"[MCP_DEBUG] Using user-selected UID '{args[param]}' for {tool.name}.{param}")
+                                    print(f"[MCP_DEBUG] [{_ts()}] Using user-selected UID '{args[param]}' for {tool.name}.{param}")
                                 # Don't auto-fill uid either to avoid conflicts
                                 else:
-                                    print(f"[MCP_DEBUG] Skipping auto-fill for 'uid' parameter (requires explicit specification)")
+                                    print(f"[MCP_DEBUG] [{_ts()}] Skipping auto-fill for 'uid' parameter (requires explicit specification)")
                         elif param in ['gateway', 'gateway-name']:
                             # Use pre-initialized gateways list
                             if gateways:
                                 if user_parameter_selections and param in user_parameter_selections:
                                     args[param] = user_parameter_selections[param]
-                                    print(f"[MCP_DEBUG] Using user-selected gateway '{args[param]}' for {tool.name}.{param}")
+                                    print(f"[MCP_DEBUG] [{_ts()}] Using user-selected gateway '{args[param]}' for {tool.name}.{param}")
                                 elif len(gateways) > 1:
                                     # Multiple options - need user input
                                     if param not in parameter_options:
@@ -691,10 +696,10 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                             {'value': g.get('name'), 'display': f"{g.get('name')} ({g.get('type', 'gateway')})"} 
                                             for g in gateways
                                         ]
-                                    print(f"[MCP_DEBUG] Multiple gateways found - need user selection for {tool.name}.{param}")
+                                    print(f"[MCP_DEBUG] [{_ts()}] Multiple gateways found - need user selection for {tool.name}.{param}")
                                 else:
                                     args[param] = gateways[0].get('name')
-                                    print(f"[MCP_DEBUG] Using discovered gateway '{args[param]}' for {tool.name}.{param}")
+                                    print(f"[MCP_DEBUG] [{_ts()}] Using discovered gateway '{args[param]}' for {tool.name}.{param}")
                         
                     # ===== PARAMETER AUTO-CONSTRUCTION BASED ON MCP SERVER SOURCE CODE ANALYSIS =====
                     
@@ -761,17 +766,17 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         if blade_filter:
                             # MCP server expects flat string - it handles CheckPoint API transformation internally
                             new_query["filter"] = blade_filter
-                            print(f"[MCP_DEBUG] Added blade filter: {blade_filter}")
+                            print(f"[MCP_DEBUG] [{_ts()}] Added blade filter: {blade_filter}")
                         
                         args["new-query"] = new_query
-                        print(f"[MCP_DEBUG] Auto-constructed new-query for {tool.name}: {new_query}")
+                        print(f"[MCP_DEBUG] [{_ts()}] Auto-constructed new-query for {tool.name}: {new_query}")
                     
                     # 2. GATEWAY CLI: All tools require target_gateway parameter
                     if 'target_gateway' in required and 'target_gateway' not in args:
                         # Try to find gateway from previous discovery or data_points
                         if gateways and len(gateways) > 0:
                             args['target_gateway'] = gateways[0].get('name')
-                            print(f"[MCP_DEBUG] Auto-filled target_gateway: {args['target_gateway']}")
+                            print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway: {args['target_gateway']}")
                         else:
                             # No gateways discovered - try to extract from user query or use GATEWAY_HOST
                             # Look for gateway name in user query (e.g., "routing on cp-gw", "diagnose gateway01")
@@ -784,19 +789,19 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                     # Exclude common words
                                     if potential_gateway.lower() not in ['the', 'this', 'that', 'my', 'our', 'all', 'each', 'every', 'gateway', 'firewall']:
                                         args['target_gateway'] = potential_gateway
-                                        print(f"[MCP_DEBUG] Auto-filled target_gateway from user query: {args['target_gateway']}")
+                                        print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from user query: {args['target_gateway']}")
                                 
                                 # Pattern 2: Direct gateway name mention (cp-gw, gw-01, firewall-dmz, etc.)
                                 if 'target_gateway' not in args:
                                     match = re.search(r'\b([a-zA-Z0-9]+[-_][a-zA-Z0-9][a-zA-Z0-9._-]*)', user_query)
                                     if match:
                                         args['target_gateway'] = match.group(1)
-                                        print(f"[MCP_DEBUG] Auto-filled target_gateway from identifier pattern: {args['target_gateway']}")
+                                        print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from identifier pattern: {args['target_gateway']}")
                             
                             # Fallback: use GATEWAY_HOST environment variable if available
                             if 'target_gateway' not in args and 'GATEWAY_HOST' in env:
                                 args['target_gateway'] = env['GATEWAY_HOST']
-                                print(f"[MCP_DEBUG] Auto-filled target_gateway from GATEWAY_HOST env: {args['target_gateway']}")
+                                print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from GATEWAY_HOST env: {args['target_gateway']}")
                     
                     # 3. GAIA: Requires gateway_ip parameter for authentication
                     if 'gateway_ip' in required and 'gateway_ip' not in args:
@@ -806,7 +811,7 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             gateway_ip = gateways[0].get('ipv4-address') or gateways[0].get('name')
                             if gateway_ip:
                                 args['gateway_ip'] = gateway_ip
-                                print(f"[MCP_DEBUG] Auto-filled gateway_ip: {args['gateway_ip']}")
+                                print(f"[MCP_DEBUG] [{_ts()}] Auto-filled gateway_ip: {args['gateway_ip']}")
                     
                     # 4. HARMONY SASE: Network/Gateway/Region/Application ID parameters
                     if 'network_id' in required and 'network_id' not in args:
@@ -814,14 +819,14 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         for dp in data_points:
                             if 'network' in dp.lower() or 'net' in dp.lower():
                                 args['network_id'] = dp
-                                print(f"[MCP_DEBUG] Auto-filled network_id: {args['network_id']}")
+                                print(f"[MCP_DEBUG] [{_ts()}] Auto-filled network_id: {args['network_id']}")
                                 break
                     
                     # 5. SPARK MANAGEMENT: gatewayName parameter
                     if 'gatewayName' in required and 'gatewayName' not in args:
                         if gateways and len(gateways) > 0:
                             args['gatewayName'] = gateways[0].get('name')
-                            print(f"[MCP_DEBUG] Auto-filled gatewayName: {args['gatewayName']}")
+                            print(f"[MCP_DEBUG] [{_ts()}] Auto-filled gatewayName: {args['gatewayName']}")
                     
                     # 6. THREAT EMULATION: file_path parameter
                     if 'file_path' in required and 'file_path' not in args:
@@ -829,7 +834,7 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         for dp in data_points:
                             if '/' in dp or '\\' in dp or '.' in dp:
                                 args['file_path'] = dp
-                                print(f"[MCP_DEBUG] Auto-filled file_path: {args['file_path']}")
+                                print(f"[MCP_DEBUG] [{_ts()}] Auto-filled file_path: {args['file_path']}")
                                 break
                     
                     # 7. CHECKPOINT RULEBASE TOOLS: Critical API parameters for complete data
@@ -845,11 +850,11 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                 # Check if user has already selected a layer
                                 if user_parameter_selections and 'name' in user_parameter_selections:
                                     args['name'] = user_parameter_selections['name']
-                                    print(f"[MCP_DEBUG] Using user-selected HTTPS layer '{args['name']}' for {tool.name}")
+                                    print(f"[MCP_DEBUG] [{_ts()}] Using user-selected HTTPS layer '{args['name']}' for {tool.name}")
                                 elif len(https_layers) == 1:
                                     # Single layer - use it automatically
                                     args['name'] = https_layers[0].get('name')
-                                    print(f"[MCP_DEBUG] Using discovered HTTPS layer '{args['name']}' for {tool.name}")
+                                    print(f"[MCP_DEBUG] [{_ts()}] Using discovered HTTPS layer '{args['name']}' for {tool.name}")
                                 elif len(https_layers) > 1:
                                     # Multiple HTTPS layers - need user selection
                                     if 'name' not in parameter_options:
@@ -857,28 +862,28 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                             {'value': l.get('name'), 'display': f"{l.get('name')} (HTTPS Inspection Layer)"} 
                                             for l in https_layers
                                         ]
-                                    print(f"[MCP_DEBUG] Multiple HTTPS layers found ({len(https_layers)}) - need user selection for {tool.name}.name")
+                                    print(f"[MCP_DEBUG] [{_ts()}] Multiple HTTPS layers found ({len(https_layers)}) - need user selection for {tool.name}.name")
                                     skip_tool = True  # Skip this tool until user selects
                             else:
                                 # Fallback: try "Standard Layer" as default if no layers discovered yet
                                 args['name'] = 'Standard Layer'
-                                print(f"[MCP_DEBUG] No HTTPS layers discovered, trying default 'Standard Layer' for {tool.name}")
+                                print(f"[MCP_DEBUG] [{_ts()}] No HTTPS layers discovered, trying default 'Standard Layer' for {tool.name}")
                         
                         # Set details-level to "full" for complete rule information (names, objects, etc.)
                         if 'details-level' not in args:
                             args['details-level'] = 'full'
-                            print(f"[MCP_DEBUG] Set details-level=full for {tool.name} (required for complete data)")
+                            print(f"[MCP_DEBUG] [{_ts()}] Set details-level=full for {tool.name} (required for complete data)")
                         
                         # Set use-object-dictionary for object names instead of UIDs
                         if 'use-object-dictionary' not in args:
                             args['use-object-dictionary'] = True
-                            print(f"[MCP_DEBUG] Set use-object-dictionary=true for {tool.name} (gets object names)")
+                            print(f"[MCP_DEBUG] [{_ts()}] Set use-object-dictionary=true for {tool.name} (gets object names)")
                         
                         # CRITICAL: Use show_raw=true to get raw JSON and bypass MCP server's table formatting
                         # The MCP server's formatted table may not properly resolve object names from dictionary
                         if 'show_raw' not in args:
                             args['show_raw'] = True
-                            print(f"[MCP_DEBUG] Set show_raw=true for {tool.name} (bypass server formatting, get raw JSON)")
+                            print(f"[MCP_DEBUG] [{_ts()}] Set show_raw=true for {tool.name} (bypass server formatting, get raw JSON)")
                     
                     # Add tool ONLY if ALL required parameters are filled
                     required_filled = all(param in args for param in required) if required else True
@@ -886,22 +891,22 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                     
                     # Skip tools flagged during parameter checking
                     if skip_tool:
-                        print(f"[MCP_DEBUG] ✗ Skipping '{tool.name}' - flagged during parameter check")
+                        print(f"[MCP_DEBUG] [{_ts()}] ✗ Skipping '{tool.name}' - flagged during parameter check")
                     # Skip tools where required params can't be filled (prevents API errors)
                     elif required and not required_filled:
-                        print(f"[MCP_DEBUG] ✗ Skipping '{tool.name}' - cannot fill required params: {required}")
+                        print(f"[MCP_DEBUG] [{_ts()}] ✗ Skipping '{tool.name}' - cannot fill required params: {required}")
                     # For all other tools with no required params: call with whatever args we have (even if empty)
                     elif not required:
                         tools_with_args.append((tool, args))
-                        print(f"[MCP_DEBUG] ✓ Can call '{tool.name}' with args: {args}")
+                        print(f"[MCP_DEBUG] [{_ts()}] ✓ Can call '{tool.name}' with args: {args}")
                     # Tool with all required params filled
                     else:
                         tools_with_args.append((tool, args))
-                        print(f"[MCP_DEBUG] ✓ Can call '{tool.name}' with args: {args}")
+                        print(f"[MCP_DEBUG] [{_ts()}] ✓ Can call '{tool.name}' with args: {args}")
                 
                 # If we found parameters with multiple options and user hasn't selected, ask user
                 if parameter_options and not user_parameter_selections:
-                    print(f"[MCP_DEBUG] Found {len(parameter_options)} parameters with multiple options - returning for user selection")
+                    print(f"[MCP_DEBUG] [{_ts()}] Found {len(parameter_options)} parameters with multiple options - returning for user selection")
                     return {
                         "needs_user_input": True,
                         "parameter_options": parameter_options,
@@ -968,17 +973,17 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                 tools_with_scores.sort(key=lambda x: x[2], reverse=True)
                 
                 # Debug: Show top prioritized tools
-                print(f"[MCP_DEBUG] Tool prioritization (top 10):")
+                print(f"[MCP_DEBUG] [{_ts()}] Tool prioritization (top 10):")
                 for i, (tool, args, score) in enumerate(tools_with_scores[:10]):
-                    print(f"[MCP_DEBUG]   {i+1}. {tool.name} (score: {score}) with args: {args}")
+                    print(f"[MCP_DEBUG] [{_ts()}]   {i+1}. {tool.name} (score: {score}) with args: {args}")
                 
                 # INTELLIGENT DYNAMIC TOOL SELECTION
                 # Check if caller requested ALL tools (override mode)
                 if call_all_tools:
                     # OVERRIDE MODE: Call ALL available tools with arguments
                     selected_tools = [(t, a, s) for t, a, s in tools_with_scores]  # Keep all tools with scores
-                    print(f"[MCP_DEBUG] ⚠️ OVERRIDE MODE: call_all_tools=True - Calling ALL {len(selected_tools)} available tools")
-                    print(f"[MCP_DEBUG] This provides comprehensive coverage but may impact performance")
+                    print(f"[MCP_DEBUG] [{_ts()}] ⚠️ OVERRIDE MODE: call_all_tools=True - Calling ALL {len(selected_tools)} available tools")
+                    print(f"[MCP_DEBUG] [{_ts()}] This provides comprehensive coverage but may impact performance")
                 else:
                     # STANDARD MODE: Score-based intelligent selection
                     RELEVANCE_THRESHOLD = 15  # Only call tools with score > 15 (filters out noise)
@@ -997,10 +1002,10 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                     high_count = len([s for t, a, s in relevant_tools if 50 < s <= AGGRESSIVE_THRESHOLD])
                     medium_count = len([s for t, a, s in relevant_tools if RELEVANCE_THRESHOLD < s <= 50])
                     
-                    print(f"[MCP_DEBUG] Selected {len(relevant_tools)} tools above threshold ({RELEVANCE_THRESHOLD}) - NO LIMIT:")
-                    print(f"[MCP_DEBUG]   - {aggressive_count} aggressive-match tools (score > {AGGRESSIVE_THRESHOLD})")
-                    print(f"[MCP_DEBUG]   - {high_count} high-relevance tools (score 51-{AGGRESSIVE_THRESHOLD})")
-                    print(f"[MCP_DEBUG]   - {medium_count} medium-relevance tools (score {RELEVANCE_THRESHOLD+1}-50)")
+                    print(f"[MCP_DEBUG] [{_ts()}] Selected {len(relevant_tools)} tools above threshold ({RELEVANCE_THRESHOLD}) - NO LIMIT:")
+                    print(f"[MCP_DEBUG] [{_ts()}]   - {aggressive_count} aggressive-match tools (score > {AGGRESSIVE_THRESHOLD})")
+                    print(f"[MCP_DEBUG] [{_ts()}]   - {high_count} high-relevance tools (score 51-{AGGRESSIVE_THRESHOLD})")
+                    print(f"[MCP_DEBUG] [{_ts()}]   - {medium_count} medium-relevance tools (score {RELEVANCE_THRESHOLD+1}-50)")
                     
                     # Phase 2: If still below minimum, add remaining tools to reach MIN_TOOLS
                     # This only happens for very generic queries with no strong keyword matches
@@ -1010,18 +1015,18 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         remaining_tools = [(t, a, s) for t, a, s in tools_with_scores 
                                           if t.name not in already_selected_names]
                         selected_tools.extend(remaining_tools[:remaining_needed])
-                        print(f"[MCP_DEBUG] Added {len(remaining_tools[:remaining_needed])} additional tools to reach minimum of {MIN_TOOLS}")
+                        print(f"[MCP_DEBUG] [{_ts()}] Added {len(remaining_tools[:remaining_needed])} additional tools to reach minimum of {MIN_TOOLS}")
                 
                 # Extract tool and args (drop scores)
                 tools_to_call = [(tool, args) for tool, args, score in selected_tools]
                 
                 # Log final selection with performance warning
-                print(f"[MCP_DEBUG] Dynamic tool selection: calling {len(tools_to_call)} tools (out of {len(tools_with_args)} callable)")
+                print(f"[MCP_DEBUG] [{_ts()}] Dynamic tool selection: calling {len(tools_to_call)} tools (out of {len(tools_with_args)} callable)")
                 if len(tools_to_call) > 15:
-                    print(f"[MCP_DEBUG] ⚠️⚠️ HIGH TOOL COUNT: Calling {len(tools_to_call)} tools - complex/broad query")
+                    print(f"[MCP_DEBUG] [{_ts()}] ⚠️⚠️ HIGH TOOL COUNT: Calling {len(tools_to_call)} tools - complex/broad query")
                 elif len(tools_to_call) > 10:
-                    print(f"[MCP_DEBUG] ⚠️ Calling {len(tools_to_call)} tools - comprehensive analysis")
-                print(f"[MCP_DEBUG] Selected tools: {[t.name for t, a in tools_to_call]}")
+                    print(f"[MCP_DEBUG] [{_ts()}] ⚠️ Calling {len(tools_to_call)} tools - comprehensive analysis")
+                print(f"[MCP_DEBUG] [{_ts()}] Selected tools: {[t.name for t, a in tools_to_call]}")
                 
                 for idx, (tool, args) in enumerate(tools_to_call):
                     try:
@@ -1035,10 +1040,10 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                 delay = 0.5  # 500ms for high tool counts
                             else:
                                 delay = 0.3  # 300ms for normal tool counts
-                            print(f"[MCP_DEBUG] ⏸️  Rate limiting: waiting {delay}s before next tool...")
+                            print(f"[MCP_DEBUG] [{_ts()}] ⏸️  Rate limiting: waiting {delay}s before next tool...")
                             await asyncio.sleep(delay)
                         
-                        print(f"[MCP_DEBUG] Calling tool {idx+1}/{len(tools_to_call)}: {tool.name} with args: {args}")
+                        print(f"[MCP_DEBUG] [{_ts()}] Calling tool {idx+1}/{len(tools_to_call)}: {tool.name} with args: {args}")
                         
                         # UNIVERSAL PAGINATION SUPPORT
                         # CheckPoint API returns max 100 items per request with query-id for pagination
@@ -1060,19 +1065,19 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         MAX_PAGES = 10  # Limit to prevent excessive queries
                         
                         # Parse first response and detect structure
-                        print(f"[MCP_DEBUG] 📊 Analyzing response structure for pagination detection...")
-                        print(f"[MCP_DEBUG] 📊 content_dict type: {type(content_dict)}, is list: {isinstance(content_dict, list)}")
+                        print(f"[MCP_DEBUG] [{_ts()}] 📊 Analyzing response structure for pagination detection...")
+                        print(f"[MCP_DEBUG] [{_ts()}] 📊 content_dict type: {type(content_dict)}, is list: {isinstance(content_dict, list)}")
                         
                         if isinstance(content_dict, list):
-                            print(f"[MCP_DEBUG] 📊 content_dict has {len(content_dict)} items")
+                            print(f"[MCP_DEBUG] [{_ts()}] 📊 content_dict has {len(content_dict)} items")
                             for idx, item in enumerate(content_dict):
-                                print(f"[MCP_DEBUG] 📊 Item {idx}: type={type(item)}, has 'text': {'text' in item if isinstance(item, dict) else 'N/A'}")
+                                print(f"[MCP_DEBUG] [{_ts()}] 📊 Item {idx}: type={type(item)}, has 'text': {'text' in item if isinstance(item, dict) else 'N/A'}")
                                 if isinstance(item, dict) and 'text' in item:
                                     try:
                                         text_content = item['text']
-                                        print(f"[MCP_DEBUG] 📊 Parsing JSON from text (length: {len(text_content)} chars)...")
+                                        print(f"[MCP_DEBUG] [{_ts()}] 📊 Parsing JSON from text (length: {len(text_content)} chars)...")
                                         data = json.loads(text_content)
-                                        print(f"[MCP_DEBUG] 📊 Parsed JSON keys: {list(data.keys())}")
+                                        print(f"[MCP_DEBUG] [{_ts()}] 📊 Parsed JSON keys: {list(data.keys())}")
                                         
                                         query_id = data.get('query-id')
                                         
@@ -1086,32 +1091,32 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                             if field in data and isinstance(data[field], list):
                                                 data_field = field
                                                 first_page_data = data[field]
-                                                print(f"[MCP_DEBUG] 📄 Page 1: Retrieved {len(first_page_data)} {field}")
-                                                print(f"[MCP_DEBUG] 📄 First response has query-id: {query_id is not None}, total: {offset_total}, from: {offset_from}, to: {offset_to}")
+                                                print(f"[MCP_DEBUG] [{_ts()}] 📄 Page 1: Retrieved {len(first_page_data)} {field}")
+                                                print(f"[MCP_DEBUG] [{_ts()}] 📄 First response has query-id: {query_id is not None}, total: {offset_total}, from: {offset_from}, to: {offset_to}")
                                                 
                                                 if query_id:
-                                                    print(f"[MCP_DEBUG] 📄 Detected query-id pagination")
+                                                    print(f"[MCP_DEBUG] [{_ts()}] 📄 Detected query-id pagination")
                                                 elif offset_total and offset_to:
-                                                    print(f"[MCP_DEBUG] 📄 Detected offset pagination (total: {offset_total}, from: {offset_from}, to: {offset_to})")
+                                                    print(f"[MCP_DEBUG] [{_ts()}] 📄 Detected offset pagination (total: {offset_total}, from: {offset_from}, to: {offset_to})")
                                                 break
                                         
                                         if data_field:
                                             break
                                     except Exception as parse_error:
-                                        print(f"[MCP_DEBUG] ⚠️ JSON parse error for item {idx}: {parse_error}")
+                                        print(f"[MCP_DEBUG] [{_ts()}] ⚠️ JSON parse error for item {idx}: {parse_error}")
                                         import traceback
-                                        print(f"[MCP_DEBUG] ⚠️ Traceback: {traceback.format_exc()}")
+                                        print(f"[MCP_DEBUG] [{_ts()}] ⚠️ Traceback: {traceback.format_exc()}")
                         
                         # QUERY-ID BASED PAGINATION (logs, threat logs)
                         if query_id and data_field and len(first_page_data) >= 100:
-                            print(f"[MCP_DEBUG] 📄 Starting pagination for {tool.name} (max {MAX_PAGES} pages)")
+                            print(f"[MCP_DEBUG] [{_ts()}] 📄 Starting pagination for {tool.name} (max {MAX_PAGES} pages)")
                             all_data.extend(first_page_data)
                             current_page_data = first_page_data
                             
                             # Continue pagination while we have query-id and full pages
                             while query_id and len(current_page_data) >= 100 and page_count < MAX_PAGES:
                                 page_count += 1
-                                print(f"[MCP_DEBUG] 📄 Fetching page {page_count} using query-id...")
+                                print(f"[MCP_DEBUG] [{_ts()}] 📄 Fetching page {page_count} using query-id...")
                                 
                                 # Next request with only query-id
                                 pagination_args = {"query-id": query_id}
@@ -1128,7 +1133,7 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                                 if data_field in data:
                                                     current_page_data = data[data_field]
                                                     query_id = data.get('query-id')  # Update for next page
-                                                    print(f"[MCP_DEBUG] 📄 Page {page_count}: Retrieved {len(current_page_data)} {data_field}")
+                                                    print(f"[MCP_DEBUG] [{_ts()}] 📄 Page {page_count}: Retrieved {len(current_page_data)} {data_field}")
                                                     break
                                             except:
                                                 pass
@@ -1137,7 +1142,7 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             
                             # Build aggregated response
                             total_items = len(all_data)
-                            print(f"[MCP_DEBUG] 📄 ✓ Pagination complete: {total_items} total {data_field} across {page_count} pages")
+                            print(f"[MCP_DEBUG] [{_ts()}] 📄 ✓ Pagination complete: {total_items} total {data_field} across {page_count} pages")
                             
                             aggregated_response = {
                                 data_field: all_data,
@@ -1156,9 +1161,9 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         
                         # OFFSET-BASED PAGINATION (objects, gateways, etc.)
                         elif offset_total and offset_to and data_field and offset_total > offset_to:
-                            print(f"[MCP_DEBUG] 📄 Starting offset pagination for {tool.name} (total: {offset_total})")
-                            print(f"[MCP_DEBUG] 📄 Base args type: {type(args)}, content: {args}")
-                            print(f"[MCP_DEBUG] 📄 Args contains {len(args)} parameters: {list(args.keys()) if isinstance(args, dict) else 'NOT A DICT!'}")
+                            print(f"[MCP_DEBUG] [{_ts()}] 📄 Starting offset pagination for {tool.name} (total: {offset_total})")
+                            print(f"[MCP_DEBUG] [{_ts()}] 📄 Base args type: {type(args)}, content: {args}")
+                            print(f"[MCP_DEBUG] [{_ts()}] 📄 Args contains {len(args)} parameters: {list(args.keys()) if isinstance(args, dict) else 'NOT A DICT!'}")
                             
                             # Store base args before pagination (defensive copy)
                             base_args = dict(args) if isinstance(args, dict) else {}
@@ -1168,11 +1173,11 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             # Continue fetching while there's more data
                             while current_offset < offset_total and page_count < MAX_PAGES:
                                 page_count += 1
-                                print(f"[MCP_DEBUG] 📄 Fetching page {page_count} with offset {current_offset}...")
+                                print(f"[MCP_DEBUG] [{_ts()}] 📄 Fetching page {page_count} with offset {current_offset}...")
                                 
                                 # CRITICAL: Merge base args with pagination params
                                 page_args = {**base_args, "offset": current_offset, "limit": 100}
-                                print(f"[MCP_DEBUG] 📄 Page {page_count} merged args ({len(page_args)} params): {page_args}")
+                                print(f"[MCP_DEBUG] [{_ts()}] 📄 Page {page_count} merged args ({len(page_args)} params): {page_args}")
                                 
                                 page_result = await call_tool_with_retry(session, tool.name, arguments=page_args)
                                 page_dict = convert_to_dict(page_result.content)
@@ -1187,20 +1192,20 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                                 if data_field in data:
                                                     page_data = data[data_field]
                                                     current_offset = data.get('to', current_offset + len(page_data))
-                                                    print(f"[MCP_DEBUG] 📄 Page {page_count}: Retrieved {len(page_data)} {data_field} (offset now: {current_offset})")
+                                                    print(f"[MCP_DEBUG] [{_ts()}] 📄 Page {page_count}: Retrieved {len(page_data)} {data_field} (offset now: {current_offset})")
                                                     break
                                             except:
                                                 pass
                                 
                                 if not page_data:
-                                    print(f"[MCP_DEBUG] 📄 No more data returned, stopping pagination")
+                                    print(f"[MCP_DEBUG] [{_ts()}] 📄 No more data returned, stopping pagination")
                                     break
                                 
                                 all_data.extend(page_data)
                             
                             # Build aggregated response
                             total_items = len(all_data)
-                            print(f"[MCP_DEBUG] 📄 ✓ Offset pagination complete: {total_items} total {data_field} across {page_count} pages")
+                            print(f"[MCP_DEBUG] [{_ts()}] 📄 ✓ Offset pagination complete: {total_items} total {data_field} across {page_count} pages")
                             
                             aggregated_response = {
                                 data_field: all_data,
@@ -1221,16 +1226,16 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         else:
                             # No pagination needed or detected - use original response
                             if query_id and data_field:
-                                print(f"[MCP_DEBUG] 📄 Partial page ({len(first_page_data)} {data_field}) - no pagination needed")
+                                print(f"[MCP_DEBUG] [{_ts()}] 📄 Partial page ({len(first_page_data)} {data_field}) - no pagination needed")
                             elif offset_total and offset_to and data_field:
-                                print(f"[MCP_DEBUG] 📄 All data retrieved ({offset_to} of {offset_total} {data_field}) - no pagination needed")
-                            print(f"[MCP_DEBUG] ✓ Tool {tool.name} returned successfully")
-                            print(f"[MCP_DEBUG] Result type: {type(tool_result.content)}")
+                                print(f"[MCP_DEBUG] [{_ts()}] 📄 All data retrieved ({offset_to} of {offset_total} {data_field}) - no pagination needed")
+                            print(f"[MCP_DEBUG] [{_ts()}] ✓ Tool {tool.name} returned successfully")
+                            print(f"[MCP_DEBUG] [{_ts()}] Result type: {type(tool_result.content)}")
                             
                             # Convert MCP objects to JSON-serializable dictionaries
                             content_serializable = content_dict
                             content_serializable = clean_uuids_from_data(content_serializable)
-                            print(f"[MCP_DEBUG] ✓ Converted result to JSON-serializable format")
+                            print(f"[MCP_DEBUG] [{_ts()}] ✓ Converted result to JSON-serializable format")
                         
                         # Check if result contains CheckPoint API errors
                         has_api_error = False
@@ -1247,7 +1252,7 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                             api_error_msg = text.split('message:')[-1].strip().strip("'}")
                                         else:
                                             api_error_msg = text
-                                        print(f"[MCP_DEBUG] ⚠️ CheckPoint API error detected: {api_error_msg}")
+                                        print(f"[MCP_DEBUG] [{_ts()}] ⚠️ CheckPoint API error detected: {api_error_msg}")
                         
                         # Combine MCP server's isError flag with our API error detection
                         # Use OR logic: error if either the tool says so OR we detected an API error
@@ -1264,9 +1269,9 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         })
                     except Exception as e:
                         error_msg = str(e)
-                        print(f"[MCP_DEBUG] ✗ Error calling tool {tool.name}: {type(e).__name__}: {error_msg}")
+                        print(f"[MCP_DEBUG] [{_ts()}] ✗ Error calling tool {tool.name}: {type(e).__name__}: {error_msg}")
                         import traceback
-                        print(f"[MCP_DEBUG] Traceback:\n{traceback.format_exc()}")
+                        print(f"[MCP_DEBUG] [{_ts()}] Traceback:\n{traceback.format_exc()}")
                         
                         # Categorize error type for better handling
                         error_category = "unknown"
@@ -1287,20 +1292,20 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                 
                 # If no tools, try resources
                 if not results["tool_results"]:
-                    print(f"[MCP_DEBUG] No tool results available, trying resources...")
+                    print(f"[MCP_DEBUG] [{_ts()}] No tool results available, trying resources...")
                     try:
                         resources_result = await session.list_resources()
-                        print(f"[MCP_DEBUG] ✓ Received {len(resources_result.resources)} resources from server")
+                        print(f"[MCP_DEBUG] [{_ts()}] ✓ Received {len(resources_result.resources)} resources from server")
                         results["data_type"] = "resources"
                         results["resources"] = []
                         
                         for idx, resource in enumerate(resources_result.resources[:5]):
                             try:
-                                print(f"[MCP_DEBUG] Reading resource {idx+1}/5: {resource.uri}")
+                                print(f"[MCP_DEBUG] [{_ts()}] Reading resource {idx+1}/5: {resource.uri}")
                                 resource_data = await session.read_resource(resource.uri)
                                 # Convert MCP objects to JSON-serializable dictionaries
                                 contents_serializable = convert_to_dict(resource_data.contents)
-                                print(f"[MCP_DEBUG] ✓ Resource read successfully")
+                                print(f"[MCP_DEBUG] [{_ts()}] ✓ Resource read successfully")
                                 
                                 results["resources"].append({
                                     "uri": resource.uri,
@@ -1308,26 +1313,26 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                     "contents": contents_serializable
                                 })
                             except Exception as e:
-                                print(f"[MCP_DEBUG] ✗ Error reading resource {resource.uri}: {type(e).__name__}: {e}")
+                                print(f"[MCP_DEBUG] [{_ts()}] ✗ Error reading resource {resource.uri}: {type(e).__name__}: {e}")
                     except Exception as e:
-                        print(f"[MCP_DEBUG] ✗ Error listing resources: {type(e).__name__}: {e}")
+                        print(f"[MCP_DEBUG] [{_ts()}] ✗ Error listing resources: {type(e).__name__}: {e}")
                 
-                print(f"[MCP_DEBUG] ✓ Query completed successfully")
-                print(f"[MCP_DEBUG] Total tool results: {len(results.get('tool_results', []))}")
-                print(f"[MCP_DEBUG] Total resources: {len(results.get('resources', []))}")
-                print(f"[MCP_DEBUG] ========== MCP Query Complete ==========\n")
+                print(f"[MCP_DEBUG] [{_ts()}] ✓ Query completed successfully")
+                print(f"[MCP_DEBUG] [{_ts()}] Total tool results: {len(results.get('tool_results', []))}")
+                print(f"[MCP_DEBUG] [{_ts()}] Total resources: {len(results.get('resources', []))}")
+                print(f"[MCP_DEBUG] [{_ts()}] ========== MCP Query Complete ==========\n")
                 
                 return results
                 
     except Exception as e:
         print(f"\n[MCP_DEBUG] ✗✗✗ FATAL ERROR in MCP Query ✗✗✗")
-        print(f"[MCP_DEBUG] Package: {package_name}")
-        print(f"[MCP_DEBUG] Error type: {type(e).__name__}")
-        print(f"[MCP_DEBUG] Error message: {e}")
+        print(f"[MCP_DEBUG] [{_ts()}] Package: {package_name}")
+        print(f"[MCP_DEBUG] [{_ts()}] Error type: {type(e).__name__}")
+        print(f"[MCP_DEBUG] [{_ts()}] Error message: {e}")
         import traceback
-        print(f"[MCP_DEBUG] Full traceback:")
+        print(f"[MCP_DEBUG] [{_ts()}] Full traceback:")
         traceback.print_exc()
-        print(f"[MCP_DEBUG] ========== MCP Query Failed ==========\n")
+        print(f"[MCP_DEBUG] [{_ts()}] ========== MCP Query Failed ==========\n")
         return {"error": str(e), "package": package_name}
 
 def query_mcp_server(package_name: str, env_vars: Dict[str, str], 
