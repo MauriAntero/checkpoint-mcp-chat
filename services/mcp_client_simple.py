@@ -777,9 +777,16 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         elif any(pattern in search_text for pattern in ['last hour', 'past hour', 'last 60 min']):
                             time_frame = "last-hour"
                         
-                        # Log type detection (CheckPoint schema: 'logs' for connection/traffic, 'audit' for audit)
+                        # Log type detection (Check Point schema: 'logs' for connection/traffic, 'audit' for audit)
                         if tool.name == 'show_logs':
                             log_type = "audit" if 'audit' in search_text else "logs"
+                            
+                        # Generic traffic/connection logs are verbose - reduce page size
+                        # Check if this is a generic traffic query (no specific blade filter)
+                        if tool.name == 'show_logs' and any(kw in search_text for kw in ['traffic', 'connection']):
+                            if not any(kw in search_text for kw in ['vpn', 'threat', 'https', 'ssl', 'tls', 'ips', 'malware']):
+                                # Generic traffic query - reduce max_logs
+                                max_logs = 50
                         
                         # Blade filter detection for security blade-specific logs
                         # CheckPoint Threat Prevention includes multiple security blades
@@ -1119,8 +1126,9 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         first_page_data = []
                         all_data = []
                         page_count = 1
-                        # VPN logs are extremely verbose (~1000+ tokens per log) - limit pagination
-                        MAX_PAGES = 3 if args.get('_vpn_query') else 10  # Limit to prevent excessive queries
+                        # Connection/traffic logs are verbose (~800-1000 tokens per log) - limit pagination
+                        # VPN logs: 3 pages max (150 logs), Generic traffic logs: 5 pages max (500 logs)
+                        MAX_PAGES = 3 if args.get('_vpn_query') else 5  # Reduced from 10 to prevent excessive queries
                         
                         # Parse first response and detect structure
                         print(f"[MCP_DEBUG] [{_ts()}] 📊 Analyzing response structure for pagination detection...")
