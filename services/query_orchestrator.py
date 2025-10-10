@@ -1080,6 +1080,7 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         }
         
         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] _filter_log_fields: Starting log field filtering...")
+        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] data_collected has {len(data_collected)} servers: {list(data_collected.keys())}")
         filtered_data = {}
         total_logs_filtered = 0
         
@@ -1087,6 +1088,8 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             if not isinstance(server_data, dict):
                 filtered_data[server_name] = server_data
                 continue
+            
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Server '{server_name}' has keys: {list(server_data.keys())}")
                 
             filtered_server_data = {}
             
