@@ -627,6 +627,44 @@ Technical Execution Plan:"""
         # Apply session context to data_to_fetch (inject cached gateway if applicable)
         data_to_fetch = self._apply_session_context(plan.get("data_to_fetch", []), query_text)
         
+        # Check for run_script commands if executor is enabled
+        if self.gateway_script_executor:
+            run_script_commands = [item for item in data_to_fetch if isinstance(item, str) and item.startswith("run_script:")]
+            if run_script_commands:
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Found {len(run_script_commands)} run_script commands - using Gateway Script Executor")
+                
+                # Extract gateway name from plan or session context
+                gateway_name = self._extract_gateway_from_plan(plan) or self.session_context.get("cached_gateway_name")
+                
+                if not gateway_name:
+                    results["errors"].append("Gateway Script Executor: No gateway name specified. Please specify a gateway in your query.")
+                else:
+                    # Execute each run_script command
+                    for cmd_item in run_script_commands:
+                        command = cmd_item.replace("run_script:", "").strip()
+                        print(f"[QueryOrchestrator] Executing via executor: '{command}' on gateway '{gateway_name}'")
+                        
+                        exec_result = self.gateway_script_executor.execute_command(gateway_name, command)
+                        
+                        if exec_result['success']:
+                            if 'gateway_script_executor' not in results["data_collected"]:
+                                results["data_collected"]['gateway_script_executor'] = []
+                            results["data_collected"]['gateway_script_executor'].append({
+                                'command': command,
+                                'output': exec_result['output'],
+                                'gateway': gateway_name
+                            })
+                            results["servers_queried"].append("gateway-script-executor")
+                        else:
+                            results["errors"].append(f"Gateway Script Executor: {exec_result['error']}")
+                
+                # Remove run_script items from data_to_fetch so they're not sent to regular MCP servers
+                data_to_fetch = [item for item in data_to_fetch if not (isinstance(item, str) and item.startswith("run_script:"))]
+                
+                # If all commands were run_script and none remain, we can skip MCP server queries
+                if not data_to_fetch and not required_servers:
+                    return results
+        
         # PARALLEL EXECUTION: Query all required servers simultaneously
         import asyncio
         

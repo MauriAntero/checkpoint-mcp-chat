@@ -339,35 +339,45 @@ class GatewayScriptExecutor:
 
 # LLM System Prompt Addition
 GATEWAY_EXECUTOR_LLM_PROMPT = """
-## Gateway Script Executor - Safe Command Execution
+## ⚡ Gateway Script Executor - ENABLED
 
-You can execute diagnostic commands on Check Point gateways using the gateway_script_executor tool.
+**IMPORTANT: For gateway diagnostic queries, use quantum-management's run-script tool instead of quantum-gw-cli or quantum-gaia.**
 
-**STRICT RULES:**
-1. You can ONLY suggest commands from this whitelist (see docs/GATEWAY_SAFE_COMMANDS_LIST.txt)
-2. NEVER suggest commands that:
-   - Stop, kill, or restart processes (cpstop, cpstart, kill, etc.)
-   - Modify files or configurations (set, add, delete, commit, etc.)
-   - Change permissions (chmod, chown, etc.)
-   - Affect firewall rules (fw unload, fw load, etc.)
-   - Open interactive shells (vpn shell, cpview, top without -n 1, etc.)
-   - Use command chaining (pipes |, redirects >, command substitution $())
+**How It Works:**
+1. User asks gateway diagnostic question (version, status, performance, etc.)
+2. You include in required_servers: ["quantum-management"]
+3. In data_to_fetch, specify: "run_script:<safe_command>"
+4. System validates command → Executes via run-script → Returns output
 
-3. If investigation requires unsafe operations, EXPLAIN what should be done manually but DO NOT provide the command
+**Command Format in data_to_fetch:**
+- "run_script:fw ver" - Get gateway version
+- "run_script:cphaprob state" - Check cluster status  
+- "run_script:fw stat" - Firewall statistics
+- "run_script:ifconfig" - Network interfaces
+- "run_script:vpn tu tlist" - VPN tunnels
+- "run_script:cpstat os -f all" - System performance
 
-**Safe Command Examples:**
-- `show version all` - System version info
-- `fw stat` - Firewall status
-- `cphaprob state` - Cluster state
-- `top -n 1` - Process snapshot
-- `vpn tu tlist` - VPN tunnels
-- `cpstat os -f all` - Complete system view
+**STRICT COMMAND RULES:**
+✅ ONLY use these safe commands:
+- System: show version, fw ver, uptime, hostname, date
+- Network: ifconfig, netstat -rn, arp -a
+- Firewall: fw stat, fw ctl pstat, fwaccel stat
+- Cluster: cphaprob state, cphaprob -a if
+- VPN: vpn tu tlist
+- Performance: top -n 1, ps aux, cpstat os -f all
+- Logs: fw log, cat $FWDIR/log/fw.elg
 
-**How to Use:**
-1. User asks: "What's the gateway version?"
-2. You suggest: `fw ver` or `show version all`
-3. System validates → Executes → Returns output
-4. You analyze output and respond to user
+🚫 NEVER suggest:
+- cpstop, cpstart, kill, rm, chmod, fw unloadlocal
+- Any interactive shells, pipes, redirects
 
-All commands are automatically validated. If blocked, you'll receive an error message.
+**Example Execution Plan:**
+User: "Show gateway version"
+{
+  "required_servers": ["quantum-management"],
+  "data_to_fetch": ["run_script:fw ver", "run_script:show version all"],
+  "analysis_type": "gateway_diagnostics"
+}
+
+**Use quantum-management run-script for ALL gateway diagnostic commands!**
 """

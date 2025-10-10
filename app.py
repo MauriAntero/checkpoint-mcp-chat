@@ -811,10 +811,14 @@ def show_chat_interface():
             if enable_executor != script_executor_enabled:
                 config_data['enable_gateway_script_executor'] = enable_executor
                 if st.session_state.file_manager.save_config(config_data):
+                    # Clear orchestrator so it reinitializes with new executor setting
+                    if 'query_orchestrator' in st.session_state:
+                        del st.session_state.query_orchestrator
+                    
                     if enable_executor:
-                        st.success("✓ Gateway Script Executor enabled")
+                        st.success("✓ Gateway Script Executor enabled - App will reinitialize")
                     else:
-                        st.info("Gateway Script Executor disabled")
+                        st.info("Gateway Script Executor disabled - App will reinitialize")
                     st.rerun()
             
             # Show configuration instructions if enabled
