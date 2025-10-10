@@ -751,7 +751,9 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         log_type = None
                         max_logs = 70  # With log field filtering: 10 pages × 70 logs = 700 logs (175K tokens)
                         
-                        search_text = f"{user_query} {' '.join(data_points)}".lower()
+                        # Build search text from user_query and string data_points only (skip dicts)
+                        string_data_points = [str(dp) for dp in data_points if isinstance(dp, str)]
+                        search_text = f"{user_query} {' '.join(string_data_points)}".lower()
                         
                         # Time-frame detection (CheckPoint schema: last-7-days, last-hour, today, last-24-hours, 
                         # yesterday, this-week, this-month, last-30-days, all-time, custom)
