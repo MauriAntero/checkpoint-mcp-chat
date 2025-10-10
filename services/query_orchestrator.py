@@ -143,20 +143,29 @@ class QueryOrchestrator:
         """
         import re
         
-        # Common gateway name patterns
+        # Time-related words to exclude from gateway extraction
+        excluded_words = {
+            'last', 'this', 'today', 'yesterday', 'week', 'month', 'hour', 
+            'day', 'year', 'past', 'recent', 'current', 'previous', 'next',
+            'all', 'any', 'some', 'every', 'each'
+        }
+        
+        # Gateway name patterns (ordered by specificity - most specific first)
         patterns = [
-            r'\bfrom\s+([a-zA-Z0-9_-]+(?:-gw|-fw|-gateway)?)\b',  # "from cp-gw"
+            r'\b([a-zA-Z0-9_-]+?-(?:gw|fw|gateway|firewall))\b',   # "main-gw", "edge-fw" (specific suffixes)
+            r'\b(cp-[a-zA-Z0-9_-]+)\b',                            # "cp-gw", "cp-fw-1" (cp- prefix)
             r'\bon\s+([a-zA-Z0-9_-]+(?:-gw|-fw|-gateway)?)\b',    # "on cp-gw"
-            r'\b(cp-[a-zA-Z0-9_-]+)\b',                            # "cp-gw", "cp-fw-1"
-            r'\b([a-zA-Z0-9_-]+?-(?:gw|fw|gateway|firewall))\b'   # "main-gw", "edge-fw"
+            r'\bfrom\s+([a-zA-Z0-9_-]+(?:-gw|-fw|-gateway)?)\b',  # "from cp-gw"
         ]
         
         for pattern in patterns:
             match = re.search(pattern, user_query, re.IGNORECASE)
             if match:
                 gateway_name = match.group(1)
-                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Extracted gateway name: '{gateway_name}'")
-                return gateway_name
+                # Exclude time-related words
+                if gateway_name.lower() not in excluded_words:
+                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Extracted gateway name: '{gateway_name}'")
+                    return gateway_name
         
         return None
     
