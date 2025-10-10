@@ -751,6 +751,33 @@ def show_chat_interface():
             
             st.markdown("---")
             
+            # Gateway Credential Sharing
+            st.markdown("### Gateway Credential Sharing")
+            st.caption("Automatically share SSH credentials with discovered gateways in the same management domain")
+            
+            # Load current consent setting
+            config_data = st.session_state.file_manager.load_config() or {}
+            current_consent = config_data.get('auto_share_gateway_credentials', False)
+            
+            consent_enabled = st.checkbox(
+                "Enable automatic gateway credential sharing",
+                value=current_consent,
+                help="When enabled, SSH credentials from configured gateways will automatically be shared with other gateways discovered from the management server",
+                key="auto_share_gateway_credentials"
+            )
+            
+            # Save consent setting if changed
+            if consent_enabled != current_consent:
+                config_data['auto_share_gateway_credentials'] = consent_enabled
+                if st.session_state.file_manager.save_config(config_data):
+                    if consent_enabled:
+                        st.success("✓ Gateway credential sharing enabled")
+                    else:
+                        st.info("Gateway credential sharing disabled")
+                    st.rerun()
+            
+            st.markdown("---")
+            
             # Check Point MCP Server Configuration
             st.markdown("### Check Point MCP Servers")
             

@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
+from services.gateway_directory import GatewayDirectory
 
 @dataclass
 class MCPServerCapability:
@@ -124,6 +125,9 @@ class QueryOrchestrator:
         self.ollama_client = ollama_client
         self.openrouter_client = openrouter_client
         self.mcp_manager = mcp_manager
+        
+        # Gateway directory for credential sharing
+        self.gateway_directory = GatewayDirectory()
         
         # Session context for conversational caching
         self.session_context = {
@@ -280,6 +284,40 @@ class QueryOrchestrator:
                 data_to_fetch.append(f"gateway_identifier:{cached_gateway}")
         
         return data_to_fetch
+    
+    def _update_gateway_directory_from_results(self, tool_results: List[Dict[str, Any]]):
+        """Update gateway directory cache when gateways are discovered from management API
+        
+        Args:
+            tool_results: Tool results from quantum-management MCP server
+        """
+        for tool_result in tool_results:
+            tool_name = tool_result.get('tool', '')
+            
+            # Check if this is a gateway discovery tool
+            if 'show_gateways_and_servers' not in tool_name:
+                continue
+            
+            # Extract gateway data from result
+            result = tool_result.get('result', {})
+            if result.get('isError'):
+                continue
+            
+            content = result.get('content', [])
+            for item in content:
+                if isinstance(item, dict) and item.get('type') == 'text':
+                    try:
+                        # Parse JSON response
+                        data = json.loads(item.get('text', '{}'))
+                        
+                        # Check for 'objects' array (Check Point API response format)
+                        gateways = data.get('objects', [])
+                        if gateways and isinstance(gateways, list):
+                            self.gateway_directory.update_from_management_api(gateways)
+                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Updated gateway directory with {len(gateways)} gateways")
+                            break
+                    except json.JSONDecodeError:
+                        pass
     
     def analyze_user_intent(self, user_query: str, planner_model: Optional[str] = None) -> Dict[str, Any]:
         """Stage 1: Analyze user intent to understand what they want
@@ -692,6 +730,10 @@ Technical Execution Plan:"""
                     server_data["api_errors"] = api_errors
                 
                 results["data_collected"][server_name] = server_data
+                
+                # Update gateway directory if gateways discovered from quantum-management
+                if server_name == 'quantum-management':
+                    self._update_gateway_directory_from_results(tool_results)
         
         return results
     
@@ -722,6 +764,47 @@ Technical Execution Plan:"""
         # Get environment variables for authentication
         # Credentials are decrypted and populated in 'env' field by MCP manager
         env_vars = server_config.get('env', {})
+        
+        # AUTOMATIC GATEWAY CREDENTIAL SHARING
+        # If querying quantum-gw-cli and SSH credentials missing, try to clone from configured gateway
+        if server_name == 'quantum-gw-cli' and not env_vars.get('SSH_USERNAME'):
+            # Check if admin consented to credential sharing
+            import json
+            from pathlib import Path
+            config_file = Path('./config/app_config.json')
+            consent_enabled = False
+            if config_file.exists():
+                try:
+                    with open(config_file, 'r') as f:
+                        config = json.load(f)
+                        consent_enabled = config.get('auto_share_gateway_credentials', False)
+                except:
+                    pass
+            
+            if consent_enabled:
+                # Extract gateway name from data_points
+                gateway_name = None
+                for dp in data_points:
+                    if isinstance(dp, str) and ('gateway_identifier:' in dp or 'gateway:' in dp):
+                        gateway_name = dp.split(':', 1)[1]
+                        break
+                
+                if gateway_name:
+                    # Get gateway IP from directory
+                    gateway_ip = self.gateway_directory.get_gateway_ip(gateway_name)
+                    
+                    if gateway_ip:
+                        # Find ANY configured quantum-gw-cli with SSH credentials
+                        for srv_name, srv_config in servers.items():
+                            if srv_config.get('package') == '@chkp/quantum-gw-cli-mcp':
+                                srv_env = srv_config.get('env', {})
+                                if srv_env.get('SSH_USERNAME') and srv_env.get('SSH_PASSWORD'):
+                                    # Clone SSH credentials and override GATEWAY_HOST
+                                    env_vars['SSH_USERNAME'] = srv_env['SSH_USERNAME']
+                                    env_vars['SSH_PASSWORD'] = srv_env['SSH_PASSWORD']
+                                    env_vars['GATEWAY_HOST'] = gateway_ip
+                                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ✓ Auto-shared SSH credentials for gateway '{gateway_name}' ({gateway_ip}) from '{srv_name}'")
+                                    break
         
         # CRITICAL FIX: quantum-gw-cli needs BOTH gateway SSH + management server credentials
         # Copy management credentials from quantum-management if querying quantum-gw-cli
