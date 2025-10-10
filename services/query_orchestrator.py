@@ -808,11 +808,55 @@ Technical Execution Plan:"""
         
         # AUTO-PASS GAIA WEB CREDENTIALS (same as SSH)
         # quantum-gaia MCP connects to GAIA web API which uses same credentials as SSH
-        if server_name == 'quantum-gaia' and env_vars.get('SSH_USERNAME') and env_vars.get('SSH_PASSWORD'):
-            # GAIA web API uses SSH credentials
-            env_vars['GAIA_USERNAME'] = env_vars['SSH_USERNAME']
-            env_vars['GAIA_PASSWORD'] = env_vars['SSH_PASSWORD']
-            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ✓ Auto-passed SSH credentials to GAIA web API (username: {env_vars['SSH_USERNAME']})")
+        if server_name == 'quantum-gaia':
+            # If SSH credentials already configured, pass them to GAIA
+            if env_vars.get('SSH_USERNAME') and env_vars.get('SSH_PASSWORD'):
+                env_vars['GAIA_USERNAME'] = env_vars['SSH_USERNAME']
+                env_vars['GAIA_PASSWORD'] = env_vars['SSH_PASSWORD']
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ✓ Auto-passed SSH credentials to GAIA web API (username: {env_vars['SSH_USERNAME']})")
+            
+            # If no SSH credentials, try credential sharing (same logic as quantum-gw-cli)
+            elif not env_vars.get('SSH_USERNAME'):
+                # Check if admin consented to credential sharing
+                import json
+                from pathlib import Path
+                config_file = Path('./config/app_config.json')
+                consent_enabled = False
+                if config_file.exists():
+                    try:
+                        with open(config_file, 'r') as f:
+                            config = json.load(f)
+                            consent_enabled = config.get('auto_share_gateway_credentials', False)
+                    except:
+                        pass
+                
+                if consent_enabled:
+                    # Extract gateway name from data_points
+                    gateway_name = None
+                    for dp in data_points:
+                        if isinstance(dp, str) and ('gateway_identifier:' in dp or 'gateway:' in dp):
+                            gateway_name = dp.split(':', 1)[1]
+                            break
+                    
+                    if gateway_name:
+                        # Get gateway IP from directory
+                        gateway_ip = self.gateway_directory.get_gateway_ip(gateway_name)
+                        
+                        if gateway_ip:
+                            # Find ANY configured gateway with SSH credentials
+                            for srv_name, srv_config in servers.items():
+                                if srv_config.get('package') in ['@chkp/quantum-gw-cli-mcp', '@chkp/quantum-gaia-mcp']:
+                                    srv_env = srv_config.get('env', {})
+                                    if srv_env.get('SSH_USERNAME') and srv_env.get('SSH_PASSWORD'):
+                                        # Clone SSH credentials and override GATEWAY_HOST
+                                        env_vars['SSH_USERNAME'] = srv_env['SSH_USERNAME']
+                                        env_vars['SSH_PASSWORD'] = srv_env['SSH_PASSWORD']
+                                        env_vars['GATEWAY_HOST'] = gateway_ip
+                                        # Also set GAIA credentials
+                                        env_vars['GAIA_USERNAME'] = srv_env['SSH_USERNAME']
+                                        env_vars['GAIA_PASSWORD'] = srv_env['SSH_PASSWORD']
+                                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ✓ Auto-shared SSH credentials for GAIA on gateway '{gateway_name}' ({gateway_ip}) from '{srv_name}'")
+                                        break
         
         # CRITICAL FIX: quantum-gw-cli needs BOTH gateway SSH + management server credentials
         # Copy management credentials from quantum-management if querying quantum-gw-cli
