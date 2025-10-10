@@ -8,7 +8,6 @@ and non-disruptive.
 
 Last Updated: October 10, 2025
 Source: Check Point R81/R82 CLI Reference Guide
-Security Status: Architect-Approved
 
 ================================================================================
 SAFETY GUARANTEES
