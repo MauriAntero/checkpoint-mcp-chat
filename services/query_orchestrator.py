@@ -766,8 +766,8 @@ Technical Execution Plan:"""
         env_vars = server_config.get('env', {})
         
         # AUTOMATIC GATEWAY CREDENTIAL SHARING
-        # If querying quantum-gw-cli and SSH credentials missing, try to clone from configured gateway
-        if server_name == 'quantum-gw-cli' and not env_vars.get('SSH_USERNAME'):
+        # If querying gateway-specific MCPs and SSH credentials missing, try to clone from configured gateway
+        if server_name in ['quantum-gw-cli', 'quantum-gw-connection-analysis'] and not env_vars.get('SSH_USERNAME'):
             # Check if admin consented to credential sharing
             import json
             from pathlib import Path
