@@ -55,17 +55,59 @@ async def call_tool_with_retry(
         try:
             result = await session.call_tool(tool_name, arguments=arguments)
             
-            # Check if response contains rate limit error (CheckPoint MCP servers embed errors in response)
-            # Be specific to avoid false positives from normal data containing similar substrings
-            result_str = str(result).lower()
-            is_rate_limit_in_response = (
-                'err_too_many_requests' in result_str or
-                'too many requests' in result_str or
-                ('rate' in result_str and 'limit' in result_str and 'exceeded' in result_str) or
-                ('code' in result_str and '429' in result_str) or
-                ('throttle' in result_str and 'request' in result_str) or
-                'quota exceeded' in result_str
-            )
+            # Check if response contains rate limit error (Check Point MCP servers embed errors in response)
+            # CRITICAL: Only check error/metadata fields, NOT data payloads to avoid false positives
+            is_rate_limit_in_response = False
+            result_str = str(result).lower()  # Initialize early for error messages
+            
+            # Try to parse response structure to check only error fields
+            try:
+                # Extract text content if it's an MCP response
+                if hasattr(result, 'content') and isinstance(result.content, list):
+                    for item in result.content:
+                        if isinstance(item, dict) and 'text' in item:
+                            text = item['text']
+                            try:
+                                data = json.loads(text)
+                                # Check ONLY error/message/status fields, NOT data arrays like "logs"
+                                error_fields = {
+                                    k: v for k, v in data.items() 
+                                    if k.lower() in ['error', 'message', 'errors', 'status', 'code', 'error_message']
+                                }
+                                if error_fields:
+                                    error_str = str(error_fields).lower()
+                                    is_rate_limit_in_response = (
+                                        'err_too_many_requests' in error_str or
+                                        'too many requests' in error_str or
+                                        'quota exceeded' in error_str or
+                                        '429' in error_str or
+                                        'rate limit exceeded' in error_str or
+                                        ('rate' in error_str and 'limit' in error_str)
+                                    )
+                                    if is_rate_limit_in_response:
+                                        break
+                            except json.JSONDecodeError:
+                                pass  # Not JSON, skip structured check
+            except Exception:
+                pass  # Fallback to string check if structured parsing fails
+            
+            # No structured rate limit found - check if this is a successful response with data
+            # If response has "logs" or "objects" array, it's valid data, not an error
+            if not is_rate_limit_in_response:
+                has_data = (
+                    '"logs":' in result_str or 
+                    '"objects":' in result_str or
+                    '"gateways":' in result_str
+                )
+                
+                # Only check for rate limits if no data arrays present (likely an error response)
+                if not has_data:
+                    is_rate_limit_in_response = (
+                        'err_too_many_requests' in result_str or
+                        'too many requests' in result_str or
+                        'quota exceeded' in result_str or
+                        'rate limit exceeded' in result_str
+                    )
             
             if is_rate_limit_in_response:
                 # Rate limit error embedded in response - treat as exception
