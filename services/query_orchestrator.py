@@ -437,7 +437,14 @@ CRITICAL RULES FOR MCP SERVER SELECTION:
 
 5. File paths: If file_path is provided from intent, MUST include it as the FIRST item in data_to_fetch array (this enables auto-parameter filling for threat-emulation tools)
 
-6. Return ONLY valid JSON, no other text
+6. Gateway Identification (CRITICAL for session caching):
+   - If user query mentions a specific gateway/firewall name (e.g., "cp-gw", "main-fw", "edge-gateway"), MUST include as first item in data_to_fetch: "gateway_identifier:<gateway-name>"
+   - Examples: "show logs from cp-gw" → data_to_fetch: ["gateway_identifier:cp-gw", ...]
+   - Examples: "traffic on main-fw" → data_to_fetch: ["gateway_identifier:main-fw", ...]
+   - This enables session context caching for follow-up queries
+   - Extract the actual gateway NAME from the query, not time expressions like "last" or "this"
+
+7. Return ONLY valid JSON, no other text
 
 Technical Execution Plan:"""
 
