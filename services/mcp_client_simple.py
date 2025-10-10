@@ -1148,28 +1148,39 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                         text_content = item['text']
                                         print(f"[MCP_DEBUG] [{_ts()}] 📊 Parsing JSON from text (length: {len(text_content)} chars)...")
                                         data = json.loads(text_content)
-                                        print(f"[MCP_DEBUG] [{_ts()}] 📊 Parsed JSON keys: {list(data.keys())}")
                                         
-                                        query_id = data.get('query-id')
+                                        # Handle both dict and list responses
+                                        if isinstance(data, dict):
+                                            print(f"[MCP_DEBUG] [{_ts()}] 📊 Parsed JSON keys: {list(data.keys())}")
+                                            
+                                            query_id = data.get('query-id')
+                                            
+                                            # Detect offset-based pagination (total/from/to fields)
+                                            offset_total = data.get('total')
+                                            offset_from = data.get('from')
+                                            offset_to = data.get('to')
+                                        else:
+                                            # Response is a list - no pagination support
+                                            print(f"[MCP_DEBUG] [{_ts()}] 📊 Parsed JSON is a list (length: {len(data) if isinstance(data, list) else 0}) - no pagination")
+                                            query_id = None
+                                            offset_total = None
+                                            offset_from = None
+                                            offset_to = None
                                         
-                                        # Detect offset-based pagination (total/from/to fields)
-                                        offset_total = data.get('total')
-                                        offset_from = data.get('from')
-                                        offset_to = data.get('to')
-                                        
-                                        # Detect data field: logs, objects, or other array fields
-                                        for field in ['logs', 'objects', 'gateways', 'servers', 'hosts', 'networks', 'services']:
-                                            if field in data and isinstance(data[field], list):
-                                                data_field = field
-                                                first_page_data = data[field]
-                                                print(f"[MCP_DEBUG] [{_ts()}] 📄 Page 1: Retrieved {len(first_page_data)} {field}")
-                                                print(f"[MCP_DEBUG] [{_ts()}] 📄 First response has query-id: {query_id is not None}, total: {offset_total}, from: {offset_from}, to: {offset_to}")
-                                                
-                                                if query_id:
-                                                    print(f"[MCP_DEBUG] [{_ts()}] 📄 Detected query-id pagination")
-                                                elif offset_total and offset_to:
-                                                    print(f"[MCP_DEBUG] [{_ts()}] 📄 Detected offset pagination (total: {offset_total}, from: {offset_from}, to: {offset_to})")
-                                                break
+                                        # Detect data field: logs, objects, or other array fields (only for dict responses)
+                                        if isinstance(data, dict):
+                                            for field in ['logs', 'objects', 'gateways', 'servers', 'hosts', 'networks', 'services']:
+                                                if field in data and isinstance(data[field], list):
+                                                    data_field = field
+                                                    first_page_data = data[field]
+                                                    print(f"[MCP_DEBUG] [{_ts()}] 📄 Page 1: Retrieved {len(first_page_data)} {field}")
+                                                    print(f"[MCP_DEBUG] [{_ts()}] 📄 First response has query-id: {query_id is not None}, total: {offset_total}, from: {offset_from}, to: {offset_to}")
+                                                    
+                                                    if query_id:
+                                                        print(f"[MCP_DEBUG] [{_ts()}] 📄 Detected query-id pagination")
+                                                    elif offset_total and offset_to:
+                                                        print(f"[MCP_DEBUG] [{_ts()}] 📄 Detected offset pagination (total: {offset_total}, from: {offset_from}, to: {offset_to})")
+                                                    break
                                         
                                         if data_field:
                                             break
