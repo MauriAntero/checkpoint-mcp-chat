@@ -1076,7 +1076,17 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             'site_name', 'resource', 'method', 'https_inspection_action',
             
             # Audit logs - CRITICAL
-            'administrator'
+            'administrator',
+            
+            # Object/Gateway metadata - CRITICAL for friendly names
+            # These provide name-to-IP mapping for readable analysis
+            'name',  # Friendly name (e.g., "HR-Server" instead of IP)
+            'ipv4-address', 'ipv6-address',  # IP addresses
+            'type',  # Object type (host, network, gateway, etc.)
+            'domain',  # Domain information
+            'comments',  # Descriptions/notes
+            'color', 'icon',  # Visual categorization
+            'uid'  # Unique identifier for cross-references
         }
         
         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] _filter_log_fields: Starting log field filtering...")
