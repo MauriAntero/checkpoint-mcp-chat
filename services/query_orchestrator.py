@@ -636,8 +636,35 @@ Technical Execution Plan:"""
                 # Extract gateway name from plan or session context
                 gateway_name = self._extract_gateway_from_plan(plan) or self.session_context.get("cached_gateway_name")
                 
+                # If no gateway specified AND quantum-management is active, query it first to discover gateways
+                if not gateway_name and 'quantum-management' in required_servers:
+                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] No gateway specified, discovering gateways from quantum-management...")
+                    # Quick query to discover gateways
+                    try:
+                        discover_result = self.mcp_manager.call_tool(
+                            'quantum-management',
+                            'show_gateways_and_servers',
+                            {}
+                        )
+                        if discover_result and 'content' in discover_result:
+                            for item in discover_result['content']:
+                                if item.get('type') == 'text':
+                                    import json
+                                    try:
+                                        gw_data = json.loads(item['text'])
+                                        if isinstance(gw_data, dict) and 'objects' in gw_data:
+                                            gateways = [obj['name'] for obj in gw_data['objects'] if obj.get('type') == 'simple-gateway']
+                                            if gateways:
+                                                gateway_name = gateways[0]
+                                                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Discovered and using gateway: {gateway_name}")
+                                                break
+                                    except:
+                                        pass
+                    except Exception as e:
+                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Gateway discovery failed: {e}")
+                
                 if not gateway_name:
-                    results["errors"].append("Gateway Script Executor: No gateway name specified. Please specify a gateway in your query.")
+                    results["errors"].append("Gateway Script Executor: No gateway specified. Please include gateway name in your query (e.g., 'Show version on cp-gw')")
                 else:
                     # Execute each run_script command
                     for cmd_item in run_script_commands:
