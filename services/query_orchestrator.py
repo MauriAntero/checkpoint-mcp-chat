@@ -124,6 +124,91 @@ class QueryOrchestrator:
         self.ollama_client = ollama_client
         self.openrouter_client = openrouter_client
         self.mcp_manager = mcp_manager
+        
+        # Session context for conversational caching
+        self.session_context = {
+            "last_gateway": None,
+            "last_query_time": None,
+            "session_timeout_minutes": 10
+        }
+    
+    def _extract_gateway_from_query(self, user_query: str) -> Optional[str]:
+        """Extract gateway name from user query using regex patterns
+        
+        Args:
+            user_query: User's natural language query
+            
+        Returns:
+            Gateway name if found, None otherwise
+        """
+        import re
+        
+        # Common gateway name patterns
+        patterns = [
+            r'\bfrom\s+([a-zA-Z0-9_-]+(?:-gw|-fw|-gateway)?)\b',  # "from cp-gw"
+            r'\bon\s+([a-zA-Z0-9_-]+(?:-gw|-fw|-gateway)?)\b',    # "on cp-gw"
+            r'\b(cp-[a-zA-Z0-9_-]+)\b',                            # "cp-gw", "cp-fw-1"
+            r'\b([a-zA-Z0-9_-]+?-(?:gw|fw|gateway|firewall))\b'   # "main-gw", "edge-fw"
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, user_query, re.IGNORECASE)
+            if match:
+                gateway_name = match.group(1)
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Extracted gateway name: '{gateway_name}'")
+                return gateway_name
+        
+        return None
+    
+    def _is_session_active(self) -> bool:
+        """Check if session context is still active (within timeout window)"""
+        if not self.session_context["last_query_time"]:
+            return False
+        
+        from datetime import timedelta
+        time_since_last_query = datetime.now() - self.session_context["last_query_time"]
+        timeout = timedelta(minutes=self.session_context["session_timeout_minutes"])
+        
+        return time_since_last_query < timeout
+    
+    def _update_session_context(self, user_query: str):
+        """Update session context with gateway name from current query"""
+        self.session_context["last_query_time"] = datetime.now()
+        
+        # Try to extract gateway name from query
+        gateway_name = self._extract_gateway_from_query(user_query)
+        if gateway_name:
+            self.session_context["last_gateway"] = gateway_name
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Session context updated: gateway='{gateway_name}'")
+    
+    def _apply_session_context(self, data_to_fetch: List[str], user_query: str) -> List[str]:
+        """Apply cached gateway name to data_to_fetch if no gateway specified in current query
+        
+        Args:
+            data_to_fetch: Original data points from plan
+            user_query: Current user query
+            
+        Returns:
+            Modified data_to_fetch with cached gateway if applicable
+        """
+        # Check if current query has gateway name
+        current_gateway = self._extract_gateway_from_query(user_query)
+        
+        # If query has explicit gateway, use it (already in data_to_fetch)
+        if current_gateway:
+            return data_to_fetch
+        
+        # Check if we have cached gateway and session is active
+        cached_gateway = self.session_context.get("last_gateway")
+        if cached_gateway and self._is_session_active():
+            # Check if data_to_fetch already has a gateway identifier
+            has_gateway = any("gateway_identifier:" in str(item) or "gateway:" in str(item) for item in data_to_fetch)
+            
+            if not has_gateway:
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Using cached gateway '{cached_gateway}' from session context")
+                data_to_fetch.append(f"gateway_identifier:{cached_gateway}")
+        
+        return data_to_fetch
     
     def analyze_user_intent(self, user_query: str, planner_model: Optional[str] = None) -> Dict[str, Any]:
         """Stage 1: Analyze user intent to understand what they want
@@ -377,6 +462,8 @@ Technical Execution Plan:"""
             if json_start >= 0 and json_end > json_start:
                 json_str = response[json_start:json_end]
                 plan = json.loads(json_str)
+                # CRITICAL: Inject user_query into plan for session context caching
+                plan['user_query'] = user_query
                 return plan
             else:
                 # Fallback: create basic plan
@@ -386,12 +473,13 @@ Technical Execution Plan:"""
             print(f"Response was: {response}")
             return self._create_fallback_plan(user_query)
     
-    def execute_plan(self, plan: Dict[str, Any], user_parameter_selections: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    def execute_plan(self, plan: Dict[str, Any], user_parameter_selections: Optional[Dict[str, str]] = None, user_query: Optional[str] = None) -> Dict[str, Any]:
         """Execute the plan by querying MCP servers and collecting data
         
         Args:
             plan: Execution plan from planner
             user_parameter_selections: User-selected values for ambiguous parameters
+            user_query: Original user query for session context (overrides plan['user_query'] if provided)
         """
         
         results = {
@@ -408,83 +496,137 @@ Technical Execution Plan:"""
         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] All configured servers: {list(all_servers.keys())}")
         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Required servers: {required_servers}")
         
-        # Query each required server
-        # The LLM returns server names (like "management-logs"), so match directly
-        user_query = plan.get("user_query", "")
-        for server_name in required_servers:
-            if server_name in all_servers:
-                # Query the server (will start its own process via MCP SDK)
-                server_data = self._query_mcp_server(server_name, plan.get("data_to_fetch", []), user_parameter_selections, user_query)
-                if server_data:
-                    # Check if server needs user input for parameters
-                    if server_data.get("needs_user_input"):
-                        return {
-                            "needs_user_input": True,
-                            "parameter_options": server_data.get("parameter_options", {}),
-                            "plan_summary": plan.get("understanding", ""),
-                            "servers_queried": results["servers_queried"]
-                        }
-                    
-                    results["servers_queried"].append(server_name)
-                    
-                    # Check for API errors in tool results
-                    tool_results = server_data.get("tool_results", [])
-                    api_errors = []
-                    successful_tools = []
-                    
-                    for tool_result in tool_results:
-                        # Check for exceptions during tool execution
-                        if "error" in tool_result:
-                            error_cat = tool_result.get("error_category", "unknown")
-                            if error_cat == "missing_parameter":
-                                results["warnings"].append(
-                                    f"Server '{server_name}' tool '{tool_result['tool']}' needs additional parameters. "
-                                    f"This is a limitation of the MCP server package."
-                                )
-                            else:
-                                results["warnings"].append(
-                                    f"Server '{server_name}' tool '{tool_result['tool']}' failed: {tool_result.get('error', 'Unknown error')}"
-                                )
-                        # Check for API errors in successful tool execution
-                        elif tool_result.get("result", {}).get("isError"):
-                            api_error_msg = tool_result.get("result", {}).get("api_error")
-                            if api_error_msg:
-                                api_errors.append({
-                                    "tool": tool_result["tool"],
-                                    "error": api_error_msg
-                                })
-                                results["warnings"].append(
-                                    f"CheckPoint API error in '{server_name}' tool '{tool_result['tool']}': {api_error_msg}"
-                                )
-                            else:
-                                # Generic error without specific message
-                                results["warnings"].append(
-                                    f"Server '{server_name}' tool '{tool_result['tool']}' returned an error"
-                                )
-                        else:
-                            # Tool executed successfully
-                            successful_tools.append(tool_result)
-                    
-                    # Log API errors but continue with successful tools
-                    if api_errors:
-                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Server '{server_name}' had {len(api_errors)} API errors but {len(successful_tools)} successful tools")
-                        server_data["api_errors"] = api_errors
-                    
-                    results["data_collected"][server_name] = server_data
+        # Update session context with current query (for conversational caching)
+        # Use parameter user_query if provided, otherwise fall back to plan['user_query']
+        query_text = user_query if user_query else plan.get("user_query", "")
+        self._update_session_context(query_text)
+        
+        # Apply session context to data_to_fetch (inject cached gateway if applicable)
+        data_to_fetch = self._apply_session_context(plan.get("data_to_fetch", []), query_text)
+        
+        # PARALLEL EXECUTION: Query all required servers simultaneously
+        import asyncio
+        
+        # Create coroutines for all servers
+        async def run_parallel_queries():
+            tasks = []
+            server_task_map = {}
+            
+            for server_name in required_servers:
+                if server_name in all_servers:
+                    task = self._query_mcp_server_async(server_name, data_to_fetch, user_parameter_selections, query_text)
+                    tasks.append(task)
+                    server_task_map[len(tasks) - 1] = server_name
+                else:
+                    results["errors"].append(f"Required server '{server_name}' is not configured. Please add it in MCP Servers page.")
+            
+            # Only run gather if we have tasks (safety check for alignment)
+            if tasks:
+                return await asyncio.gather(*tasks, return_exceptions=True), server_task_map
             else:
-                results["errors"].append(f"Required server '{server_name}' is not configured. Please add it in MCP Servers page.")
+                return [], {}
+        
+        # Execute all server queries in parallel
+        if required_servers:
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Executing {len([s for s in required_servers if s in all_servers])} MCP server queries in PARALLEL...")
+            
+            # Streamlit-compatible async execution: check for existing event loop
+            try:
+                # Try to get the running event loop (Streamlit/async contexts)
+                loop = asyncio.get_running_loop()
+                # If we have a running loop, we need to use nest_asyncio or run in executor
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, run_parallel_queries())
+                    parallel_results, server_task_map = future.result()
+            except RuntimeError:
+                # No running event loop, safe to use asyncio.run()
+                parallel_results, server_task_map = asyncio.run(run_parallel_queries())
+            
+            # Process results from parallel execution
+            for idx, result in enumerate(parallel_results):
+                server_name = server_task_map.get(idx)
+                
+                # Handle exceptions from parallel execution
+                if isinstance(result, Exception):
+                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Server '{server_name}' raised exception: {result}")
+                    results["errors"].append(f"Server '{server_name}' failed: {str(result)}")
+                    continue
+                
+                # At this point, result is definitely a Dict (not an Exception)
+                if not result or not isinstance(result, dict):
+                    continue
+                
+                server_data = result
+                    
+                # Check if server needs user input for parameters
+                if server_data.get("needs_user_input"):
+                    return {
+                        "needs_user_input": True,
+                        "parameter_options": server_data.get("parameter_options", {}),
+                        "plan_summary": plan.get("understanding", ""),
+                        "servers_queried": results["servers_queried"]
+                    }
+                
+                results["servers_queried"].append(server_name)
+                
+                # Check for API errors in tool results
+                tool_results = server_data.get("tool_results", [])
+                api_errors = []
+                successful_tools = []
+                
+                for tool_result in tool_results:
+                    # Check for exceptions during tool execution
+                    if "error" in tool_result:
+                        error_cat = tool_result.get("error_category", "unknown")
+                        if error_cat == "missing_parameter":
+                            results["warnings"].append(
+                                f"Server '{server_name}' tool '{tool_result['tool']}' needs additional parameters. "
+                                f"This is a limitation of the MCP server package."
+                            )
+                        else:
+                            results["warnings"].append(
+                                f"Server '{server_name}' tool '{tool_result['tool']}' failed: {tool_result.get('error', 'Unknown error')}"
+                            )
+                    # Check for API errors in successful tool execution
+                    elif tool_result.get("result", {}).get("isError"):
+                        api_error_msg = tool_result.get("result", {}).get("api_error")
+                        if api_error_msg:
+                            api_errors.append({
+                                "tool": tool_result["tool"],
+                                "error": api_error_msg
+                            })
+                            results["warnings"].append(
+                                f"Check Point API error in '{server_name}' tool '{tool_result['tool']}': {api_error_msg}"
+                            )
+                        else:
+                            # Generic error without specific message
+                            results["warnings"].append(
+                                f"Server '{server_name}' tool '{tool_result['tool']}' returned an error"
+                            )
+                    else:
+                        # Tool executed successfully
+                        successful_tools.append(tool_result)
+                
+                # Log API errors but continue with successful tools
+                if api_errors:
+                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Server '{server_name}' had {len(api_errors)} API errors but {len(successful_tools)} successful tools")
+                    server_data["api_errors"] = api_errors
+                
+                results["data_collected"][server_name] = server_data
         
         return results
     
-    def _query_mcp_server(self, server_name: str, data_points: List[str], user_parameter_selections: Optional[Dict[str, str]] = None, user_query: str = "") -> Optional[Dict[str, Any]]:
-        """Query a specific MCP server for data using MCP protocol
+    async def _query_mcp_server_async(self, server_name: str, data_points: List[str], user_parameter_selections: Optional[Dict[str, str]] = None, user_query: str = "") -> Optional[Dict[str, Any]]:
+        """Query a specific MCP server for data using MCP protocol (async version)
         
         Args:
             server_name: The name of the server (e.g., 'management-logs', 'quantum-management')
             data_points: List of data points to fetch
             user_parameter_selections: User-selected values for ambiguous parameters
+            user_query: Original user query for context
         """
-        from services.mcp_client_simple import query_mcp_server
+        from services.mcp_client_simple import query_mcp_server_async
         
         # Get all servers
         servers = self.mcp_manager.get_all_servers()
@@ -517,7 +659,7 @@ Technical Execution Plan:"""
         # Use the simplified MCP client to query the server
         # This will start its own subprocess, connect, query, and clean up
         try:
-            results = query_mcp_server(package_name, env_vars, data_points, user_parameter_selections, True, user_query)
+            results = await query_mcp_server_async(package_name, env_vars, data_points, user_parameter_selections, True, user_query)
             
             # Add server name to results
             results["server_name"] = server_name
@@ -529,6 +671,17 @@ Technical Execution Plan:"""
             import traceback
             traceback.print_exc()
             return {"error": str(e), "server_name": server_name}
+    
+    def _query_mcp_server(self, server_name: str, data_points: List[str], user_parameter_selections: Optional[Dict[str, str]] = None, user_query: str = "") -> Optional[Dict[str, Any]]:
+        """Query a specific MCP server for data using MCP protocol (synchronous wrapper)
+        
+        Args:
+            server_name: The name of the server (e.g., 'management-logs', 'quantum-management')
+            data_points: List of data points to fetch
+            user_parameter_selections: User-selected values for ambiguous parameters
+        """
+        import asyncio
+        return asyncio.run(self._query_mcp_server_async(server_name, data_points, user_parameter_selections, user_query))
     
     def _reduce_context_intelligently(self, data_collected: Dict[str, Any], max_tokens: int) -> Dict[str, Any]:
         """Intelligently reduce context size while preserving critical information
@@ -2074,7 +2227,8 @@ Your query returned **{estimated_tokens:,} tokens** of data, which exceeds the m
                 {"step": 1, "action": f"Query {', '.join(required_servers) if required_servers else 'available servers'}"},
                 {"step": 2, "action": "Analyze with selected security model"}
             ],
-            "expected_output": "Analysis based on available data"
+            "expected_output": "Analysis based on available data",
+            "user_query": user_query  # For session context caching
         }
     
     def orchestrate_query(self, user_query: str, planner_model: Optional[str] = None, security_model: Optional[str] = None, user_parameter_selections: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
@@ -2089,10 +2243,10 @@ Your query returned **{estimated_tokens:,} tokens** of data, which exceeds the m
         
         # Step 1: Create execution plan using specified planner model
         plan = self.create_execution_plan(user_query, planner_model)
-        plan["user_query"] = user_query
         
         # Step 2: Execute the plan (query MCP servers)
-        execution_results = self.execute_plan(plan, user_parameter_selections)
+        # Pass user_query explicitly to ensure session context works
+        execution_results = self.execute_plan(plan, user_parameter_selections, user_query)
         
         # Check if execution needs user input for parameters
         if execution_results.get("needs_user_input"):
