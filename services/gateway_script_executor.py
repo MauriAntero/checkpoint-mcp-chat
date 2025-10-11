@@ -343,7 +343,7 @@ class GatewayScriptExecutor:
                             
                             task_status_response = requests.post(
                                 show_task_url, 
-                                json={"task-id": task_id}, 
+                                json={"task-id": task_id, "details-level": "full"}, 
                                 headers=headers, 
                                 verify=False, 
                                 timeout=10
