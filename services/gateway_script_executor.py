@@ -571,6 +571,40 @@ GATEWAY_EXECUTOR_LLM_PROMPT = """
 - Performance metrics (CPU, memory, throughput, top processes)
 - Log inspection (recent events, specific blade logs)
 
+**🔍 CRITICAL: Management Server vs Gateway Differences**
+
+**Identify Server Type from Name:**
+- Management servers: Usually named with "mgmt", "sms", "mds", "management" in the hostname
+- Gateways: Usually named with "gw", "fw", "gateway", "firewall", location names, or cluster names
+
+**Commands That Work on BOTH Management & Gateway:**
+- ✅ System commands: `fw ver`, `cpinfo -y all`, `top -b -n 1`, `free -h`, `df -h`, `ifconfig -a`, `netstat -rn`
+- ✅ Performance: `cpview -p`, `cpview -m`, `iostat -x`, `sar -u`, `mpstat`, `dmesg`, `lscpu`, `lsblk`
+- ✅ OS statistics: `cpstat os`, `cpstat os -f all`, `cpstat proc`
+
+**Gateway-ONLY Commands (will FAIL on management servers):**
+- ❌ `fwaccel stat` / `fwaccel6 stat` - SecureXL acceleration (no firewall on mgmt)
+- ❌ `cphaprob state` / `cphaprob stat` - ClusterXL (unless mgmt is clustered)
+- ❌ `fw stat` / `fw ctl pstat` - Firewall statistics (mgmt doesn't run firewall)
+- ❌ `cpstat fw` / `cpstat fwd` - Firewall daemon stats (daemon doesn't exist on mgmt)
+- ❌ `cpstat vpn` / `vpn tu tlist` - VPN (no VPN on mgmt)
+- ❌ `fw tab -t connections` - Connection tables (no firewall)
+
+**Management Server Recommended Commands:**
+- ✅ `cpwd_admin list` - Check Point daemon admin
+- ✅ `cpstat os -f all` - OS statistics (CPU, memory, disk)
+- ✅ `cpstat proc` - Process statistics
+- ✅ `cpview -p` - Full performance metrics (preferred over cpstat for management)
+
+**Smart Diagnostics Strategy:**
+- **For Management Servers (cp-mgmt, sms, mds):**
+  - ✅ Use: `fw ver`, `cpinfo -y all`, `cpview -p`, `top -b -n 1`, `free -h`, `df -h`, `cpstat os -f all`, `iostat -x`, `dmesg`
+  - ❌ Avoid: `fwaccel stat`, `cphaprob state`, `fw stat`, `cpstat fw`, `cpstat mgmt`, VPN commands
+  
+- **For Gateways (cp-gw, fw-01, edge-fw):**
+  - Use: All commands including firewall-specific ones
+  - Include: `fwaccel stat`, `cphaprob state`, `fw stat`, `fw ctl pstat`, `cpstat fw -f all`
+
 **IMPORTANT Command Usage Rules:**
 - `top -b -n 1` or `top -bn1` - Process snapshot in batch mode (ONLY allowed top usage - no TTY in scripts)
 - `cpview -p` - Print all performance metrics (non-interactive)
@@ -596,9 +630,9 @@ User: "Show gateway version"
   "analysis_type": "gateway_diagnostics"
 }
 
-**Example - Comprehensive Analysis (IMPORTANT - Read This):**
+**Example 1 - Gateway Comprehensive Diagnostics:**
 User: "Full health check on cp-gw" or "Full diagnosis on cp-gw"
-→ Think: Need version, cluster, firewall, performance, network - Use ONLY gateway-script-executor
+→ Think: Gateway server - can use firewall commands. Use ONLY gateway-script-executor
 {
   "required_servers": ["quantum-management"],
   "data_to_fetch": [
@@ -616,6 +650,28 @@ User: "Full health check on cp-gw" or "Full diagnosis on cp-gw"
     "run_script:iostat -x"
   ],
   "analysis_type": "comprehensive_diagnostics"
+}
+
+**Example 2 - Management Server Diagnostics:**
+User: "Full diagnosis on cp-mgmt" or "Check cp-mgmt health"
+→ Think: Management server - NO firewall/acceleration/HA. Use OS and performance commands only
+{
+  "required_servers": ["quantum-management"],
+  "data_to_fetch": [
+    "gateway_identifier:cp-mgmt",
+    "run_script:fw ver",
+    "run_script:cpinfo -y all",
+    "run_script:cpview -p",
+    "run_script:top -b -n 1",
+    "run_script:free -h",
+    "run_script:df -h",
+    "run_script:ifconfig -a",
+    "run_script:netstat -rn",
+    "run_script:cpstat os -f all",
+    "run_script:iostat -x",
+    "run_script:dmesg"
+  ],
+  "analysis_type": "management_diagnostics"
 }
 
 **CRITICAL - Avoid Data Truncation:**
