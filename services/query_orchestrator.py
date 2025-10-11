@@ -1398,6 +1398,10 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         
         # Scan all servers for log data
         for server_name, server_data in data_collected.items():
+            # Skip non-dict entries (e.g., gateway_script_executor is a list)
+            if not isinstance(server_data, dict):
+                continue
+            
             tool_results = server_data.get("tool_results", [])
             
             for tool_result in tool_results:
