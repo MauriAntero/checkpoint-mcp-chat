@@ -281,15 +281,18 @@ class GatewayScriptExecutor:
                 self._log_execution(result)
                 return result
             
+            print(f"[GatewayScriptExecutor] Attempting login to {login_url}")
             login_response = requests.post(login_url, json=login_payload, verify=False, timeout=30)
             
             if login_response.status_code != 200:
                 result['error'] = f"Management API login failed: {login_response.status_code} - {login_response.text}"
+                print(f"[GatewayScriptExecutor] Login failed: {result['error']}")
                 self._log_execution(result)
                 return result
             
             login_data = login_response.json()
             sid = login_data.get('sid')
+            print(f"[GatewayScriptExecutor] Login successful, sid={sid[:10] if sid else 'None'}...")
             
             if not sid:
                 result['error'] = "No session ID received from Management API"
@@ -306,7 +309,9 @@ class GatewayScriptExecutor:
                 "targets": [gateway_name]  # Array of gateway names
             }
             
+            print(f"[GatewayScriptExecutor] Calling run-script with gateway={gateway_name}, command={command}")
             script_response = requests.post(run_script_url, json=script_payload, headers=headers, verify=False, timeout=60)
+            print(f"[GatewayScriptExecutor] run-script response status: {script_response.status_code}")
             
             # Step 3: Logout
             logout_url = f"{base_url}/logout"
@@ -315,12 +320,15 @@ class GatewayScriptExecutor:
             # Parse run-script response
             if script_response.status_code == 200:
                 script_data = script_response.json()
+                print(f"[GatewayScriptExecutor] run-script response data: {script_data}")
                 
                 # Extract tasks results
                 tasks = script_data.get('tasks', [])
+                print(f"[GatewayScriptExecutor] Found {len(tasks)} tasks in response")
                 if tasks and len(tasks) > 0:
                     task = tasks[0]
                     task_output = task.get('task-details', [])
+                    print(f"[GatewayScriptExecutor] Task details: {task_output}")
                     
                     # Combine all output
                     output_text = ''
@@ -332,10 +340,13 @@ class GatewayScriptExecutor:
                     
                     result['success'] = True
                     result['output'] = output_text.strip()
+                    print(f"[GatewayScriptExecutor] Final output length: {len(output_text)}")
                 else:
                     result['error'] = f"No tasks in run-script response: {script_data}"
+                    print(f"[GatewayScriptExecutor] Error: {result['error']}")
             else:
                 result['error'] = f"run-script API failed: {script_response.status_code} - {script_response.text}"
+                print(f"[GatewayScriptExecutor] API error: {result['error']}")
         
         except Exception as e:
             result['error'] = f"Execution error: {str(e)}"
