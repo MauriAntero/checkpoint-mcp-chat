@@ -1610,10 +1610,15 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             # Blade/Origin info
             'origin', 'product', 'blade_name', 'log_id',
             
-            # Policy context
+            # Policy context (logs)
             'rule', 'rule_uid', 'rule_name', 'layer_name', 'layer_uid', 'match_id', 'policy',
             
-            # NAT information
+            # Rule/Policy details (rulebase objects)
+            'rule-number', 'enabled', 'install-on', 'track', 'comments',
+            'original-source', 'original-destination', 'translated-source', 'translated-destination',
+            'original-service', 'translated-service',
+            
+            # NAT information (logs)
             'xlatesrc', 'xlatedst', 'xlatesport', 'xlatedport', 'nat_addtnl_rulenum', 'nat_rulenum',
             
             # User/Application - CRITICAL for identity tracking
@@ -1687,7 +1692,9 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
                                             
                                             # Filter log/object arrays in the parsed JSON (only for dicts)
                                             if isinstance(text_data, dict):
-                                                for field in ['logs', 'objects', 'gateways', 'servers', 'hosts', 'networks']:
+                                                # Filter all array fields that may contain items with unnecessary metadata
+                                                for field in ['logs', 'objects', 'gateways', 'servers', 'hosts', 'networks', 
+                                                             'rulebase', 'rules', 'protections', 'threat-layers', 'profiles', 'indicators']:
                                                     if field in text_data and isinstance(text_data[field], list):
                                                         original_count = len(text_data[field])
                                                         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Filtering {field}: {original_count} items")
@@ -1735,8 +1742,11 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
                     
                     filtered_server_data[key] = filtered_tool_results
                 else:
-                    # Keep other metadata (package, data_type, discovered_resources, etc.)
-                    filtered_server_data[key] = value
+                    # Keep only useful metadata, skip wasteful MCP server info
+                    # KEEP: discovered_resources (useful for follow-up queries), api_errors (debugging)
+                    # SKIP: package, data_type, available_tools, server_name (redundant/internal metadata)
+                    if key in ['discovered_resources', 'api_errors']:
+                        filtered_server_data[key] = value
             
             filtered_data[server_name] = filtered_server_data
         
