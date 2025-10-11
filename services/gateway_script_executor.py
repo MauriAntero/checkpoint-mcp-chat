@@ -545,31 +545,62 @@ class GatewayScriptExecutor:
 
 # LLM System Prompt Addition
 GATEWAY_EXECUTOR_LLM_PROMPT = """
-## ⚡ Gateway Script Executor - ENABLED
+## ⚡ Gateway Script Executor - ENABLED (for DIAGNOSTICS ONLY)
 
-**CAPABILITY: You can execute CLI diagnostic commands directly on Check Point gateways when needed for analysis.**
+**⚠️ CRITICAL LIMITATION: Gateway Script Executor is for REAL-TIME DIAGNOSTICS ONLY, NOT for historical log/threat queries!**
 
-**How It Works:**
-1. When user asks gateway diagnostic questions, you can request CLI command execution
+**🚫 DO NOT USE Gateway Script Executor for:**
+- ❌ Threat events, suspicious activity, security incidents (use management-logs MCP)
+- ❌ Historical log queries with time ranges like "last 7 days", "yesterday", "past week" (use management-logs MCP)
+- ❌ Traffic analysis with filters like "dropped traffic", "blocked connections" (use management-logs MCP)
+- ❌ ANY query that needs time-based or filter-based log data (use management-logs MCP)
+
+**✅ USE Gateway Script Executor ONLY for:**
+- ✅ Real-time system status (CPU, memory, disk, uptime)
+- ✅ Current gateway state (cluster status, interface status, firewall statistics)
+- ✅ Active connections RIGHT NOW (not historical)
+- ✅ Gateway diagnostics and health checks
+
+**How It Works (for appropriate diagnostic queries only):**
+1. When user asks DIAGNOSTIC questions (NOT log/threat queries), you can request CLI command execution
 2. Include in required_servers: ["quantum-management"]
 3. In data_to_fetch, specify: "run_script:<command>"
 4. System automatically validates command against whitelist → Executes if safe → Returns output
 
-**Usage Guidelines:**
-- Think about what diagnostic data is needed to answer the user's question
-- Request appropriate Check Point CLI commands (Gaia clish, expert mode, fw commands, etc.)
+**🎯 USAGE PRIORITY - Choose the RIGHT Tool for the Job:**
+
+**1. For LOG/THREAT/CONNECTION QUERIES → Use management-logs MCP (NOT gateway scripts)**
+   - User asks: "threat events", "suspicious activity", "dropped traffic", "connections", "traffic patterns"
+   - ✅ CORRECT: Use management-logs MCP server (rich historical data with filtering)
+   - ❌ WRONG: Don't use run_script:fw log (limited output, no time filters, basic data)
+   - **Reason:** Management Logs API provides comprehensive log data with time ranges, filters, and full details
+
+**2. For SYSTEM DIAGNOSTICS → Use Gateway Script Executor**
+   - User asks: "gateway health", "performance", "CPU usage", "cluster status", "interface status"
+   - ✅ CORRECT: Use run_script commands (real-time system state)
+   - ❌ WRONG: Don't use management-logs for system diagnostics
+   - **Reason:** CLI commands provide real-time system status and diagnostics
+
+**3. For CONFIGURATION QUERIES → Use quantum-management MCP**
+   - User asks: "show policy", "list rules", "network objects", "NAT configuration"
+   - ✅ CORRECT: Use quantum-management MCP tools
+   - ❌ WRONG: Don't use gateway scripts for config data
+   - **Reason:** Management API provides structured configuration data
+
+**General Guidelines:**
 - System has a comprehensive whitelist of 120+ safe diagnostic commands
 - Invalid/unsafe commands are automatically rejected (you'll see validation errors if this happens)
+- When in doubt: Logs/Threats → management-logs MCP, Diagnostics → run_script, Config → quantum-management
 
-**Command Categories Available (not exhaustive - request what you need):**
-- System diagnostics (version, uptime, hardware info, disk space, processes)
-- Network status (interfaces, routing, ARP, connections)  
-- Firewall operations (statistics, connections, acceleration status)
-- Cluster status (HA state, sync status, failover readiness)
-- VPN diagnostics (tunnels, encryption domains, IKE/IPsec)
-- Security blade status (IPS, Anti-Bot, Threat Prevention, HTTPS Inspection)
-- Performance metrics (CPU, memory, throughput, top processes)
-- Log inspection (recent events, specific blade logs)
+**Gateway Script Executor - Appropriate Use Cases:**
+- ✅ System diagnostics (version, uptime, hardware info, disk space, processes)
+- ✅ Network interface status (interfaces, routing, ARP tables)  
+- ✅ Firewall runtime statistics (fw stat, connection counts, acceleration status)
+- ✅ Cluster status (HA state, sync status, failover readiness)
+- ✅ VPN tunnel status (active tunnels, IKE/IPsec state)
+- ✅ Security blade operational status (IPS enabled, Anti-Bot running, service health)
+- ✅ Performance metrics (CPU, memory, throughput, top processes)
+- ❌ Historical log queries (use management-logs MCP instead - it has time filters and rich data)
 
 **🔍 CRITICAL: Management Server vs Gateway Differences**
 

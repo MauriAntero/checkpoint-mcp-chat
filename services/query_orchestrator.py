@@ -739,159 +739,33 @@ Technical Execution Plan:"""
         data_to_fetch = self._apply_session_context(plan.get("data_to_fetch", []), query_text)
         
         # Check for run_script commands if executor is enabled
+        # VALIDATION: Filter out run_script commands for log/threat queries
         if self.gateway_script_executor:
             run_script_commands = [item for item in data_to_fetch if isinstance(item, str) and item.startswith("run_script:")]
             if run_script_commands:
-                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Found {len(run_script_commands)} run_script commands - using Gateway Script Executor")
+                query_lower = query_text.lower()
+                time_keywords = ['last', 'days', 'hours', 'minutes', 'yesterday', 'past', 'week', 'month', 'ago', 'since', 'from', 'to']
+                threat_keywords = ['threat', 'suspicious', 'attack', 'malicious', 'dropped', 'blocked', 'rejected', 'intrusion', 'incident', 'alert', 'traffic', 'connection', 'log']
                 
-                # Extract gateway name from plan or session context
-                gateway_name = self._extract_gateway_from_plan(plan) or self.session_context.get("cached_gateway_name")
+                has_time_filter = any(keyword in query_lower for keyword in time_keywords)
+                has_threat_context = any(keyword in query_lower for keyword in threat_keywords)
+                has_logs_server = 'management-logs' in required_servers
                 
-                # If no gateway specified, try to discover gateways from quantum-management or quantum-gw-cli
-                if not gateway_name:
-                    discovery_server = None
-                    if 'quantum-management' in all_servers:
-                        discovery_server = 'quantum-management'
-                    elif 'quantum-gw-cli' in all_servers:
-                        discovery_server = 'quantum-gw-cli'
+                # If this is a log/threat query, REJECT run_script and use management-logs instead
+                if (has_time_filter and has_threat_context) or has_logs_server:
+                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] VALIDATION: Blocking run_script - log/threat query detected (time={has_time_filter}, threat={has_threat_context}, logs_server={has_logs_server})")
                     
-                    if discovery_server:
-                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] No gateway specified, discovering gateways from {discovery_server}...")
-                        # Quick query to discover gateways
-                        try:
-                            from services.mcp_client_simple import query_mcp_server_async
-                            import asyncio
-                            import json as json_module
-                            
-                            # Prepare server config
-                            server_config = all_servers.get(discovery_server, {})
-                            server_env = server_config.get('env', {})
-                            
-                            # Query server for gateways (package_name, env_vars, data_points)
-                            # Use appropriate package name based on server
-                            package_name = '@chkp/quantum-management-mcp' if discovery_server == 'quantum-management' else '@chkp/quantum-gw-cli-mcp'
-                            discover_result = asyncio.run(query_mcp_server_async(
-                                package_name,
-                                server_env,
-                                ['show_gateways_and_servers']
-                            ))
-                            
-                            # Parse MCP result structure: tool_results[0]['result']['content']
-                            if discover_result and 'tool_results' in discover_result:
-                                tool_results = discover_result['tool_results']
-                                if tool_results and len(tool_results) > 0:
-                                    first_result = tool_results[0]
-                                    if 'result' in first_result and 'content' in first_result['result']:
-                                        content = first_result['result']['content']
-                                        # Content is a list - could be dict objects or need parsing
-                                        for item in content:
-                                            if isinstance(item, dict):
-                                                # Direct dict - check for gateway objects
-                                                if item.get('type') == 'simple-gateway' and item.get('name'):
-                                                    gateway_name = item['name']
-                                                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Discovered and using gateway: {gateway_name}")
-                                                    break
-                                            elif isinstance(item, str):
-                                                # String - might need JSON parsing
-                                                try:
-                                                    gw_data = json_module.loads(item)
-                                                    if isinstance(gw_data, dict) and 'objects' in gw_data:
-                                                        gateways = [obj['name'] for obj in gw_data['objects'] if obj.get('type') == 'simple-gateway']
-                                                        if gateways:
-                                                            gateway_name = gateways[0]
-                                                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Discovered and using gateway: {gateway_name}")
-                                                            break
-                                                except Exception as parse_error:
-                                                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Parse error: {parse_error}")
-                        except Exception as e:
-                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Gateway discovery failed: {e}")
-                
-                if not gateway_name:
-                    # More helpful error message with discovered gateways (if any were found during discovery)
-                    error_msg = "Gateway Script Executor: No gateway specified in query. "
+                    # Remove run_script commands from data_to_fetch
+                    data_to_fetch = [item for item in data_to_fetch if not (isinstance(item, str) and item.startswith("run_script:"))]
                     
-                    # Try to list available gateways from management server for user guidance
-                    try:
-                        from services.mcp_client_simple import query_mcp_server_async
-                        import asyncio
-                        import json as json_module
-                        
-                        if 'quantum-management' in all_servers:
-                            server_config = all_servers.get('quantum-management', {})
-                            server_env = server_config.get('env', {})
-                            
-                            # Quick query to list gateways for error message
-                            try:
-                                loop = asyncio.get_running_loop()
-                                import concurrent.futures
-                                with concurrent.futures.ThreadPoolExecutor() as executor:
-                                    future = executor.submit(
-                                        asyncio.run,
-                                        query_mcp_server_async(
-                                            server_config.get('command', 'npx'),
-                                            server_config.get('args', '@chkp/quantum-management-mcp'),
-                                            ['show_gateways_and_servers'],
-                                            server_env
-                                        )
-                                    )
-                                    gateway_list_result = future.result(timeout=10)
-                            except RuntimeError:
-                                gateway_list_result = asyncio.run(
-                                    query_mcp_server_async(
-                                        server_config.get('command', 'npx'),
-                                        server_config.get('args', '@chkp/quantum-management-mcp'),
-                                        ['show_gateways_and_servers'],
-                                        server_env
-                                    )
-                                )
-                            
-                            # Parse gateway names from result
-                            available_gateways = []
-                            if gateway_list_result and 'tool_results' in gateway_list_result:
-                                for tool_result in gateway_list_result['tool_results']:
-                                    if 'result' in tool_result and 'content' in tool_result['result']:
-                                        for item in tool_result['result']['content']:
-                                            if isinstance(item, dict) and item.get('type') == 'simple-gateway':
-                                                available_gateways.append(item.get('name'))
-                            
-                            if available_gateways:
-                                error_msg += f"Available gateways: {', '.join(available_gateways[:5])}. Please specify which gateway to investigate (e.g., 'Check {available_gateways[0]} for suspicious activity')"
-                            else:
-                                error_msg += "Please include gateway name in your query (e.g., 'Show version on cp-gw')"
-                    except Exception as e:
-                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Failed to list gateways for error message: {e}")
-                        error_msg += "Please include gateway name in your query (e.g., 'Show version on cp-gw')"
+                    results["warnings"].append(
+                        "⚠️ Gateway CLI commands not suitable for historical log/threat queries. Using management-logs MCP for comprehensive data."
+                    )
                     
-                    results["errors"].append(error_msg)
-                else:
-                    # Execute each run_script command
-                    for cmd_item in run_script_commands:
-                        command = cmd_item.replace("run_script:", "").strip()
-                        print(f"[QueryOrchestrator] Executing via executor: '{command}' on gateway '{gateway_name}'")
-                        
-                        if self.progress_callback:
-                            self.progress_callback(f"⚡ Running script: '{command}' on {gateway_name}...")
-                        
-                        exec_result = self.gateway_script_executor.execute_command(gateway_name, command)
-                        
-                        if exec_result['success']:
-                            if 'gateway_script_executor' not in results["data_collected"]:
-                                results["data_collected"]['gateway_script_executor'] = []
-                            results["data_collected"]['gateway_script_executor'].append({
-                                'command': command,
-                                'output': exec_result['output'],
-                                'gateway': gateway_name
-                            })
-                            results["servers_queried"].append("gateway-script-executor")
-                        else:
-                            results["errors"].append(f"Gateway Script Executor: {exec_result['error']}")
-                
-                # Remove run_script items from data_to_fetch so they're not sent to regular MCP servers
-                data_to_fetch = [item for item in data_to_fetch if not (isinstance(item, str) and item.startswith("run_script:"))]
-                
-                # If all commands were run_script and none remain, we can skip MCP server queries
-                if not data_to_fetch and not required_servers:
-                    return results
+                    # Ensure management-logs is in required_servers
+                    if 'management-logs' not in required_servers and has_threat_context:
+                        required_servers.append('management-logs')
+                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Auto-added management-logs for threat query")
         
         # PARALLEL EXECUTION: Query all required servers simultaneously
         import asyncio
