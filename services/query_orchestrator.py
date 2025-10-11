@@ -563,48 +563,69 @@ CRITICAL RULES FOR MCP SERVER SELECTION:
 
 7. Gateway Script Executor - Direct CLI Diagnostics (IF ENABLED):
    
-   PLATFORM CONTEXT: Check Point R81/R82 Gateways (NOT Cisco/Palo Alto - uses Check Point-specific commands)
+   PLATFORM: Check Point R81/R82 Gateways (NOT Cisco/Palo Alto)
    
-   AVAILABLE DIAGNOSTIC TOOLS (select intelligently based on investigation needs):
+   ⛔ FORBIDDEN PARAMETERS (will cause command rejection):
+   - Time filters: --since, --until, --from, --to, -t <time>, --last, --days, --hours
+   - IP/network filters: -s <IP>, -d <IP>, -src, -dst, --source, --destination
+   - Action filters: -c <action>, --action, --drop, --accept
+   - Any parameter NOT explicitly listed below
    
-   Firewall Analysis Tools:
-   - fw tab -t <table> -s : Query firewall kernel tables (connections, xlate, fwx_alloc, etc.) - USE FOR: connection analysis, NAT issues, resource usage
-   - fw log : View recent security/audit events from firewall log - USE FOR: recent attacks, drops, policy hits
-   - fw ctl pstat : Packet filtering statistics & policy status - USE FOR: policy verification, packet processing stats
-   - fw ctl conntab : Connection table details with states - USE FOR: detailed connection debugging
-   - fw stat : Firewall module status - USE FOR: verifying firewall is running
-   - fw ver : Firewall version & build info - USE FOR: version checks only
+   🔴 HARD RULE - HISTORICAL/FILTERED DATA:
+   IF query asks for:
+   - "last X days/hours/minutes" OR
+   - "from <date> to <date>" OR  
+   - "traffic between X and Y" OR
+   - "dropped/blocked/accepted traffic" OR
+   - "suspicious activity" OR
+   - any time-based or filter-based analysis
    
-   Performance & Acceleration:
-   - fwaccel stats : SecureXL acceleration statistics - USE FOR: performance analysis, offload verification
-   - cpstat fw -f multi_cpu : CPU core distribution stats - USE FOR: load balancing, CPU bottlenecks
-   - top -bn1 : System CPU/memory snapshot (batch mode) - USE FOR: resource utilization checks
-   - vmstat 1 5 : Virtual memory statistics - USE FOR: memory pressure analysis
+   THEN: Use "management-logs" MCP server ONLY. DO NOT use Gateway CLI - it will fail!
    
-   High Availability & Clustering:
-   - cphaprob state : Cluster HA state (active/standby) - USE FOR: cluster status verification
-   - cphaprob stat : Detailed cluster statistics - USE FOR: failover debugging
+   Gateway CLI = CURRENT STATE ONLY (no history, no filters)
    
-   Network & Interfaces:
-   - ifconfig -a : Network interface configuration - USE FOR: interface status, IP addressing
-   - netstat -rn : Routing table - USE FOR: routing issues
-   - arp -an : ARP cache - USE FOR: L2 connectivity issues
+   AVAILABLE COMMANDS (run EXACTLY as shown, any addition will be rejected):
    
-   System Information:
-   - cpinfo -y all : Comprehensive system diagnostic bundle - USE FOR: deep troubleshooting (generates large output)
-   - cplic print : License information - USE FOR: feature/blade verification
+   Firewall Analysis (current state):
+   - Run exactly: "fw tab -t connections -s" (active connections now)
+   - Run exactly: "fw tab -t xlate -s" (NAT translations now)
+   - Run exactly: "fw log" (last ~50 events only, no filters)
+   - Run exactly: "fw ctl pstat" (packet stats)
+   - Run exactly: "fw ctl conntab" (connection details)
+   - Run exactly: "fw stat" (firewall status)
+   - Run exactly: "fw ver" (version info)
    
-   INTELLIGENT SELECTION GUIDELINES (not prescriptive - adapt to investigation complexity):
-   - Security/threat investigation → Consider: fw log, fw tab -t connections, fw ctl pstat, fwaccel stats
-   - Performance/load issues → Consider: cpstat fw -f multi_cpu, top -bn1, fwaccel stats, vmstat
-   - Connection problems → Consider: fw tab -t connections -s, fw ctl conntab, netstat
-   - HA/cluster issues → Consider: cphaprob state, cphaprob stat
-   - Version/config verification → Consider: fw ver, fw stat, cplic print
+   Performance (current):
+   - Run exactly: "fwaccel stats" (SecureXL stats)
+   - Run exactly: "cpstat fw -f multi_cpu" (CPU distribution)
+   - Run exactly: "top -bn1" (system snapshot)
+   - Run exactly: "vmstat 1 5" (memory stats, 5 samples)
    
-   FORMAT: Prefix commands with "run_script:" in data_to_fetch array
-   Example: ["run_script:fw tab -t connections -s", "run_script:fw log"]
+   Clustering (current):
+   - Run exactly: "cphaprob state" (cluster state)
+   - Run exactly: "cphaprob stat" (cluster stats)
    
-   SELECTION PRINCIPLE: Choose ALL relevant tools needed for thorough investigation. Simple queries may need 1-2 commands, complex investigations may require 5-10+ commands. Prioritize completeness over minimalism.
+   Network (current):
+   - Run exactly: "ifconfig -a" (interfaces)
+   - Run exactly: "netstat -rn" (routing table)
+   - Run exactly: "arp -an" (ARP cache)
+   
+   System Info:
+   - Run exactly: "cpinfo -y all" (diagnostic bundle)
+   - Run exactly: "cplic print" (license info)
+   
+   WHEN TO USE:
+   ✅ "What connections are active NOW?" → run_script:fw tab -t connections -s
+   ✅ "Is cluster active?" → run_script:cphaprob state
+   ✅ "Current CPU usage?" → run_script:top -bn1
+   ✅ "Gateway version?" → run_script:fw ver
+   
+   ❌ "Dropped traffic last 30 days" → Use management-logs MCP, NOT run_script
+   ❌ "Suspicious activity yesterday" → Use management-logs MCP, NOT run_script
+   ❌ "Traffic between 192.168.1.0 and 10.0.0.0" → Use management-logs MCP, NOT run_script
+   
+   FORMAT: Prefix with "run_script:" in data_to_fetch
+   Example: ["run_script:fw tab -t connections -s"]
 
 8. Return ONLY valid JSON, no other text
 
