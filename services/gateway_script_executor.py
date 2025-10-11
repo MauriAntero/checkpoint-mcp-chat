@@ -194,8 +194,36 @@ class GatewayScriptExecutor:
         self.log_dir = Path(log_dir)
         self.log_file = self.log_dir / "gateway_script_executor.log"
         
+        # Session cache to prevent rate limiting (reuse sessions across commands)
+        # Format: {management_host: {'sid': <session_id>, 'timestamp': <datetime>}}
+        self.session_cache = {}
+        self.session_timeout_minutes = 20  # Check Point default session timeout
+        
         # Ensure log directory exists
         self.log_dir.mkdir(parents=True, exist_ok=True)
+    
+    def _get_cached_session(self, management_host: str) -> Optional[str]:
+        """Get cached session ID if still valid"""
+        if management_host in self.session_cache:
+            cache_entry = self.session_cache[management_host]
+            timestamp = cache_entry['timestamp']
+            age_minutes = (datetime.now() - timestamp).total_seconds() / 60
+            
+            if age_minutes < self.session_timeout_minutes:
+                print(f"[GatewayScriptExecutor] Reusing cached session (age: {age_minutes:.1f} min)")
+                return cache_entry['sid']
+            else:
+                print(f"[GatewayScriptExecutor] Cached session expired (age: {age_minutes:.1f} min)")
+                del self.session_cache[management_host]
+        return None
+    
+    def _cache_session(self, management_host: str, sid: str):
+        """Cache session ID for reuse"""
+        self.session_cache[management_host] = {
+            'sid': sid,
+            'timestamp': datetime.now()
+        }
+        print(f"[GatewayScriptExecutor] Cached new session for {management_host}")
     
     def execute_command(self, gateway_name: str, command: str, session_id: Optional[str] = None) -> Dict:
         """
@@ -268,36 +296,43 @@ class GatewayScriptExecutor:
             # Build API base URL
             base_url = f"https://{management_host}:{port}/web_api"
             
-            # Step 1: Login to get session ID
-            login_url = f"{base_url}/login"
-            login_payload = {}
-            
-            if api_key:
-                login_payload = {"api-key": api_key}
-            elif username and password:
-                login_payload = {"user": username, "password": password}
-            else:
-                result['error'] = "No authentication credentials found (need API_KEY or USERNAME/PASSWORD)"
-                self._log_execution(result)
-                return result
-            
-            print(f"[GatewayScriptExecutor] Attempting login to {login_url}")
-            login_response = requests.post(login_url, json=login_payload, verify=False, timeout=30)
-            
-            if login_response.status_code != 200:
-                result['error'] = f"Management API login failed: {login_response.status_code} - {login_response.text}"
-                print(f"[GatewayScriptExecutor] Login failed: {result['error']}")
-                self._log_execution(result)
-                return result
-            
-            login_data = login_response.json()
-            sid = login_data.get('sid')
-            print(f"[GatewayScriptExecutor] Login successful, sid={sid[:10] if sid else 'None'}...")
+            # Step 1: Check for cached session or login to get new session ID
+            sid = self._get_cached_session(management_host)
             
             if not sid:
-                result['error'] = "No session ID received from Management API"
-                self._log_execution(result)
-                return result
+                # No cached session, need to login
+                login_url = f"{base_url}/login"
+                login_payload = {}
+                
+                if api_key:
+                    login_payload = {"api-key": api_key}
+                elif username and password:
+                    login_payload = {"user": username, "password": password}
+                else:
+                    result['error'] = "No authentication credentials found (need API_KEY or USERNAME/PASSWORD)"
+                    self._log_execution(result)
+                    return result
+                
+                print(f"[GatewayScriptExecutor] Attempting login to {login_url}")
+                login_response = requests.post(login_url, json=login_payload, verify=False, timeout=30)
+                
+                if login_response.status_code != 200:
+                    result['error'] = f"Management API login failed: {login_response.status_code} - {login_response.text}"
+                    print(f"[GatewayScriptExecutor] Login failed: {result['error']}")
+                    self._log_execution(result)
+                    return result
+                
+                login_data = login_response.json()
+                sid = login_data.get('sid')
+                print(f"[GatewayScriptExecutor] Login successful, sid={sid[:10] if sid else 'None'}...")
+                
+                if not sid:
+                    result['error'] = "No session ID received from Management API"
+                    self._log_execution(result)
+                    return result
+                
+                # Cache the new session
+                self._cache_session(management_host, sid)
             
             # Step 2: Call run-script API
             run_script_url = f"{base_url}/run-script"
