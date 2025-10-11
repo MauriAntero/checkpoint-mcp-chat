@@ -561,31 +561,50 @@ CRITICAL RULES FOR MCP SERVER SELECTION:
    - This enables session context caching for follow-up queries
    - Extract the actual gateway NAME from the query, not time expressions like "last" or "this"
 
-7. Gateway Script Executor - Direct CLI Commands (CRITICAL PRIORITIZATION):
-   IF Gateway Script Executor is enabled AND task requires gateway diagnostics:
+7. Gateway Script Executor - Direct CLI Diagnostics (IF ENABLED):
    
-   A. SECURITY INVESTIGATIONS (threats, attacks, suspicious activity):
-      → PRIORITIZE LOG ANALYSIS COMMANDS (firewall tables & logs):
-      - "run_script:fw tab -t connections -s" (active connections)
-      - "run_script:fw log" (recent security events)  
-      - "run_script:fw ctl pstat" (packet filtering stats)
-      - "run_script:fw ctl conntab" (connection table details)
-      - "run_script:fwaccel stats" (SecureXL statistics)
-      - "run_script:cpstat fw -f multi_cpu" (CPU distribution for attack analysis)
-      
-   B. SYSTEM HEALTH CHECKS (performance, status, versions):
-      → Use system diagnostics:
-      - "run_script:fw ver" (firewall version)
-      - "run_script:top -bn1" (CPU/memory snapshot)
-      - "run_script:cphaprob state" (HA cluster status)
-      - "run_script:ifconfig -a" (network interfaces)
+   PLATFORM CONTEXT: Check Point R81/R82 Gateways (NOT Cisco/Palo Alto - uses Check Point-specific commands)
    
-   C. NEVER mix investigation types:
-      - Threat/security query → LOG ANALYSIS commands ONLY
-      - Health/version query → SYSTEM commands ONLY
-      
-   D. Format: Prefix each CLI command with "run_script:" in data_to_fetch array
-      Example: ["run_script:fw tab -t connections -s", "run_script:fw log"]
+   AVAILABLE DIAGNOSTIC TOOLS (select intelligently based on investigation needs):
+   
+   Firewall Analysis Tools:
+   - fw tab -t <table> -s : Query firewall kernel tables (connections, xlate, fwx_alloc, etc.) - USE FOR: connection analysis, NAT issues, resource usage
+   - fw log : View recent security/audit events from firewall log - USE FOR: recent attacks, drops, policy hits
+   - fw ctl pstat : Packet filtering statistics & policy status - USE FOR: policy verification, packet processing stats
+   - fw ctl conntab : Connection table details with states - USE FOR: detailed connection debugging
+   - fw stat : Firewall module status - USE FOR: verifying firewall is running
+   - fw ver : Firewall version & build info - USE FOR: version checks only
+   
+   Performance & Acceleration:
+   - fwaccel stats : SecureXL acceleration statistics - USE FOR: performance analysis, offload verification
+   - cpstat fw -f multi_cpu : CPU core distribution stats - USE FOR: load balancing, CPU bottlenecks
+   - top -bn1 : System CPU/memory snapshot (batch mode) - USE FOR: resource utilization checks
+   - vmstat 1 5 : Virtual memory statistics - USE FOR: memory pressure analysis
+   
+   High Availability & Clustering:
+   - cphaprob state : Cluster HA state (active/standby) - USE FOR: cluster status verification
+   - cphaprob stat : Detailed cluster statistics - USE FOR: failover debugging
+   
+   Network & Interfaces:
+   - ifconfig -a : Network interface configuration - USE FOR: interface status, IP addressing
+   - netstat -rn : Routing table - USE FOR: routing issues
+   - arp -an : ARP cache - USE FOR: L2 connectivity issues
+   
+   System Information:
+   - cpinfo -y all : Comprehensive system diagnostic bundle - USE FOR: deep troubleshooting (generates large output)
+   - cplic print : License information - USE FOR: feature/blade verification
+   
+   INTELLIGENT SELECTION RULES:
+   - Security/threat investigation → Focus on: fw log, fw tab -t connections, fw ctl pstat, fwaccel stats
+   - Performance/load issues → Focus on: cpstat fw -f multi_cpu, top -bn1, fwaccel stats, vmstat
+   - Connection problems → Focus on: fw tab -t connections -s, fw ctl conntab, netstat
+   - HA/cluster issues → Focus on: cphaprob state, cphaprob stat
+   - Version/config verification → Focus on: fw ver, fw stat, cplic print
+   
+   FORMAT: Prefix commands with "run_script:" in data_to_fetch array
+   Example: ["run_script:fw tab -t connections -s", "run_script:fw log"]
+   
+   CHOOSE WISELY: Select only the most relevant 2-4 commands for the specific investigation. Do not run all tools.
 
 8. Return ONLY valid JSON, no other text
 
