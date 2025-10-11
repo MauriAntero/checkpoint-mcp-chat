@@ -315,6 +315,12 @@ def initialize_app():
             
             # Load active model selections if not already in session state
             if config_data:
+                # Load saved Ollama context window
+                if 'ollama_context_window' in config_data:
+                    saved_ctx_window = config_data['ollama_context_window']
+                    st.session_state.ollama_client.context_window = saved_ctx_window
+                    print(f"[App Init] Loaded Ollama context window from config: {saved_ctx_window:,} tokens")
+                
                 if 'active_planner_model' not in st.session_state and 'active_planner_model' in config_data:
                     st.session_state.active_planner_model = config_data['active_planner_model']
                 if 'active_security_model' not in st.session_state and 'active_security_model' in config_data:
