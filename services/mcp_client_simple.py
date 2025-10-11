@@ -757,6 +757,10 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         string_data_points = [str(dp) for dp in data_points if isinstance(dp, str)]
                         search_text = f"{user_query} {' '.join(string_data_points)}".lower()
                         
+                        # CRITICAL: Use user_query_lower for audit detection to prevent false positives from LLM-generated data_points
+                        # (e.g., "all possible tools" → LLM adds "audit logs" to data_points → wrong log type)
+                        user_query_lower = user_query.lower()
+                        
                         # Time-frame detection (CheckPoint schema: last-7-days, last-hour, today, last-24-hours, 
                         # yesterday, this-week, this-month, last-30-days, all-time, custom)
                         # Use word boundaries to avoid false matches (e.g., "firewall logs" shouldn't match "all logs")
@@ -782,8 +786,9 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             time_frame = "last-hour"
                         
                         # Log type detection (Check Point schema: 'logs' for connection/traffic, 'audit' for audit)
+                        # ONLY check user_query to avoid false positives from LLM-generated data_points
                         if tool.name == 'show_logs':
-                            log_type = "audit" if 'audit' in search_text else "logs"
+                            log_type = "audit" if 'audit' in user_query_lower else "logs"
                             
                         # Generic traffic/connection logs are verbose - reduce page size
                         # Check if this is a generic traffic query (no specific blade filter)
