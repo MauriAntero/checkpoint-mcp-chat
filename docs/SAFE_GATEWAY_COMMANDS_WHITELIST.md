@@ -168,18 +168,44 @@ fw tab -t vpn_enc_domain_valid -f -u  # View encryption domains
 
 ---
 
-### 8. Performance Monitoring
+### 8. Performance & System Monitoring
 
 ```bash
+# Performance Monitoring
 cpview -p                         # Print all system performance metrics (non-interactive mode)
 cpview -m                         # Memory-specific performance metrics (non-interactive mode)
-top -n 1                          # Single snapshot of processes
-top -b 5                          # 5 iterations in batch mode
+top -b -n 1                       # Process snapshot in batch mode (ONLY allowed top usage)
+top -bn1                          # Batch mode combined form (alternative syntax)
 vmstat 1 5                        # Virtual memory stats (5 samples, 1 sec interval)
 ps aux                            # All running processes
+iostat                            # I/O statistics (basic)
+iostat -x                         # Extended I/O statistics
+iostat -d                         # Device statistics
+sar                               # System Activity Reporter (default)
+sar -u 1 5                        # CPU usage (1 sec interval, 5 samples)
+sar -r                            # Memory utilization
+sar -n DEV                        # Network statistics
+mpstat                            # Multiprocessor statistics
+mpstat -P ALL                     # Stats for all CPUs
+
+# System Information
+free -m                           # Memory usage in MB
+free -h                           # Memory usage human-readable
+free -g                           # Memory usage in GB
+lscpu                             # CPU architecture information
+lsblk                             # List block devices (basic)
+lsblk -a                          # List all block devices
+dmesg                             # Kernel ring buffer messages (boot/hardware events)
+
+# Check Point Diagnostics
+cpinfo                            # Basic diagnostic collection
+cpinfo -y all                     # Comprehensive diagnostic (auto-yes to all prompts)
 ```
 
-**Important:** Only `cpview -p` and `cpview -m` are allowed. Regular `cpview` (interactive dashboard) is blocked because it cannot be used in automated scripts.
+**Important:** 
+- `top -b -n <count>` (batch mode) is the ONLY allowed top command. Regular `top` requires TTY (interactive terminal) which doesn't exist in scripts.
+- `cpview -p` and `cpview -m` are the only allowed cpview commands. Regular `cpview` (interactive dashboard) is blocked.
+- `cpinfo -y all` is recommended for comprehensive diagnostics as it auto-answers prompts.
 
 ---
 

@@ -82,10 +82,18 @@ class CommandValidator:
         r'^cphaprob\s+(state|stat|list|syncstat|ldstat|mmagic|show_bond).*$',
         r'^cphaprob\s+-[ail]+\s+(if|list)$',
         
-        # Performance
-        r'^top\s+-(b|n)\s+\d+$',  # Allow batch mode or specific iterations: top -n 1, top -b 5
+        # Performance & System Monitoring
+        r'^top\s+-b\s+-n\s+\d+$',  # Batch mode with iterations: top -b -n 1, top -b -n 5
+        r'^top\s+-bn\d+$',  # Batch mode combined form: top -bn1, top -bn5
         r'^ps\s+aux$',
         r'^vmstat\s+\d+\s+\d+$',  # Allow vmstat with interval and count: vmstat 1 1, vmstat 1 5
+        r'^iostat(\s+-[xdkmt]+)?(\s+\d+)?(\s+\d+)?$',  # I/O statistics
+        r'^sar(\s+-[uqrbdnw]+)?(\s+\d+)?(\s+\d+)?$',  # System Activity Reporter
+        r'^mpstat(\s+-P\s+(ALL|\d+))?(\s+\d+)?(\s+\d+)?$',  # Multiprocessor statistics
+        r'^free\s+-[mhg]$',  # Memory usage: -m (MB), -h (human-readable), -g (GB)
+        r'^lscpu$',  # CPU architecture info
+        r'^lsblk(\s+-[afimo]+)?$',  # Block devices
+        r'^dmesg$',  # Kernel ring buffer messages
         
         # CP Utilities
         r'^cpstat(\s+[a-z]+)?(\s+-f\s+[a-z_]+)?$',
@@ -94,7 +102,7 @@ class CommandValidator:
         r'^cplic\s+print$',
         r'^vpn\s+tu\s+tlist$',
         r'^cpca_client\s+lscert$',
-        r'^cpinfo$',
+        r'^cpinfo(\s+-y\s+all)?$',  # cpinfo or cpinfo -y all (auto-yes to prompts)
         r'^cpview\s+-(p|m)$',  # ONLY cpview -p (print mode) and cpview -m (memory) are allowed
         
         # Log files (read-only with specific paths)
@@ -131,7 +139,7 @@ class CommandValidator:
         # Interactive Tools (must be blocked or require specific non-interactive flags)
         r'\bcpview(?!\s+-[pm]\b)',  # Block cpview UNLESS it's "cpview -p" (print) or "cpview -m" (memory)
         r'\bfw\s+monitor\b',  # Interactive packet capture - always blocked
-        r'^top(?!\s+-[bn]).*$',  # Block 'top' unless it has -n (iterations) or -b (batch mode)
+        r'^top(?!\s+-b(?:\s+-n\s+\d+|n\d+)).*$',  # Block top UNLESS batch mode: top -b -n 1 or top -bn1
         
         # Debug Commands
         r'\bfw\s+ctl\s+debug\b',
@@ -564,11 +572,18 @@ GATEWAY_EXECUTOR_LLM_PROMPT = """
 - Log inspection (recent events, specific blade logs)
 
 **IMPORTANT Command Usage Rules:**
-- `ifconfig -a` - Shows all network interfaces with details (recommended over plain ifconfig)
-- `cpview -p` - Print all performance metrics (non-interactive mode)
-- `cpview -m` - Memory-specific performance metrics (non-interactive mode)
-- Regular `cpview` is blocked (interactive dashboard) - ONLY -p and -m flags are allowed
-- Use flags/arguments when they provide better data (e.g., netstat -rn, top -n 1, vmstat 1 5)
+- `top -b -n 1` or `top -bn1` - Process snapshot in batch mode (ONLY allowed top usage - no TTY in scripts)
+- `cpview -p` - Print all performance metrics (non-interactive)
+- `cpview -m` - Memory-specific performance metrics (non-interactive)
+- `cpinfo -y all` - Comprehensive diagnostic with auto-yes (recommended over plain cpinfo)
+- `ifconfig -a` - All network interfaces with details (recommended)
+- `free -h` - Human-readable memory usage (also: -m for MB, -g for GB)
+- `iostat -x` - Extended I/O statistics (also: -d for devices, -k for KB)
+- `sar -u` - CPU usage stats (also: -r memory, -n network, -b I/O)
+- `mpstat` - Multiprocessor statistics (use -P ALL for all CPUs)
+- `dmesg` - Kernel ring buffer messages (boot/hardware events)
+- `lscpu`, `lsblk` - CPU/disk hardware information
+- Regular `cpview` and `top` (without -b) are blocked (require interactive terminal)
 
 **Format in data_to_fetch:**
 - "run_script:<any_valid_checkpoint_cli_command>"
@@ -593,9 +608,12 @@ User: "Full health check on cp-gw" or "Full diagnosis on cp-gw"
     "run_script:fw stat",
     "run_script:fwaccel stat",
     "run_script:cpview -p",
+    "run_script:top -b -n 1",
+    "run_script:free -h",
     "run_script:ifconfig -a",
     "run_script:netstat -rn",
-    "run_script:df -h"
+    "run_script:df -h",
+    "run_script:iostat -x"
   ],
   "analysis_type": "comprehensive_diagnostics"
 }
