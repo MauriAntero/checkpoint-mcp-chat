@@ -619,6 +619,36 @@ GATEWAY_EXECUTOR_LLM_PROMPT = """
 - `lscpu`, `lsblk` - CPU/disk hardware information
 - Regular `cpview` and `top` (without -b) are blocked (require interactive terminal)
 
+**⚠️ CRITICAL: fw log Command Syntax:**
+The `fw log` command has specific flag rules - incorrect usage causes execution failures:
+
+**✅ CORRECT Usage:**
+- `fw log -n` - View logs without resolving hostnames
+- `fw log -n -c drop` - Filter by ACTION (drop/accept/reject)
+- `fw log -n -c accept` - Filter by ACTION (accept)
+- `fw log -n -s 192.168.1.10` - Filter by SOURCE IP
+- `fw log -n -d 10.0.0.5` - Filter by DESTINATION IP
+- `fw log -n -h firewall01` - Filter by HOST/origin
+- `fw log -f` - Follow/tail active log file (real-time)
+- `fw log -f -n` - Follow active log without hostname resolution
+- `fw lslogs` - List available log files and sizes
+
+**❌ INCORRECT Usage (will FAIL):**
+- `fw log -n -t drop` ❌ - WRONG! "-t" is for tailing, "drop" interpreted as filename
+- `fw log -t drop` ❌ - WRONG! "-t" only works with active log file, not filters
+- `fw log -n drop` ❌ - WRONG! "drop" is not a valid standalone argument
+
+**Flag Meanings:**
+- `-n` = Don't resolve hostnames (speeds up output)
+- `-f` = Follow mode - tail active log file in real-time
+- `-t` = Same as -f but starts at end of file (NOT for filtering!)
+- `-c <action>` = Filter by action (drop/accept/reject)
+- `-s <IP>` = Filter by source IP
+- `-d <IP>` = Filter by destination IP
+- `-h <host>` = Filter by hostname/origin
+
+**Remember:** To filter dropped traffic, use `-c drop` NOT `-t drop`!
+
 **Format in data_to_fetch:**
 - "run_script:<any_valid_checkpoint_cli_command>"
 
