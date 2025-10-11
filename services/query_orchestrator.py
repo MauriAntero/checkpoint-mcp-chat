@@ -332,15 +332,13 @@ class QueryOrchestrator:
         """
         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Stage 1: Analyzing user intent...")
         
-        # Build MCP capabilities summary
-        capabilities_summary = []
-        for server_name, capability in self.MCP_CAPABILITIES.items():
-            capabilities_summary.append(f"- {server_name}: {', '.join(capability.capabilities[:3])}")
+        # Build full MCP capabilities description (same as Phase 2 for complete context)
+        capabilities_desc = self._build_capabilities_description()
         
         intent_prompt = f"""You are an expert at understanding user intent for CheckPoint security infrastructure queries.
 
 Available MCP Server Capabilities:
-{chr(10).join(capabilities_summary)}
+{capabilities_desc}
 
 User Query: "{user_query}"
 
