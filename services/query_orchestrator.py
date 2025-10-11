@@ -594,17 +594,17 @@ CRITICAL RULES FOR MCP SERVER SELECTION:
    - cpinfo -y all : Comprehensive system diagnostic bundle - USE FOR: deep troubleshooting (generates large output)
    - cplic print : License information - USE FOR: feature/blade verification
    
-   INTELLIGENT SELECTION RULES:
-   - Security/threat investigation → Focus on: fw log, fw tab -t connections, fw ctl pstat, fwaccel stats
-   - Performance/load issues → Focus on: cpstat fw -f multi_cpu, top -bn1, fwaccel stats, vmstat
-   - Connection problems → Focus on: fw tab -t connections -s, fw ctl conntab, netstat
-   - HA/cluster issues → Focus on: cphaprob state, cphaprob stat
-   - Version/config verification → Focus on: fw ver, fw stat, cplic print
+   INTELLIGENT SELECTION GUIDELINES (not prescriptive - adapt to investigation complexity):
+   - Security/threat investigation → Consider: fw log, fw tab -t connections, fw ctl pstat, fwaccel stats
+   - Performance/load issues → Consider: cpstat fw -f multi_cpu, top -bn1, fwaccel stats, vmstat
+   - Connection problems → Consider: fw tab -t connections -s, fw ctl conntab, netstat
+   - HA/cluster issues → Consider: cphaprob state, cphaprob stat
+   - Version/config verification → Consider: fw ver, fw stat, cplic print
    
    FORMAT: Prefix commands with "run_script:" in data_to_fetch array
    Example: ["run_script:fw tab -t connections -s", "run_script:fw log"]
    
-   CHOOSE WISELY: Select only the most relevant 2-4 commands for the specific investigation. Do not run all tools.
+   SELECTION PRINCIPLE: Choose ALL relevant tools needed for thorough investigation. Simple queries may need 1-2 commands, complex investigations may require 5-10+ commands. Prioritize completeness over minimalism.
 
 8. Return ONLY valid JSON, no other text
 
