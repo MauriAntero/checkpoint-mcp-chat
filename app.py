@@ -895,6 +895,67 @@ def show_chat_interface():
             
             st.markdown("---")
             
+            # Network Topology Configuration
+            st.markdown("### 🌐 Network Topology Context")
+            st.caption("Configure network zones for intelligent security investigations")
+            
+            # Load current network context
+            if 'network_context_service' not in st.session_state:
+                from services.network_context_service import NetworkContextService
+                st.session_state.network_context_service = NetworkContextService(st.session_state.mcp_manager)
+            
+            # Show refresh button
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.write("Auto-discover networks from Management API and gateway routing")
+            with col2:
+                if st.button("🔄 Discover Now", key="refresh_network_context", use_container_width=True):
+                    with st.spinner("Discovering network topology..."):
+                        import asyncio
+                        try:
+                            network_context = asyncio.run(
+                                st.session_state.network_context_service.get_network_context(force_refresh=True)
+                            )
+                            st.success(f"✓ Discovered {len(network_context.get('internal_networks', []))} internal networks")
+                            st.json(network_context)
+                        except Exception as e:
+                            st.error(f"Discovery failed: {e}")
+            
+            # Manual overrides section
+            with st.expander("⚙️ Manual Network Overrides", expanded=False):
+                st.caption("Override auto-discovery with custom network classifications")
+                
+                from pathlib import Path
+                override_file = Path("config/network_overrides.json")
+                template_file = Path("config/network_overrides.json.template")
+                
+                if override_file.exists():
+                    try:
+                        import json
+                        with open(override_file, 'r') as f:
+                            overrides = json.load(f)
+                        
+                        st.json(overrides)
+                        st.info("📝 Edit `config/network_overrides.json` to customize network zones")
+                        
+                        if st.button("Remove Overrides", key="remove_network_overrides"):
+                            override_file.unlink()
+                            st.success("Overrides removed - using auto-discovery")
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f"Error loading overrides: {e}")
+                else:
+                    st.info("No manual overrides configured")
+                    if template_file.exists():
+                        if st.button("Create Override File", key="create_network_overrides"):
+                            import shutil
+                            shutil.copy(template_file, override_file)
+                            st.success(f"✓ Created {override_file}")
+                            st.info("Edit the file and click 'Discover Now' to apply")
+                            st.rerun()
+            
+            st.markdown("---")
+            
             # Check Point MCP Server Configuration
             st.markdown("### Check Point MCP Servers")
             

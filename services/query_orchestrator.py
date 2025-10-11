@@ -130,6 +130,10 @@ class QueryOrchestrator:
         # Gateway directory for credential sharing
         self.gateway_directory = GatewayDirectory()
         
+        # Network context service for topology awareness
+        from services.network_context_service import NetworkContextService
+        self.network_context_service = NetworkContextService(mcp_manager)
+        
         # Session context for conversational caching
         self.session_context = {
             "last_gateway": None,
@@ -335,11 +339,21 @@ class QueryOrchestrator:
         # Build full MCP capabilities description (same as Phase 2 for complete context)
         capabilities_desc = self._build_capabilities_description()
         
+        # Get network context (use cache if available)
+        import asyncio
+        try:
+            # Try to get cached context quickly (no forced refresh)
+            network_context = asyncio.run(self.network_context_service.get_network_context(force_refresh=False))
+            network_context_text = self.network_context_service.format_context_for_llm(network_context)
+        except Exception as e:
+            print(f"[QueryOrchestrator] Could not load network context: {e}")
+            network_context_text = "\nNETWORK TOPOLOGY: Not available\n"
+        
         intent_prompt = f"""You are an expert at understanding user intent for CheckPoint security infrastructure queries.
 
 Available MCP Server Capabilities:
 {capabilities_desc}
-
+{network_context_text}
 User Query: "{user_query}"
 
 Analyze this query and extract the user's true intent. Return a JSON object with this structure:
@@ -468,6 +482,16 @@ Intent Analysis:"""
         # Build capabilities description with API specifications
         capabilities_desc = self._build_capabilities_description()
         
+        # Get network context (use cache if available)
+        import asyncio
+        try:
+            # Try to get cached context quickly (no forced refresh)
+            network_context = asyncio.run(self.network_context_service.get_network_context(force_refresh=False))
+            network_context_text = self.network_context_service.format_context_for_llm(network_context)
+        except Exception as e:
+            print(f"[QueryOrchestrator] Could not load network context for Stage 2: {e}")
+            network_context_text = ""
+        
         # Get list of active servers
         active_server_names = self.mcp_manager.get_active_servers()
         active_server_types = active_server_names
@@ -492,7 +516,7 @@ Intent Analysis:"""
 
 Available MCP Servers and Their Capabilities:
 {capabilities_desc}
-
+{network_context_text}
 Currently Active Servers: {', '.join(active_server_types) if active_server_types else 'None'}{gateway_executor_instructions}
 
 USER INTENT ANALYSIS (from Stage 1):
