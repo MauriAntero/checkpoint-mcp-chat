@@ -267,18 +267,31 @@ class GatewayScriptExecutor:
                 user_parameter_selections=user_params
             ))
             
-            # Parse MCP response
-            if mcp_result and 'content' in mcp_result:
-                result['success'] = True
-                # Extract text from content
-                output = ''
-                for item in mcp_result.get('content', []):
-                    if item.get('type') == 'text':
-                        output += item.get('text', '')
-                result['output'] = output
-                result['task_id'] = mcp_result.get('task-id', '')
+            # Parse MCP response - structure is: tool_results[0]['result']['content']
+            if mcp_result and 'tool_results' in mcp_result:
+                tool_results = mcp_result['tool_results']
+                if tool_results and len(tool_results) > 0:
+                    first_result = tool_results[0]
+                    if 'result' in first_result:
+                        tool_result_data = first_result['result']
+                        if 'content' in tool_result_data:
+                            result['success'] = True
+                            # Extract text from content list
+                            output = ''
+                            for item in tool_result_data.get('content', []):
+                                if isinstance(item, dict) and item.get('type') == 'text':
+                                    output += item.get('text', '')
+                                elif isinstance(item, str):
+                                    output += item
+                            result['output'] = output
+                        else:
+                            result['error'] = 'No content in tool result'
+                    else:
+                        result['error'] = 'No result data in tool response'
+                else:
+                    result['error'] = 'No tool results returned'
             else:
-                result['error'] = mcp_result.get('error', 'No content returned from MCP server')
+                result['error'] = mcp_result.get('error', 'Invalid MCP response structure')
         
         except Exception as e:
             result['error'] = f"Execution error: {str(e)}"

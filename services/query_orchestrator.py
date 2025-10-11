@@ -656,19 +656,33 @@ Technical Execution Plan:"""
                             ['show_gateways_and_servers']
                         ))
                         
-                        if discover_result and 'content' in discover_result:
-                            for item in discover_result['content']:
-                                if item.get('type') == 'text':
-                                    try:
-                                        gw_data = json_module.loads(item['text'])
-                                        if isinstance(gw_data, dict) and 'objects' in gw_data:
-                                            gateways = [obj['name'] for obj in gw_data['objects'] if obj.get('type') == 'simple-gateway']
-                                            if gateways:
-                                                gateway_name = gateways[0]
+                        # Parse MCP result structure: tool_results[0]['result']['content']
+                        if discover_result and 'tool_results' in discover_result:
+                            tool_results = discover_result['tool_results']
+                            if tool_results and len(tool_results) > 0:
+                                first_result = tool_results[0]
+                                if 'result' in first_result and 'content' in first_result['result']:
+                                    content = first_result['result']['content']
+                                    # Content is a list - could be dict objects or need parsing
+                                    for item in content:
+                                        if isinstance(item, dict):
+                                            # Direct dict - check for gateway objects
+                                            if item.get('type') == 'simple-gateway' and item.get('name'):
+                                                gateway_name = item['name']
                                                 print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Discovered and using gateway: {gateway_name}")
                                                 break
-                                    except Exception as parse_error:
-                                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Parse error: {parse_error}")
+                                        elif isinstance(item, str):
+                                            # String - might need JSON parsing
+                                            try:
+                                                gw_data = json_module.loads(item)
+                                                if isinstance(gw_data, dict) and 'objects' in gw_data:
+                                                    gateways = [obj['name'] for obj in gw_data['objects'] if obj.get('type') == 'simple-gateway']
+                                                    if gateways:
+                                                        gateway_name = gateways[0]
+                                                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Discovered and using gateway: {gateway_name}")
+                                                        break
+                                            except Exception as parse_error:
+                                                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Parse error: {parse_error}")
                     except Exception as e:
                         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Gateway discovery failed: {e}")
                 
