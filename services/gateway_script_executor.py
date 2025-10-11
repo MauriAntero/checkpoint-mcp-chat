@@ -313,40 +313,82 @@ class GatewayScriptExecutor:
             script_response = requests.post(run_script_url, json=script_payload, headers=headers, verify=False, timeout=60)
             print(f"[GatewayScriptExecutor] run-script response status: {script_response.status_code}")
             
-            # Step 3: Logout
-            logout_url = f"{base_url}/logout"
-            requests.post(logout_url, headers=headers, json={}, verify=False, timeout=10)
-            
-            # Parse run-script response
+            # Parse run-script response to get task-id
             if script_response.status_code == 200:
                 script_data = script_response.json()
                 print(f"[GatewayScriptExecutor] run-script response data: {script_data}")
                 
-                # Extract tasks results
+                # Extract task-id from response
                 tasks = script_data.get('tasks', [])
-                print(f"[GatewayScriptExecutor] Found {len(tasks)} tasks in response")
                 if tasks and len(tasks) > 0:
-                    task = tasks[0]
-                    task_output = task.get('task-details', [])
-                    print(f"[GatewayScriptExecutor] Task details: {task_output}")
+                    task_id = tasks[0].get('task-id')
+                    print(f"[GatewayScriptExecutor] Got task-id: {task_id}")
                     
-                    # Combine all output
-                    output_text = ''
-                    for detail in task_output:
-                        if isinstance(detail, dict):
-                            output_text += str(detail.get('responseMessage', '')) + '\n'
+                    if task_id:
+                        # Step 3: Poll show-task endpoint until task completes
+                        show_task_url = f"{base_url}/show-task"
+                        max_polls = 30  # Poll for up to 30 seconds
+                        poll_interval = 1  # 1 second between polls
+                        
+                        for poll_count in range(max_polls):
+                            import time
+                            time.sleep(poll_interval)
+                            
+                            task_status_response = requests.post(
+                                show_task_url, 
+                                json={"task-id": task_id}, 
+                                headers=headers, 
+                                verify=False, 
+                                timeout=10
+                            )
+                            
+                            if task_status_response.status_code == 200:
+                                task_status_data = task_status_response.json()
+                                status = task_status_data.get('tasks', [{}])[0].get('status', '')
+                                print(f"[GatewayScriptExecutor] Poll {poll_count+1}: Task status = {status}")
+                                
+                                if status == 'succeeded':
+                                    # Extract output from completed task
+                                    task_details = task_status_data.get('tasks', [{}])[0].get('task-details', [])
+                                    print(f"[GatewayScriptExecutor] Task completed! Details: {task_details}")
+                                    
+                                    output_text = ''
+                                    for detail in task_details:
+                                        if isinstance(detail, dict):
+                                            response_msg = detail.get('responseMessage', '')
+                                            output_text += str(response_msg) + '\n'
+                                        else:
+                                            output_text += str(detail) + '\n'
+                                    
+                                    result['success'] = True
+                                    result['output'] = output_text.strip()
+                                    print(f"[GatewayScriptExecutor] Final output length: {len(output_text)}")
+                                    break
+                                elif status == 'failed':
+                                    result['error'] = f"Task failed: {task_status_data}"
+                                    print(f"[GatewayScriptExecutor] Task failed: {result['error']}")
+                                    break
+                                elif status == 'in progress':
+                                    continue  # Keep polling
+                            else:
+                                result['error'] = f"show-task API failed: {task_status_response.status_code}"
+                                print(f"[GatewayScriptExecutor] show-task error: {result['error']}")
+                                break
                         else:
-                            output_text += str(detail) + '\n'
-                    
-                    result['success'] = True
-                    result['output'] = output_text.strip()
-                    print(f"[GatewayScriptExecutor] Final output length: {len(output_text)}")
+                            result['error'] = f"Task polling timeout after {max_polls} seconds"
+                            print(f"[GatewayScriptExecutor] Timeout: {result['error']}")
+                    else:
+                        result['error'] = "No task-id in run-script response"
                 else:
                     result['error'] = f"No tasks in run-script response: {script_data}"
                     print(f"[GatewayScriptExecutor] Error: {result['error']}")
             else:
                 result['error'] = f"run-script API failed: {script_response.status_code} - {script_response.text}"
                 print(f"[GatewayScriptExecutor] API error: {result['error']}")
+            
+            # Step 4: Logout
+            logout_url = f"{base_url}/logout"
+            requests.post(logout_url, headers=headers, json={}, verify=False, timeout=10)
         
         except Exception as e:
             result['error'] = f"Execution error: {str(e)}"
