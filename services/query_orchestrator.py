@@ -1578,16 +1578,21 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
     def _filter_log_fields(self, data_collected: Dict[str, Any]) -> Dict[str, Any]:
         """Filter log data to remove Check Point metadata and reduce token usage
         
-        Keeps comprehensive security fields (~165+ fields), removes only useless metadata.
+        Keeps comprehensive security fields (~190+ fields based on SK144192), removes only useless metadata.
         Expanded field list preserves critical context for threat analysis:
-        - Drop/rejection reasons (reason, message, description)
-        - Threat details (threat_description, signature_name, CVE IDs)
+        - Authentication/Identity (user_group, auth_method, identity_type, machine names)
+        - Application Control (application_name, application_id, app_sig_name, user_agent, referer)
+        - Threat/IPS (attack_name, attack_id, cvss, bot_name, matched_patterns, indicators, packet_capture)
+        - Policy hierarchy (access_rule_number, matched_rules, blade identifier, layer names)
         - DNS analysis (dns_query, requested_hostname, query_name, dns_type, dns_response)
         - Hostname identification (hostname, fqdn, source/destination hostnames)
+        - Endpoint Security (endpoint_name, endpoint_id, compliance_status)
+        - VPN details (encryption_failure, peer_gateway, community)
+        - Drop/rejection reasons (reason, message, description)
         - Geographic/location data (country, city, source/dest location)
         - Client/OS information (source_os, destination_os, client details)
         - Web filtering (categories, matched_categories, HTTP details)
-        - Email/Anti-Bot/AV/IPS fields for comprehensive analysis
+        - Email/Anti-Bot/AV fields for comprehensive analysis
         
         Expected token reduction: ~60-70% while preserving valuable context
         
@@ -1609,6 +1614,8 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             # Policy context (logs)
             'rule', 'rule_uid', 'rule_name', 'layer_name', 'layer_uid', 'match_id', 'policy',
             'sub_policy_name', 'sub_policy_uid', 'parent_rule',
+            'access_rule_number', 'access_rule_name', 'matched_rules',  # Access rule hierarchy
+            'blade',  # Blade identifier (APPI, URLF, IPS, ABOT, etc.)
             
             # Rule/Policy details (rulebase objects)
             'rule-number', 'enabled', 'install-on', 'track', 'comments',
@@ -1620,24 +1627,31 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             
             # User/Application - CRITICAL for identity tracking
             'user', 'src_user_name', 'dst_user_name', 'username', 'identity',
-            'application', 'app_category', 'app_risk', 'app_desc', 'app_properties',
+            'user_group', 'src_user_group', 'dst_user_group', 'source_user_group',  # AD/LDAP groups (directional)
+            'auth_method', 'identity_type',  # Authentication context
+            'src_machine_name', 'dst_machine_name',  # Machine names
+            'application', 'appi_name', 'application_name', 'application_id', 'app_sig_name',  # Application identification
+            'app_category', 'app_risk', 'app_desc', 'app_properties',
+            'methods', 'user_agent', 'referer',  # HTTP methods and headers
             
             # Traffic details
             'bytes', 'sent_bytes', 'received_bytes', 'packets', 'duration', 'conn_direction',
             'ifdir', 'ifname', 'interface_direction',
             
             # Threat information - CRITICAL for analysis
-            'attack', 'attack_info', 'severity', 'confidence_level', 'protection_name',
-            'malware_action', 'threat_prevention_action', 'threat_description',
-            'signature_name', 'cveid', 'cve', 'performance_impact',
+            'attack', 'attack_info', 'attack_name', 'attack_id', 'severity', 'confidence_level',
+            'protection_name', 'malware_action', 'threat_prevention_action', 'threat_description',
+            'signature_name', 'cveid', 'cve', 'cvss', 'performance_impact',
             'update_version', 'protection_type', 'category', 'matched_category',
+            'bot_name', 'matched_patterns', 'indicators',  # Anti-Bot specific
+            'packet_capture', 'inline_layer_name', 'protection_layer_name',  # IPS details
             
             # Drop/Reject reasons - CRITICAL for troubleshooting
             'reason', 'message', 'description', 'reject_category', 'reject_reason',
             'suppressed_logs',
             
             # VPN specific
-            'vpn_feature_name', 'peer_gateway', 'encryption_method', 'community',
+            'vpn_feature_name', 'peer_gateway', 'encryption_method', 'encryption_failure', 'community',
             
             # HTTPS Inspection
             'site_name', 'resource', 'method', 'https_inspection_action',
@@ -1653,10 +1667,18 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             # Reputation Service (IOC checks)
             'ip', 'file_hash', 'md5', 'sha1', 'sha256', 'reputation', 'risk', 
             'threat_category', 'classification', 'first_seen', 'last_seen',
+            'indicator_type', 'indicator_description',  # IOC metadata
+            
+            # Data Loss Prevention (DLP)
+            'dlp_action', 'dlp_rule', 'dlp_incident_id', 'dlp_fingerprint',
+            'dlp_message_uid', 'dlp_attachment_name', 'dlp_attachment_md5', 'dlp_attachment_sha1',
+            'dlp_violation_type',  # DLP incident tracking
             
             # Threat Emulation (sandbox/malware analysis)
             'file_name', 'file_type', 'file_size', 'verdict', 'status', 'analysis_status',
             'threat_name', 'malware_family', 'confidence', 'extracted_iocs', 'suspicious_activities',
+            'te_action', 'te_verdict', 'te_filename', 'te_file_type', 'te_result',
+            'te_md5', 'te_sha1', 'te_sha256', 'te_flow_id', 'te_composite_id',  # TE hash/tracking
             
             # Gateway Connection Analysis
             'connection_id', 'protocol', 'state', 'connection_state', 'packet_count',
@@ -1686,8 +1708,9 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             # Email security (if applicable)
             'email_subject', 'email_sender', 'email_recipient', 'email_id',
             
-            # Mobile Access
+            # Mobile Access & Endpoint Security
             'mobile_device', 'mobile_app',
+            'endpoint_name', 'endpoint_id', 'compliance_status',  # Endpoint Compliance
             
             # Anti-Bot/Anti-Virus
             'detected_malware_name', 'virus_name', 'scan_result',
@@ -1695,8 +1718,9 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             # IPS/AV additional fields
             'protection_id', 'protection_severity', 'incident_extension',
             
-            # SmartEvent correlation
-            'event_count', 'aggregation_count'
+            # SmartEvent correlation & Metadata
+            'event_count', 'aggregation_count',
+            'sequencenum', 'originsicname', 'loguid'  # Log sequence, origin, and unique ID
         }
         
         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] _filter_log_fields: Starting log field filtering...")
