@@ -1578,10 +1578,12 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
     def _filter_log_fields(self, data_collected: Dict[str, Any]) -> Dict[str, Any]:
         """Filter log data to remove Check Point metadata and reduce token usage
         
-        Keeps comprehensive security fields, removes only useless metadata.
+        Keeps comprehensive security fields (~165+ fields), removes only useless metadata.
         Expanded field list preserves critical context for threat analysis:
         - Drop/rejection reasons (reason, message, description)
         - Threat details (threat_description, signature_name, CVE IDs)
+        - DNS analysis (dns_query, requested_hostname, query_name, dns_type, dns_response)
+        - Hostname identification (hostname, fqdn, source/destination hostnames)
         - Geographic/location data (country, city, source/dest location)
         - Client/OS information (source_os, destination_os, client details)
         - Web filtering (categories, matched_categories, HTTP details)
@@ -1641,6 +1643,10 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             'site_name', 'resource', 'method', 'https_inspection_action',
             'http_host', 'url', 'uri', 'web_server_type',
             
+            # DNS Analysis - CRITICAL for malware DNS detection
+            'dns_query', 'requested_hostname', 'query_name', 'dns_type', 'dns_response',
+            'dns_message_type', 'answer', 'query_type', 'response_type',
+            
             # Audit logs - CRITICAL
             'administrator', 'operation', 'command',
             
@@ -1663,6 +1669,7 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             # Object/Gateway metadata - CRITICAL for name-to-IP mapping
             'name',  # Friendly name (e.g., "HR-Server" instead of raw IP)
             'ipv4-address', 'ipv6-address', 'type',  # IP addresses and object type
+            'hostname', 'fqdn', 'host', 'source_hostname', 'destination_hostname',  # Host identification
             
             # Geographic/Location data - useful for analysis
             'source_location', 'destination_location', 'country', 'city',
