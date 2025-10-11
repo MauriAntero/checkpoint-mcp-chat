@@ -236,17 +236,17 @@ class GatewayScriptExecutor:
         
         result['validated'] = True
         
-        # Execute via quantum-management MCP run-script tool
+        # Execute via quantum-gw-cli MCP run-script tool
         try:
-            # Get quantum-management server config
+            # Get quantum-gw-cli server config
             all_servers = self.mcp_manager.get_all_servers()
-            if 'quantum-management' not in all_servers:
-                result['error'] = "quantum-management MCP server not configured. Please configure it in Settings."
+            if 'quantum-gw-cli' not in all_servers:
+                result['error'] = "quantum-gw-cli MCP server not configured. Please configure it in Settings."
                 self._log_execution(result)
                 return result
             
-            mgmt_config = all_servers['quantum-management']
-            mgmt_env = mgmt_config.get('env', {})
+            gw_cli_config = all_servers['quantum-gw-cli']
+            gw_cli_env = gw_cli_config.get('env', {})
             
             # Import async MCP client
             from services.mcp_client_simple import query_mcp_server_async
@@ -261,8 +261,8 @@ class GatewayScriptExecutor:
             
             # Execute MCP query (package_name, env_vars, data_points, user_params)
             mcp_result = asyncio.run(query_mcp_server_async(
-                '@chkp/quantum-management-mcp',
-                mgmt_env,
+                '@chkp/quantum-gw-cli-mcp',
+                gw_cli_env,
                 ['run-script'],
                 user_parameter_selections=user_params
             ))

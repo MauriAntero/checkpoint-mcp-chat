@@ -133,7 +133,7 @@ Integrate with Check Point's open-source Model Context Protocol servers for comp
 
 ### Gateway Script Executor (Optional)
 
-The Gateway Script Executor provides a secure way to execute diagnostic commands directly on Check Point gateways using the Management API's `run-script` function. This advanced feature enables LLM-driven diagnostics while maintaining enterprise-grade safety through multi-layer validation.
+The Gateway Script Executor provides a secure way to execute diagnostic commands directly on Check Point gateways using the `@chkp/quantum-gw-cli-mcp` server's `run-script` tool. This advanced feature enables LLM-driven diagnostics while maintaining enterprise-grade safety through multi-layer validation.
 
 #### Safety Architecture
 
@@ -190,8 +190,8 @@ Your Management API administrator user requires these permissions:
    - Check "Enable Gateway Script Executor"
    - Review the Management API permissions instructions
 
-2. **Verify Permissions:**
-   - Ensure your API user has "Scripts (Write)" permission in SmartConsole
+2. **Configure quantum-gw-cli MCP:**
+   - Ensure `@chkp/quantum-gw-cli-mcp` is configured in MCP Servers settings
    - Test with a safe command: `"Show gateway version on cp-gw"`
 
 3. **Usage:**
