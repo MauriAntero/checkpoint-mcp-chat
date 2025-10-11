@@ -678,7 +678,7 @@ Technical Execution Plan:"""
                 "understanding": f"⚠️ {error_msg}",
                 "required_servers": [],
                 "execution_steps": [],
-                "user_query": user_query  # Include for verbose mode detection
+                "user_query": user_query  # Include for session context caching
             }
         
         if not response:
@@ -687,7 +687,7 @@ Technical Execution Plan:"""
                 "understanding": "Could not analyze query",
                 "required_servers": [],
                 "execution_steps": [],
-                "user_query": user_query  # Include for verbose mode detection
+                "user_query": user_query  # Include for session context caching
             }
         
         # Parse JSON response
@@ -1794,19 +1794,8 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         # Build context from execution results - filter log fields to reduce tokens
         data_collected = execution_results.get('data_collected', {})
         
-        # Check if user wants detailed/verbose output (skip filtering for maximum detail)
-        user_query = plan.get('user_query', '').lower()
-        skip_filtering_keywords = ['verbose', 'detailed', 'comprehensive', 'in-depth', 'thorough', 'complete details', 'full details']
-        skip_filtering = any(keyword in user_query for keyword in skip_filtering_keywords)
-        
-        if skip_filtering:
-            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ⚠️ VERBOSE mode detected - skipping log field filtering for maximum detail")
-            execution_results['warnings'] = execution_results.get('warnings', []) + [
-                "ℹ️ Verbose mode enabled: Providing complete unfiltered data for detailed analysis (higher token usage)"
-            ]
-        else:
-            # Apply log field filtering to reduce token usage by ~70%
-            data_collected = self._filter_log_fields(data_collected)
+        # Apply intelligent log field filtering to reduce token usage while preserving valuable security information
+        data_collected = self._filter_log_fields(data_collected)
         
         # Extract discovered resources for better context
         discovered_resources_summary = {}
