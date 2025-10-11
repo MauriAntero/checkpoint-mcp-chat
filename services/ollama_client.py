@@ -157,7 +157,7 @@ class OllamaClient:
             response = self.session.post(
                 f"{self.base_url}/api/generate",
                 json=request_data,
-                timeout=120  # 2 minutes for generation
+                timeout=600  # 10 minutes for generation (local hardware needs time for large contexts)
             )
             
             if response.status_code == 200:
@@ -206,7 +206,7 @@ class OllamaClient:
             response = self.session.post(
                 f"{self.base_url}/api/generate",
                 json=request_data,
-                timeout=120,
+                timeout=600,  # 10 minutes for generation (local hardware needs time for large contexts)
                 stream=True
             )
             
