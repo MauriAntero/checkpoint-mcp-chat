@@ -738,34 +738,54 @@ Technical Execution Plan:"""
         # Apply session context to data_to_fetch (inject cached gateway if applicable)
         data_to_fetch = self._apply_session_context(plan.get("data_to_fetch", []), query_text)
         
-        # Check for run_script commands if executor is enabled
-        # VALIDATION: Filter out run_script commands for log/threat queries
+        # PRIORITY VALIDATION: Ensure management sources are primary for ANY data-oriented queries
+        # Gateway Script Executor runs as supplemental only (not blocked, but management-logs is always added for data queries)
         if self.gateway_script_executor:
             run_script_commands = [item for item in data_to_fetch if isinstance(item, str) and item.startswith("run_script:")]
             if run_script_commands:
                 query_lower = query_text.lower()
-                time_keywords = ['last', 'days', 'hours', 'minutes', 'yesterday', 'past', 'week', 'month', 'ago', 'since', 'from', 'to']
-                threat_keywords = ['threat', 'suspicious', 'attack', 'malicious', 'dropped', 'blocked', 'rejected', 'intrusion', 'incident', 'alert', 'traffic', 'connection', 'log']
                 
-                has_time_filter = any(keyword in query_lower for keyword in time_keywords)
-                has_threat_context = any(keyword in query_lower for keyword in threat_keywords)
+                # Expanded detection: ANY data/log/traffic/security query needs management sources
+                # Only specific security/data nouns - NO generic verbs, NO time keywords (time is contextual)
+                security_data_keywords = [
+                    # Log/event keywords
+                    'log', 'logs', 'event', 'events', 'alert', 'alerts',
+                    # Threat/security keywords
+                    'threat', 'threats', 'suspicious', 'attack', 'attacks', 'malicious', 'intrusion', 'incident', 'incidents',
+                    # Traffic/connection keywords (specific data context)
+                    'traffic', 'connection', 'connections', 'session', 'sessions', 'flow', 'flows',
+                    # Action keywords (security-related)
+                    'dropped', 'blocked', 'rejected', 'denied', 'accepted', 'allowed',
+                    # Security investigation keywords
+                    'malware', 'virus', 'exploit', 'vulnerability', 'breach'
+                ]
+                
+                # Time keywords (only meaningful when combined with security/data keywords)
+                time_keywords = ['last', 'days', 'hours', 'minutes', 'yesterday', 'past', 'week', 'month', 'ago', 'since', 'from', 'to', 'recent']
+                
+                # Pure diagnostic keywords (system/gateway health checks)
+                pure_diagnostic_keywords = ['health', 'cpu', 'memory', 'disk', 'uptime', 'performance', 'status', 'cluster', 'interface', 'ha', 'gateway', 'firewall']
+                
+                # Data query detection: security/data keywords present (time keywords alone don't count)
+                has_security_data = any(keyword in query_lower for keyword in security_data_keywords)
+                has_time_context = any(keyword in query_lower for keyword in time_keywords)
+                has_data_query = has_security_data  # Only security/data keywords trigger, not time alone
+                is_pure_diagnostic = any(keyword in query_lower for keyword in pure_diagnostic_keywords) and not has_data_query
                 has_logs_server = 'management-logs' in required_servers
                 
-                # If this is a log/threat query, REJECT run_script and use management-logs instead
-                if (has_time_filter and has_threat_context) or has_logs_server:
-                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] VALIDATION: Blocking run_script - log/threat query detected (time={has_time_filter}, threat={has_threat_context}, logs_server={has_logs_server})")
+                # RULE: If run_script is present AND (it's a data query OR management-logs already selected), 
+                # ENSURE management-logs is PRIMARY (don't remove run_script - it's supplemental)
+                if (has_data_query or has_logs_server) and not is_pure_diagnostic:
+                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] PRIORITY VALIDATION: Data query detected (data_query={has_data_query}, logs_server={has_logs_server}, pure_diagnostic={is_pure_diagnostic})")
                     
-                    # Remove run_script commands from data_to_fetch
-                    data_to_fetch = [item for item in data_to_fetch if not (isinstance(item, str) and item.startswith("run_script:"))]
-                    
-                    results["warnings"].append(
-                        "⚠️ Gateway CLI commands not suitable for historical log/threat queries. Using management-logs MCP for comprehensive data."
-                    )
-                    
-                    # Ensure management-logs is in required_servers
-                    if 'management-logs' not in required_servers and has_threat_context:
-                        required_servers.append('management-logs')
-                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Auto-added management-logs for threat query")
+                    # Ensure management-logs is PRIMARY source (add it if missing)
+                    if 'management-logs' not in required_servers:
+                        required_servers.insert(0, 'management-logs')  # Insert at beginning for priority
+                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Auto-added management-logs as PRIMARY source for data query")
+                        
+                        results["warnings"].append(
+                            "ℹ️ Using management-logs MCP as primary data source with gateway diagnostics as supplemental context."
+                        )
         
         # PARALLEL EXECUTION: Query all required servers simultaneously
         import asyncio

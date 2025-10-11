@@ -545,62 +545,64 @@ class GatewayScriptExecutor:
 
 # LLM System Prompt Addition
 GATEWAY_EXECUTOR_LLM_PROMPT = """
-## ⚡ Gateway Script Executor - ENABLED (for DIAGNOSTICS ONLY)
+## ⚡ Gateway Script Executor - ENABLED (Supplemental Diagnostics)
 
-**⚠️ CRITICAL LIMITATION: Gateway Script Executor is for REAL-TIME DIAGNOSTICS ONLY, NOT for historical log/threat queries!**
+**🎯 TOOL PRIORITY ARCHITECTURE:**
 
-**🚫 DO NOT USE Gateway Script Executor for:**
-- ❌ Threat events, suspicious activity, security incidents (use management-logs MCP)
-- ❌ Historical log queries with time ranges like "last 7 days", "yesterday", "past week" (use management-logs MCP)
-- ❌ Traffic analysis with filters like "dropped traffic", "blocked connections" (use management-logs MCP)
-- ❌ ANY query that needs time-based or filter-based log data (use management-logs MCP)
+**PRIMARY DATA SOURCES (Always Query First):**
+1. **management-logs MCP** - ALL log data, threat events, traffic analysis, security incidents, historical queries
+2. **quantum-management MCP** - Configuration, policies, rules, objects, settings, access control
 
-**✅ USE Gateway Script Executor ONLY for:**
-- ✅ Real-time system status (CPU, memory, disk, uptime)
-- ✅ Current gateway state (cluster status, interface status, firewall statistics)
-- ✅ Active connections RIGHT NOW (not historical)
-- ✅ Gateway diagnostics and health checks
+**FALLBACK/SUPPLEMENTAL TOOL (Optional Additional Context):**
+3. **Gateway Script Executor** - Real-time diagnostics, system health, current status checks
 
-**How It Works (for appropriate diagnostic queries only):**
-1. When user asks DIAGNOSTIC questions (NOT log/threat queries), you can request CLI command execution
-2. Include in required_servers: ["quantum-management"]
+**⚠️ CRITICAL RULE: Management Sources are ALWAYS Primary**
+- For ANY query requiring data analysis, ALWAYS include management-logs or quantum-management FIRST
+- Only add Gateway Script Executor as SUPPLEMENTAL source for additional diagnostic context
+- Never use Gateway Script Executor alone without querying management sources first
+
+**📋 USAGE EXAMPLES:**
+
+**Example 1: "Show threat events last 7 days"**
+- ✅ CORRECT: required_servers: ["management-logs"]
+- ✅ OPTIONAL: Add run_script commands for current gateway health as ADDITIONAL context
+- ❌ WRONG: Using only run_script without management-logs
+
+**Example 2: "Analyze dropped traffic"**
+- ✅ CORRECT: required_servers: ["management-logs"] (primary comprehensive data)
+- ✅ OPTIONAL: Add run_script:fw stat for current real-time statistics as SUPPLEMENT
+- ❌ WRONG: Using only run_script:fw log (limited, no filters, incomplete)
+
+**Example 3: "Check gateway cluster status"**
+- ✅ CORRECT: required_servers: ["quantum-management"] (gateway objects, HA config)
+- ✅ OPTIONAL: Add run_script:cphaprob state for real-time HA status as SUPPLEMENT
+- ❌ WRONG: Using only run_script without management data
+
+**Example 4: "Show security policy rules"**
+- ✅ CORRECT: required_servers: ["quantum-management"] (complete policy data)
+- ✅ OPTIONAL: Add run_script:fw stat for current enforcement status as SUPPLEMENT
+- ❌ WRONG: Using gateway scripts for policy data (won't work)
+
+**🔄 QUERY ORCHESTRATION PATTERN:**
+
+For ANY user query:
+1. **FIRST**: Determine primary data source (management-logs or quantum-management)
+2. **SECOND**: Add primary source to required_servers
+3. **THIRD**: Optionally add run_script commands for SUPPLEMENTAL real-time diagnostics
+4. **NEVER**: Use run_script alone without management sources
+
+**How Gateway Script Executor Works (as supplemental tool):**
+1. AFTER including primary management sources, optionally add diagnostic commands
+2. Include "quantum-management" in required_servers (needed for run-script API)
 3. In data_to_fetch, specify: "run_script:<command>"
-4. System automatically validates command against whitelist → Executes if safe → Returns output
+4. System validates against whitelist → Executes if safe → Returns supplemental output
 
-**🎯 USAGE PRIORITY - Choose the RIGHT Tool for the Job:**
-
-**1. For LOG/THREAT/CONNECTION QUERIES → Use management-logs MCP (NOT gateway scripts)**
-   - User asks: "threat events", "suspicious activity", "dropped traffic", "connections", "traffic patterns"
-   - ✅ CORRECT: Use management-logs MCP server (rich historical data with filtering)
-   - ❌ WRONG: Don't use run_script:fw log (limited output, no time filters, basic data)
-   - **Reason:** Management Logs API provides comprehensive log data with time ranges, filters, and full details
-
-**2. For SYSTEM DIAGNOSTICS → Use Gateway Script Executor**
-   - User asks: "gateway health", "performance", "CPU usage", "cluster status", "interface status"
-   - ✅ CORRECT: Use run_script commands (real-time system state)
-   - ❌ WRONG: Don't use management-logs for system diagnostics
-   - **Reason:** CLI commands provide real-time system status and diagnostics
-
-**3. For CONFIGURATION QUERIES → Use quantum-management MCP**
-   - User asks: "show policy", "list rules", "network objects", "NAT configuration"
-   - ✅ CORRECT: Use quantum-management MCP tools
-   - ❌ WRONG: Don't use gateway scripts for config data
-   - **Reason:** Management API provides structured configuration data
-
-**General Guidelines:**
-- System has a comprehensive whitelist of 120+ safe diagnostic commands
-- Invalid/unsafe commands are automatically rejected (you'll see validation errors if this happens)
-- When in doubt: Logs/Threats → management-logs MCP, Diagnostics → run_script, Config → quantum-management
-
-**Gateway Script Executor - Appropriate Use Cases:**
-- ✅ System diagnostics (version, uptime, hardware info, disk space, processes)
-- ✅ Network interface status (interfaces, routing, ARP tables)  
-- ✅ Firewall runtime statistics (fw stat, connection counts, acceleration status)
-- ✅ Cluster status (HA state, sync status, failover readiness)
-- ✅ VPN tunnel status (active tunnels, IKE/IPsec state)
-- ✅ Security blade operational status (IPS enabled, Anti-Bot running, service health)
-- ✅ Performance metrics (CPU, memory, throughput, top processes)
-- ❌ Historical log queries (use management-logs MCP instead - it has time filters and rich data)
+**✅ Gateway Script Executor - Supplemental Use Cases:**
+- Real-time system status (CPU, memory, disk, uptime) - AFTER getting management data
+- Current gateway state (cluster status, interfaces) - SUPPLEMENTAL to management config
+- Active connections/statistics NOW - ADDITIONAL context to historical logs
+- Performance metrics - SUPPLEMENT to management monitoring data
+- Hardware/OS diagnostics - ADDITIONAL technical details
 
 **🔍 CRITICAL: Management Server vs Gateway Differences**
 
