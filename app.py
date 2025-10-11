@@ -792,10 +792,8 @@ def show_chat_interface():
                         config_data['active_security_model'] = security_model
                         
                         if st.session_state.file_manager.save_config(config_data):
-                            # Update session state with clean values
-                            st.session_state.active_planner_model = planner_model
-                            st.session_state.active_security_model = security_model
                             st.success("Active models saved successfully!")
+                            # Rerun will reload the clean values from config
                             st.rerun()
                         else:
                             st.error("Failed to save settings")
