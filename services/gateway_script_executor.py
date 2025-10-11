@@ -236,62 +236,106 @@ class GatewayScriptExecutor:
         
         result['validated'] = True
         
-        # Execute via quantum-gw-cli MCP run-script tool
+        # Execute via Management API run-script endpoint directly
         try:
-            # Get quantum-gw-cli server config
+            # Get Management server config from quantum-management MCP
             all_servers = self.mcp_manager.get_all_servers()
-            if 'quantum-gw-cli' not in all_servers:
-                result['error'] = "quantum-gw-cli MCP server not configured. Please configure it in Settings."
+            if 'quantum-management' not in all_servers:
+                result['error'] = "quantum-management MCP server not configured. Please configure it in Settings to use Gateway Script Executor."
                 self._log_execution(result)
                 return result
             
-            gw_cli_config = all_servers['quantum-gw-cli']
-            gw_cli_env = gw_cli_config.get('env', {})
+            mgmt_config = all_servers['quantum-management']
+            mgmt_env = mgmt_config.get('env', {})
             
-            # Import async MCP client
-            from services.mcp_client_simple import query_mcp_server_async
-            import asyncio
+            # Extract Management API credentials
+            management_host = mgmt_env.get('MANAGEMENT_HOST')
+            api_key = mgmt_env.get('API_KEY')
+            username = mgmt_env.get('USERNAME')
+            password = mgmt_env.get('PASSWORD')
+            port = mgmt_env.get('PORT', '443')
             
-            # Prepare run-script parameters as user selections
-            user_params = {
-                'script-name': f"Diagnostic: {command[:50]}",
-                'script': command,
-                'targets': gateway_name  # String for single gateway
+            if not management_host:
+                result['error'] = "MANAGEMENT_HOST not configured in quantum-management MCP settings"
+                self._log_execution(result)
+                return result
+            
+            # Import requests for API calls
+            import requests
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            
+            # Build API base URL
+            base_url = f"https://{management_host}:{port}/web_api"
+            
+            # Step 1: Login to get session ID
+            login_url = f"{base_url}/login"
+            login_payload = {}
+            
+            if api_key:
+                login_payload = {"api-key": api_key}
+            elif username and password:
+                login_payload = {"user": username, "password": password}
+            else:
+                result['error'] = "No authentication credentials found (need API_KEY or USERNAME/PASSWORD)"
+                self._log_execution(result)
+                return result
+            
+            login_response = requests.post(login_url, json=login_payload, verify=False, timeout=30)
+            
+            if login_response.status_code != 200:
+                result['error'] = f"Management API login failed: {login_response.status_code} - {login_response.text}"
+                self._log_execution(result)
+                return result
+            
+            login_data = login_response.json()
+            sid = login_data.get('sid')
+            
+            if not sid:
+                result['error'] = "No session ID received from Management API"
+                self._log_execution(result)
+                return result
+            
+            # Step 2: Call run-script API
+            run_script_url = f"{base_url}/run-script"
+            headers = {"X-chkp-sid": sid}
+            
+            script_payload = {
+                "script-name": f"Diagnostic: {command[:50]}",
+                "script": command,
+                "targets": [gateway_name]  # Array of gateway names
             }
             
-            # Execute MCP query (package_name, env_vars, data_points, user_params)
-            mcp_result = asyncio.run(query_mcp_server_async(
-                '@chkp/quantum-gw-cli-mcp',
-                gw_cli_env,
-                ['run-script'],
-                user_parameter_selections=user_params
-            ))
+            script_response = requests.post(run_script_url, json=script_payload, headers=headers, verify=False, timeout=60)
             
-            # Parse MCP response - structure is: tool_results[0]['result']['content']
-            if mcp_result and 'tool_results' in mcp_result:
-                tool_results = mcp_result['tool_results']
-                if tool_results and len(tool_results) > 0:
-                    first_result = tool_results[0]
-                    if 'result' in first_result:
-                        tool_result_data = first_result['result']
-                        if 'content' in tool_result_data:
-                            result['success'] = True
-                            # Extract text from content list
-                            output = ''
-                            for item in tool_result_data.get('content', []):
-                                if isinstance(item, dict) and item.get('type') == 'text':
-                                    output += item.get('text', '')
-                                elif isinstance(item, str):
-                                    output += item
-                            result['output'] = output
+            # Step 3: Logout
+            logout_url = f"{base_url}/logout"
+            requests.post(logout_url, headers=headers, json={}, verify=False, timeout=10)
+            
+            # Parse run-script response
+            if script_response.status_code == 200:
+                script_data = script_response.json()
+                
+                # Extract tasks results
+                tasks = script_data.get('tasks', [])
+                if tasks and len(tasks) > 0:
+                    task = tasks[0]
+                    task_output = task.get('task-details', [])
+                    
+                    # Combine all output
+                    output_text = ''
+                    for detail in task_output:
+                        if isinstance(detail, dict):
+                            output_text += str(detail.get('responseMessage', '')) + '\n'
                         else:
-                            result['error'] = 'No content in tool result'
-                    else:
-                        result['error'] = 'No result data in tool response'
+                            output_text += str(detail) + '\n'
+                    
+                    result['success'] = True
+                    result['output'] = output_text.strip()
                 else:
-                    result['error'] = 'No tool results returned'
+                    result['error'] = f"No tasks in run-script response: {script_data}"
             else:
-                result['error'] = mcp_result.get('error', 'Invalid MCP response structure')
+                result['error'] = f"run-script API failed: {script_response.status_code} - {script_response.text}"
         
         except Exception as e:
             result['error'] = f"Execution error: {str(e)}"
