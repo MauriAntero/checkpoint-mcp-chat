@@ -709,21 +709,46 @@ def show_chat_interface():
             if st.session_state.available_openrouter_models:
                 all_models.extend([f"OpenRouter: {m}" for m in st.session_state.available_openrouter_models])
             
+            # Add saved models to list even if not currently available (so they don't get lost)
+            if 'active_planner_model' in st.session_state:
+                saved_planner = st.session_state.active_planner_model
+                if saved_planner and saved_planner not in all_models:
+                    # Add it with "(unavailable)" marker
+                    all_models.insert(0, f"{saved_planner} (unavailable)")
+            
+            if 'active_security_model' in st.session_state:
+                saved_security = st.session_state.active_security_model
+                if saved_security and saved_security not in all_models and saved_security != st.session_state.get('active_planner_model'):
+                    # Add it with "(unavailable)" marker if different from planner
+                    all_models.insert(0 if 'active_planner_model' not in st.session_state else 1, f"{saved_security} (unavailable)")
+            
             if all_models:
+                # Show info if any saved models are unavailable
+                has_unavailable = any(" (unavailable)" in model for model in all_models)
+                if has_unavailable:
+                    st.info("ℹ️ Some models are marked as '(unavailable)' because their provider is not currently connected. Your selection is saved and will work once you reconnect.")
+                
                 # Determine default index for selectboxes
-                # If saved model is in list, use it; otherwise use first available
                 planner_index = 0
                 security_index = 0
                 
                 if 'active_planner_model' in st.session_state:
-                    if st.session_state.active_planner_model in all_models:
-                        planner_index = all_models.index(st.session_state.active_planner_model)
-                    # Don't reset saved value - keep it for when models are available
+                    saved_planner = st.session_state.active_planner_model
+                    # Check exact match first
+                    if saved_planner in all_models:
+                        planner_index = all_models.index(saved_planner)
+                    # Check with "(unavailable)" marker
+                    elif f"{saved_planner} (unavailable)" in all_models:
+                        planner_index = all_models.index(f"{saved_planner} (unavailable)")
                 
                 if 'active_security_model' in st.session_state:
-                    if st.session_state.active_security_model in all_models:
-                        security_index = all_models.index(st.session_state.active_security_model)
-                    # Don't reset saved value - keep it for when models are available
+                    saved_security = st.session_state.active_security_model
+                    # Check exact match first
+                    if saved_security in all_models:
+                        security_index = all_models.index(saved_security)
+                    # Check with "(unavailable)" marker
+                    elif f"{saved_security} (unavailable)" in all_models:
+                        security_index = all_models.index(f"{saved_security} (unavailable)")
                 
                 # Planner Model Selection
                 st.markdown("#### Planner Model")
@@ -753,9 +778,23 @@ def show_chat_interface():
                     if st.button("Save Active Models", type="primary", use_container_width=True):
                         # Load existing config and update only the model fields
                         config_data = st.session_state.file_manager.load_config() or {}
-                        config_data['active_planner_model'] = st.session_state.active_planner_model
-                        config_data['active_security_model'] = st.session_state.active_security_model
+                        
+                        # Strip "(unavailable)" marker before saving
+                        planner_model = st.session_state.active_planner_model
+                        security_model = st.session_state.active_security_model
+                        
+                        if " (unavailable)" in planner_model:
+                            planner_model = planner_model.replace(" (unavailable)", "")
+                        if " (unavailable)" in security_model:
+                            security_model = security_model.replace(" (unavailable)", "")
+                        
+                        config_data['active_planner_model'] = planner_model
+                        config_data['active_security_model'] = security_model
+                        
                         if st.session_state.file_manager.save_config(config_data):
+                            # Update session state with clean values
+                            st.session_state.active_planner_model = planner_model
+                            st.session_state.active_security_model = security_model
                             st.success("Active models saved successfully!")
                             st.rerun()
                         else:
