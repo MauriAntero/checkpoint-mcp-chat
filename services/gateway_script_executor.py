@@ -226,7 +226,7 @@ class GatewayScriptExecutor:
         }
         print(f"[GatewayScriptExecutor] Cached new session for {management_host}")
     
-    def execute_command(self, gateway_name: str, command: str, session_id: Optional[str] = None) -> Dict:
+    def execute_command(self, gateway_name: str, command: str, session_id: Optional[str] = None, _retry_attempted: bool = False) -> Dict:
         """
         Execute a validated command on a gateway
         
@@ -234,6 +234,7 @@ class GatewayScriptExecutor:
             gateway_name: Name or UID of the gateway
             command: The command to execute
             session_id: Optional Management API session ID
+            _retry_attempted: Internal flag to prevent infinite recursion on auth failures
             
         Returns:
             Dict with:
@@ -356,6 +357,24 @@ class GatewayScriptExecutor:
             script_response = requests.post(run_script_url, json=script_payload, headers=headers, verify=False, timeout=60)
             print(f"[GatewayScriptExecutor] run-script response status: {script_response.status_code}")
             
+            # Handle expired session - clear cache and retry ONCE
+            if script_response.status_code in [401, 403] and not _retry_attempted:
+                error_text = script_response.text.lower()
+                if 'unauthorized' in error_text or 'expired' in error_text or 'invalid' in error_text or 'session' in error_text:
+                    print(f"[GatewayScriptExecutor] Session expired/invalid, clearing cache and retrying once...")
+                    # Clear cached session
+                    if management_host in self.session_cache:
+                        del self.session_cache[management_host]
+                    
+                    # Retry with fresh login (only once - _retry_attempted=True prevents infinite recursion)
+                    return self.execute_command(gateway_name, command, session_id, _retry_attempted=True)
+                else:
+                    # Auth error but not session-related (e.g., permission denied) - fail immediately
+                    result['error'] = f"Authorization failed: {script_response.status_code} - {script_response.text}"
+                    print(f"[GatewayScriptExecutor] Auth error (not session): {result['error']}")
+                    self._log_execution(result)
+                    return result
+            
             # Parse run-script response to get task-id
             if script_response.status_code == 200:
                 script_data = script_response.json()
@@ -439,9 +458,7 @@ class GatewayScriptExecutor:
                 result['error'] = f"run-script API failed: {script_response.status_code} - {script_response.text}"
                 print(f"[GatewayScriptExecutor] API error: {result['error']}")
             
-            # Step 4: Logout
-            logout_url = f"{base_url}/logout"
-            requests.post(logout_url, headers=headers, json={}, verify=False, timeout=10)
+            # Note: Do NOT logout - keep session alive for reuse (cached for 20min)
         
         except Exception as e:
             result['error'] = f"Execution error: {str(e)}"
@@ -556,9 +573,9 @@ User: "Show gateway version"
   "analysis_type": "gateway_diagnostics"
 }
 
-**Example - Comprehensive Analysis:**
-User: "Full health check on cp-gw"
-→ Think: Need version, cluster status, firewall stats, performance, network status
+**Example - Comprehensive Analysis (IMPORTANT - Read This):**
+User: "Full health check on cp-gw" or "Full diagnosis on cp-gw"
+→ Think: Need version, cluster, firewall, performance, network - Use ONLY gateway-script-executor
 {
   "required_servers": ["quantum-management"],
   "data_to_fetch": [
@@ -566,15 +583,24 @@ User: "Full health check on cp-gw"
     "run_script:fw ver",
     "run_script:cphaprob state",
     "run_script:fw stat",
+    "run_script:fwaccel stat",
     "run_script:cpstat os -f all",
-    "run_script:ifconfig"
+    "run_script:ifconfig",
+    "run_script:netstat -rn",
+    "run_script:df -h"
   ],
   "analysis_type": "comprehensive_diagnostics"
 }
 
+**CRITICAL - Avoid Data Truncation:**
+- For "comprehensive" or "full diagnosis" queries: Use ONLY run_script commands, NOT other MCP servers
+- Don't combine quantum-gw-cli, quantum-gaia, quantum-gw-connection-analysis with run_script - causes data overload
+- Gateway CLI commands provide richer data than predefined MCP tools
+- If you need both config AND diagnostics, use quantum-management for config + run_script for diagnostics
+
 **Key Points:**
 - Request commands based on what diagnostic data you need - don't limit yourself to examples
 - System enforces safety through whitelist validation (read-only, non-destructive commands only)
-- For comprehensive diagnostics, combine multiple relevant commands
+- For comprehensive diagnostics, prefer run_script over multiple MCP servers (prevents truncation)
 - Use quantum-management run-script for ALL gateway CLI commands (not quantum-gw-cli)
 """
