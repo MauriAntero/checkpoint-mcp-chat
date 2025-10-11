@@ -485,65 +485,60 @@ class GatewayScriptExecutor:
 GATEWAY_EXECUTOR_LLM_PROMPT = """
 ## ⚡ Gateway Script Executor - ENABLED
 
-**IMPORTANT: For gateway diagnostic queries, use quantum-management's run-script tool instead of quantum-gw-cli or quantum-gaia.**
+**CAPABILITY: You can execute CLI diagnostic commands directly on Check Point gateways when needed for analysis.**
 
 **How It Works:**
-1. User asks gateway diagnostic question (version, status, performance, etc.)
-2. You include in required_servers: ["quantum-management"]
-3. In data_to_fetch, specify: "run_script:<safe_command>"
-4. System validates command → Executes via run-script → Returns output
+1. When user asks gateway diagnostic questions, you can request CLI command execution
+2. Include in required_servers: ["quantum-management"]
+3. In data_to_fetch, specify: "run_script:<command>"
+4. System automatically validates command against whitelist → Executes if safe → Returns output
 
-**Command Format in data_to_fetch:**
-- "run_script:fw ver" - Get gateway version
-- "run_script:cphaprob state" - Check cluster status  
-- "run_script:fw stat" - Firewall statistics
-- "run_script:ifconfig" - Network interfaces
-- "run_script:vpn tu tlist" - VPN tunnels
-- "run_script:cpstat os -f all" - System performance
+**Usage Guidelines:**
+- Think about what diagnostic data is needed to answer the user's question
+- Request appropriate Check Point CLI commands (Gaia clish, expert mode, fw commands, etc.)
+- System has a comprehensive whitelist of 120+ safe diagnostic commands
+- Invalid/unsafe commands are automatically rejected (you'll see validation errors if this happens)
 
-**STRICT COMMAND RULES:**
-✅ ONLY use these safe commands:
-- System: show version, fw ver, uptime, hostname, date
-- Network: ifconfig, netstat -rn, arp -a
-- Firewall: fw stat, fw ctl pstat, fwaccel stat
-- Cluster: cphaprob state, cphaprob -a if
-- VPN: vpn tu tlist
-- Performance: top -n 1, ps aux, cpstat os -f all
-- Logs: fw log, cat $FWDIR/log/fw.elg
+**Command Categories Available (not exhaustive - request what you need):**
+- System diagnostics (version, uptime, hardware info, disk space, processes)
+- Network status (interfaces, routing, ARP, connections)  
+- Firewall operations (statistics, connections, acceleration status)
+- Cluster status (HA state, sync status, failover readiness)
+- VPN diagnostics (tunnels, encryption domains, IKE/IPsec)
+- Security blade status (IPS, Anti-Bot, Threat Prevention, HTTPS Inspection)
+- Performance metrics (CPU, memory, throughput, top processes)
+- Log inspection (recent events, specific blade logs)
 
-🚫 NEVER suggest:
-- cpstop, cpstart, kill, rm, chmod, fw unloadlocal
-- Any interactive shells, pipes, redirects
+**Format in data_to_fetch:**
+- "run_script:<any_valid_checkpoint_cli_command>"
 
-**Example Execution Plans:**
-
+**Example - Simple Query:**
 User: "Show gateway version"
 {
   "required_servers": ["quantum-management"],
-  "data_to_fetch": ["run_script:fw ver", "run_script:show version all"],
+  "data_to_fetch": ["run_script:fw ver"],
   "analysis_type": "gateway_diagnostics"
 }
 
-User: "Make a full diagnosis on cp-gw" or "Comprehensive gateway health check"
+**Example - Comprehensive Analysis:**
+User: "Full health check on cp-gw"
+→ Think: Need version, cluster status, firewall stats, performance, network status
 {
   "required_servers": ["quantum-management"],
   "data_to_fetch": [
     "gateway_identifier:cp-gw",
     "run_script:fw ver",
-    "run_script:show version all",
     "run_script:cphaprob state",
     "run_script:fw stat",
-    "run_script:fwaccel stat",
     "run_script:cpstat os -f all",
-    "run_script:ifconfig",
-    "run_script:netstat -rn",
-    "run_script:df -h",
-    "run_script:uptime"
+    "run_script:ifconfig"
   ],
   "analysis_type": "comprehensive_diagnostics"
 }
 
-**IMPORTANT: For comprehensive diagnostics, combine multiple relevant commands to provide thorough analysis!**
-
-**Use quantum-management run-script for ALL gateway diagnostic commands!**
+**Key Points:**
+- Request commands based on what diagnostic data you need - don't limit yourself to examples
+- System enforces safety through whitelist validation (read-only, non-destructive commands only)
+- For comprehensive diagnostics, combine multiple relevant commands
+- Use quantum-management run-script for ALL gateway CLI commands (not quantum-gw-cli)
 """
