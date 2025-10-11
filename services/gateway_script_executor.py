@@ -303,9 +303,16 @@ class GatewayScriptExecutor:
             run_script_url = f"{base_url}/run-script"
             headers = {"X-chkp-sid": sid}
             
+            # Wrap Gaia clish commands in clish -c wrapper
+            # Commands starting with 'show' are clish commands
+            wrapped_command = command
+            if command.strip().lower().startswith('show'):
+                wrapped_command = f"clish -c '{command}'"
+                print(f"[GatewayScriptExecutor] Wrapped clish command: {wrapped_command}")
+            
             script_payload = {
                 "script-name": f"Diagnostic: {command[:50]}",
-                "script": command,
+                "script": wrapped_command,
                 "targets": [gateway_name]  # Array of gateway names
             }
             
@@ -356,7 +363,17 @@ class GatewayScriptExecutor:
                                     for detail in task_details:
                                         if isinstance(detail, dict):
                                             response_msg = detail.get('responseMessage', '')
-                                            output_text += str(response_msg) + '\n'
+                                            if response_msg:
+                                                # Decode base64-encoded output
+                                                import base64
+                                                try:
+                                                    decoded_output = base64.b64decode(response_msg).decode('utf-8')
+                                                    output_text += decoded_output + '\n'
+                                                    print(f"[GatewayScriptExecutor] Decoded base64 output: {decoded_output[:100]}...")
+                                                except Exception as decode_error:
+                                                    # If not base64, use as-is
+                                                    output_text += str(response_msg) + '\n'
+                                                    print(f"[GatewayScriptExecutor] Not base64, using raw: {response_msg[:100]}...")
                                         else:
                                             output_text += str(detail) + '\n'
                                     
