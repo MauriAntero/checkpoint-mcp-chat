@@ -1578,14 +1578,22 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
     def _filter_log_fields(self, data_collected: Dict[str, Any]) -> Dict[str, Any]:
         """Filter log data to remove Check Point metadata and reduce token usage
         
-        Keeps essential security fields, removes internal metadata.
-        Expected token reduction: ~70% (850 tokens/log → 250 tokens/log)
+        Keeps comprehensive security fields, removes only useless metadata.
+        Expanded field list preserves critical context for threat analysis:
+        - Drop/rejection reasons (reason, message, description)
+        - Threat details (threat_description, signature_name, CVE IDs)
+        - Geographic/location data (country, city, source/dest location)
+        - Client/OS information (source_os, destination_os, client details)
+        - Web filtering (categories, matched_categories, HTTP details)
+        - Email/Anti-Bot/AV/IPS fields for comprehensive analysis
+        
+        Expected token reduction: ~60-70% while preserving valuable context
         
         Args:
             data_collected: Raw data from MCP servers
             
         Returns:
-            Filtered data with only essential fields
+            Filtered data with only essential security fields
         """
         # Essential fields to keep - COMPREHENSIVE security data while filtering useless metadata
         ESSENTIAL_FIELDS = {
