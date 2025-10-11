@@ -696,7 +696,62 @@ Technical Execution Plan:"""
                             print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Gateway discovery failed: {e}")
                 
                 if not gateway_name:
-                    results["errors"].append("Gateway Script Executor: No gateway specified. Please include gateway name in your query (e.g., 'Show version on cp-gw')")
+                    # More helpful error message with discovered gateways (if any were found during discovery)
+                    error_msg = "Gateway Script Executor: No gateway specified in query. "
+                    
+                    # Try to list available gateways from management server for user guidance
+                    try:
+                        from services.mcp_client_simple import query_mcp_server_async
+                        import asyncio
+                        import json as json_module
+                        
+                        if 'quantum-management' in all_servers:
+                            server_config = all_servers.get('quantum-management', {})
+                            server_env = server_config.get('env', {})
+                            
+                            # Quick query to list gateways for error message
+                            try:
+                                loop = asyncio.get_running_loop()
+                                import concurrent.futures
+                                with concurrent.futures.ThreadPoolExecutor() as executor:
+                                    future = executor.submit(
+                                        asyncio.run,
+                                        query_mcp_server_async(
+                                            server_config.get('command', 'npx'),
+                                            server_config.get('args', '@chkp/quantum-management-mcp'),
+                                            ['show_gateways_and_servers'],
+                                            server_env
+                                        )
+                                    )
+                                    gateway_list_result = future.result(timeout=10)
+                            except RuntimeError:
+                                gateway_list_result = asyncio.run(
+                                    query_mcp_server_async(
+                                        server_config.get('command', 'npx'),
+                                        server_config.get('args', '@chkp/quantum-management-mcp'),
+                                        ['show_gateways_and_servers'],
+                                        server_env
+                                    )
+                                )
+                            
+                            # Parse gateway names from result
+                            available_gateways = []
+                            if gateway_list_result and 'tool_results' in gateway_list_result:
+                                for tool_result in gateway_list_result['tool_results']:
+                                    if 'result' in tool_result and 'content' in tool_result['result']:
+                                        for item in tool_result['result']['content']:
+                                            if isinstance(item, dict) and item.get('type') == 'simple-gateway':
+                                                available_gateways.append(item.get('name'))
+                            
+                            if available_gateways:
+                                error_msg += f"Available gateways: {', '.join(available_gateways[:5])}. Please specify which gateway to investigate (e.g., 'Check {available_gateways[0]} for suspicious activity')"
+                            else:
+                                error_msg += "Please include gateway name in your query (e.g., 'Show version on cp-gw')"
+                    except Exception as e:
+                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Failed to list gateways for error message: {e}")
+                        error_msg += "Please include gateway name in your query (e.g., 'Show version on cp-gw')"
+                    
+                    results["errors"].append(error_msg)
                 else:
                     # Execute each run_script command
                     for cmd_item in run_script_commands:
@@ -2338,18 +2393,36 @@ If Spark Management data IS available, provide:
 Be specific with customer names, appliance IDs, and actionable recommendations."""
             
             else:
-                analysis_prompt = f"""You are a Check Point administrator responding to this query:
+                analysis_prompt = f"""You are a Check Point administrator with FULL AUTONOMOUS CAPABILITIES responding to this query:
 
 "{user_query}"
 
 Based on data from available Check Point services (Management, Logs, Threat Prevention, HTTPS Inspection, Reputation, Gateway CLI, GAIA, Connection Analysis, Threat Emulation, SASE, Spark), provide:
 
-1. **Direct Answer**: Address the user's specific question
+1. **Direct Answer**: Address the user's specific question with comprehensive analysis
 2. **Key Data Points**: Highlight relevant information from the collected data
-3. **Context**: Explain what the data shows and which services provided it
-4. **Recommendations**: Suggest next steps or actions if applicable
+3. **Context**: Explain what the data shows and which services provided it  
+4. **Analysis & Findings**: Complete analysis of all available data
 
-Be concise and focus on what's actually in the data. If the data doesn't fully answer the question, clearly state what's available and what additional data might be needed."""
+⚠️ CRITICAL - AUTONOMOUS INVESTIGATION RULE:
+YOU HAVE FULL CAPABILITY TO RUN COMMANDS AND GATHER DATA AUTOMATICALLY.
+
+**NEVER suggest the user do manual work like:**
+❌ "Run show_threat_rule for specific threat detections"
+❌ "Use cpview or gateway statistics to check traffic patterns"  
+❌ "Consider collecting additional logs"
+❌ "You may want to investigate further"
+❌ ANY suggestion for the user to manually run tools, commands, or collect data
+
+**INSTEAD, if more investigation is needed:**
+✓ State that you have the capability to investigate automatically
+✓ Explain what specific investigation you would perform
+✓ Tell the user to ask you to "investigate further" or specify what they want you to look into
+✓ Example: "I can automatically run gateway diagnostics and collect threat intelligence. Would you like me to investigate [specific area] in detail?"
+
+**Remember:** You are an autonomous agent with CLI execution, MCP tool access, and threat analysis capabilities. The user should NEVER need to manually run commands - you do it for them!
+
+Be comprehensive and focus on actionable findings from the actual data collected."""
         
         # Determine which client to use based on model prefix
         if isinstance(final_model, str) and (":" in final_model):
