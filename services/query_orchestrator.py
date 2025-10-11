@@ -703,6 +703,9 @@ Technical Execution Plan:"""
                         command = cmd_item.replace("run_script:", "").strip()
                         print(f"[QueryOrchestrator] Executing via executor: '{command}' on gateway '{gateway_name}'")
                         
+                        if self.progress_callback:
+                            self.progress_callback(f"⚡ Running script: '{command}' on {gateway_name}...")
+                        
                         exec_result = self.gateway_script_executor.execute_command(gateway_name, command)
                         
                         if exec_result['success']:
@@ -748,7 +751,11 @@ Technical Execution Plan:"""
         
         # Execute all server queries in parallel
         if required_servers:
-            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Executing {len([s for s in required_servers if s in all_servers])} MCP server queries in PARALLEL...")
+            num_servers = len([s for s in required_servers if s in all_servers])
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Executing {num_servers} MCP server queries in PARALLEL...")
+            
+            if self.progress_callback:
+                self.progress_callback(f"🔌 Querying {num_servers} MCP tool(s) in parallel...")
             
             # Streamlit-compatible async execution: check for existing event loop
             try:
@@ -2554,7 +2561,7 @@ Your query returned **{estimated_tokens:,} tokens** of data, which exceeds the m
             "user_query": user_query  # For session context caching
         }
     
-    def orchestrate_query(self, user_query: str, planner_model: Optional[str] = None, security_model: Optional[str] = None, user_parameter_selections: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    def orchestrate_query(self, user_query: str, planner_model: Optional[str] = None, security_model: Optional[str] = None, user_parameter_selections: Optional[Dict[str, str]] = None, progress_callback=None) -> Dict[str, Any]:
         """Main orchestration method - creates plan, executes it, and returns analysis
         
         Args:
@@ -2562,13 +2569,25 @@ Your query returned **{estimated_tokens:,} tokens** of data, which exceeds the m
             planner_model: Model to use for planning (format: "Provider: model_name")
             security_model: Model to use for security analysis (format: "Provider: model_name")
             user_parameter_selections: User-selected parameter values for ambiguous parameters
+            progress_callback: Optional callback function(message: str, state: str) for progress updates
         """
+        self.progress_callback = progress_callback
         
         # Step 1: Create execution plan using specified planner model
+        if self.progress_callback:
+            self.progress_callback("🧠 Analyzing your request...")
+        
         plan = self.create_execution_plan(user_query, planner_model)
         
         # Step 2: Execute the plan (query MCP servers)
         # Pass user_query explicitly to ensure session context works
+        if self.progress_callback:
+            servers = plan.get('required_servers', [])
+            if servers:
+                self.progress_callback(f"🔧 Executing plan on {len(servers)} server(s)...")
+            else:
+                self.progress_callback("🔧 Executing plan...")
+        
         execution_results = self.execute_plan(plan, user_parameter_selections, user_query)
         
         # Check if execution needs user input for parameters
@@ -2581,7 +2600,13 @@ Your query returned **{estimated_tokens:,} tokens** of data, which exceeds the m
             }
         
         # Step 3: Analyze results with appropriate model
+        if self.progress_callback:
+            self.progress_callback("🔍 Analyzing results...")
+        
         final_analysis, model_used = self.analyze_with_model(plan, execution_results, security_model)
+        
+        if self.progress_callback:
+            self.progress_callback("✅ Analysis complete", state="complete")
         
         # Return complete orchestration result
         return {

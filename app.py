@@ -1497,15 +1497,25 @@ def process_user_message(message: str, file_path: Optional[str] = None, file_nam
         st.rerun()
         return
     
-    # Show typing indicator
-    with st.spinner("Thinking..."):
+    # Show typing indicator with dynamic status updates
+    status_container = st.status("Processing your request...", expanded=True)
+    
+    # Create progress callback to update status
+    def update_status(message: str, state: str = "running"):
+        """Update the status message in real-time"""
+        if state == "complete":
+            status_container.update(label=message, state="complete", expanded=False)
+        else:
+            status_container.update(label=message, state="running", expanded=True)
+    
+    with status_container:
         # Process with orchestration or manual mode
         if st.session_state.use_orchestration:
-            process_with_orchestration(message)
+            process_with_orchestration(message, update_status)
         else:
-            process_with_manual_mode(message)
+            process_with_manual_mode(message, update_status)
 
-def process_with_orchestration(message: str):
+def process_with_orchestration(message: str, update_status=None):
     """Process message using intelligent orchestration"""
     # Get active models from session state
     planner_model = st.session_state.get('active_planner_model')
@@ -1530,7 +1540,8 @@ def process_with_orchestration(message: str):
         message, 
         planner_model=planner_model,
         security_model=security_model,
-        user_parameter_selections=user_selections
+        user_parameter_selections=user_selections,
+        progress_callback=update_status
     )
     
     # Check if orchestrator needs user input for parameters
@@ -1604,13 +1615,19 @@ def display_parameter_selection_ui(parameter_options):
     })
     st.rerun()
 
-def process_with_manual_mode(message: str):
+def process_with_manual_mode(message: str, update_status=None):
     """Process message using manual mode"""
+    if update_status:
+        update_status("Generating response...")
+    
     # Generate response directly
     response = st.session_state.ollama_client.generate_response(
         prompt=message,
         temperature=0.7
     )
+    
+    if update_status:
+        update_status("✅ Response complete", state="complete")
     
     if response:
         st.session_state.chat_history.append({
