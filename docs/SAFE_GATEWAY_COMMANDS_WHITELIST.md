@@ -168,7 +168,21 @@ fw tab -t vpn_enc_domain_valid -f -u  # View encryption domains
 
 ---
 
-### 8. Logging & Monitoring
+### 8. Performance Monitoring
+
+```bash
+cpview -p                         # Print all system performance metrics (non-interactive mode ONLY)
+top -n 1                          # Single snapshot of processes
+top -b 5                          # 5 iterations in batch mode
+vmstat 1 5                        # Virtual memory stats (5 samples, 1 sec interval)
+ps aux                            # All running processes
+```
+
+**Important:** `cpview -p` is the ONLY allowed cpview command. Regular `cpview` is blocked because it opens an interactive dashboard that cannot be used in automated scripts.
+
+---
+
+### 9. Logging & Monitoring
 
 ```bash
 fw log                            # View firewall logs
