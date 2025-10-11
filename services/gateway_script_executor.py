@@ -65,10 +65,10 @@ class CommandValidator:
         r'^free\s+-m$',
         
         # Network commands
-        r'^ifconfig$',
-        r'^ip\s+(addr|route)\s+show$',
-        r'^netstat\s+-[rin]+[tulnp]*$',
-        r'^arp\s+-a$',
+        r'^ifconfig(\s+-[aivs]+)?$',  # Allow common flags: -a (all), -i (interfaces), -v (verbose), -s (short)
+        r'^ip\s+(addr|route|link)\s+show.*$',
+        r'^netstat\s+-[rintulapbce]+$',  # Allow various netstat flags
+        r'^arp\s+-[anve]+$',
         
         # Firewall commands
         r'^fw\s+(stat|ver|getifs|hastat|log|lslogs).*$',
@@ -83,9 +83,9 @@ class CommandValidator:
         r'^cphaprob\s+-[ail]+\s+(if|list)$',
         
         # Performance
-        r'^top\s+-n\s+1$',
+        r'^top\s+-(b|n)\s+\d+$',  # Allow batch mode or specific iterations: top -n 1, top -b 5
         r'^ps\s+aux$',
-        r'^vmstat\s+1\s+1$',
+        r'^vmstat\s+\d+\s+\d+$',  # Allow vmstat with interval and count: vmstat 1 1, vmstat 1 5
         
         # CP Utilities
         r'^cpstat(\s+[a-z]+)?(\s+-f\s+[a-z_]+)?$',
@@ -127,9 +127,10 @@ class CommandValidator:
         r'\bcpconfig\b',
         r'\bclusterXL_admin\s+down\b',
         
-        # Interactive Tools
-        r'^(cpview|top(?!\s+-n\s+1)|vmstat(?!\s+1\s+1))\b',
-        r'\bfw\s+monitor\b',
+        # Interactive Tools (must be blocked or require specific non-interactive flags)
+        r'\bcpview\b',  # Interactive dashboard - always blocked
+        r'\bfw\s+monitor\b',  # Interactive packet capture - always blocked
+        r'^top(?!\s+-[bn]).*$',  # Block 'top' unless it has -n (iterations) or -b (batch mode)
         
         # Debug Commands
         r'\bfw\s+ctl\s+debug\b',
