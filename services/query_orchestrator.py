@@ -1587,17 +1587,18 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         Returns:
             Filtered data with only essential fields
         """
-        # Essential fields to keep
+        # Essential fields to keep - COMPREHENSIVE security data while filtering useless metadata
         ESSENTIAL_FIELDS = {
             # Core connection data
             'time', 'date', 'src', 'source', 'dst', 'destination', 'service', 'service_id',
             's_port', 'd_port', 'proto', 'action',
             
             # Blade/Origin info
-            'origin', 'product', 'blade_name', 'log_id',
+            'origin', 'product', 'blade_name', 'log_id', 'origin_sic_name',
             
             # Policy context (logs)
             'rule', 'rule_uid', 'rule_name', 'layer_name', 'layer_uid', 'match_id', 'policy',
+            'sub_policy_name', 'sub_policy_uid', 'parent_rule',
             
             # Rule/Policy details (rulebase objects)
             'rule-number', 'enabled', 'install-on', 'track', 'comments',
@@ -1609,26 +1610,34 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             
             # User/Application - CRITICAL for identity tracking
             'user', 'src_user_name', 'dst_user_name', 'username', 'identity',
-            'application', 'app_category', 'app_risk',
+            'application', 'app_category', 'app_risk', 'app_desc', 'app_properties',
             
             # Traffic details
             'bytes', 'sent_bytes', 'received_bytes', 'packets', 'duration', 'conn_direction',
+            'ifdir', 'ifname', 'interface_direction',
             
-            # Threat information
+            # Threat information - CRITICAL for analysis
             'attack', 'attack_info', 'severity', 'confidence_level', 'protection_name',
-            'malware_action', 'threat_prevention_action',
+            'malware_action', 'threat_prevention_action', 'threat_description',
+            'signature_name', 'cveid', 'cve', 'performance_impact',
+            'update_version', 'protection_type', 'category', 'matched_category',
+            
+            # Drop/Reject reasons - CRITICAL for troubleshooting
+            'reason', 'message', 'description', 'reject_category', 'reject_reason',
+            'suppressed_logs',
             
             # VPN specific
             'vpn_feature_name', 'peer_gateway', 'encryption_method', 'community',
             
             # HTTPS Inspection
             'site_name', 'resource', 'method', 'https_inspection_action',
+            'http_host', 'url', 'uri', 'web_server_type',
             
             # Audit logs - CRITICAL
-            'administrator',
+            'administrator', 'operation', 'command',
             
             # Reputation Service (IOC checks)
-            'ip', 'url', 'file_hash', 'md5', 'sha1', 'sha256', 'reputation', 'risk', 
+            'ip', 'file_hash', 'md5', 'sha1', 'sha256', 'reputation', 'risk', 
             'threat_category', 'classification', 'first_seen', 'last_seen',
             
             # Threat Emulation (sandbox/malware analysis)
@@ -1640,12 +1649,39 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             'drop_reason', 'syn_ack', 'flags',
             
             # Quantum GAIA (OS/interface config)
-            'interface', 'interface_name', 'mtu', 'link_state', 'speed', 'duplex',
-            'route', 'gateway', 'metric', 'dns', 'ntp',
+            'interface', 'mtu', 'link_state', 'speed', 'duplex',
+            'route', 'metric', 'dns', 'ntp',
             
             # Object/Gateway metadata - CRITICAL for name-to-IP mapping
             'name',  # Friendly name (e.g., "HR-Server" instead of raw IP)
-            'ipv4-address', 'ipv6-address'  # IP addresses for mapping
+            'ipv4-address', 'ipv6-address', 'type',  # IP addresses and object type
+            
+            # Geographic/Location data - useful for analysis
+            'source_location', 'destination_location', 'country', 'city',
+            
+            # Session/Connection tracking
+            'session_id', 'connection_uid', 'log_delay',
+            
+            # Client/OS information - helps with context
+            'source_os', 'destination_os', 'client_name', 'client_version', 'client_type',
+            
+            # Web filtering
+            'categories', 'matched_categories', 'resource_type',
+            
+            # Email security (if applicable)
+            'email_subject', 'email_sender', 'email_recipient', 'email_id',
+            
+            # Mobile Access
+            'mobile_device', 'mobile_app',
+            
+            # Anti-Bot/Anti-Virus
+            'detected_malware_name', 'virus_name', 'scan_result',
+            
+            # IPS/AV additional fields
+            'protection_id', 'protection_severity', 'incident_extension',
+            
+            # SmartEvent correlation
+            'event_count', 'aggregation_count'
         }
         
         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] _filter_log_fields: Starting log field filtering...")
