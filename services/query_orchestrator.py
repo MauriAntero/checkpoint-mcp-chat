@@ -2283,12 +2283,10 @@ Remember: Follow the global formatting requirements for object names and rule di
 
 User Query: {user_query}
 
-⚠️ CRITICAL: If you see a "COMPLETE DATA SUMMARY" section in the context, USE THOSE EXACT COUNTS for your analysis. The summary contains the full statistics from ALL logs before truncation. Never rely on counting sample data below the summary - always use the summary's precise totals.
-
 Based on the collected data (Management Logs, Gateway CLI, Connection Analysis), provide:
 
 1. **Traffic Summary** (if log data available):
-   - Total connections/sessions analyzed (USE EXACT COUNT FROM DATA SUMMARY if present)
+   - Total connections/sessions analyzed
    - Top source and destination IPs
    - Most common ports and protocols
    - Blocked vs allowed traffic ratio
@@ -2300,7 +2298,7 @@ Based on the collected data (Management Logs, Gateway CLI, Connection Analysis),
    - Time-based patterns (off-hours activity)
 
 3. **Security Events** (if available):
-   - IPS/threat prevention hits (USE EXACT COUNT FROM DATA SUMMARY if present)
+   - IPS/threat prevention hits
    - High-severity alerts
    - Blocked threats by type
    - Attack patterns observed
@@ -2311,7 +2309,7 @@ Based on the collected data (Management Logs, Gateway CLI, Connection Analysis),
    - Recommended policy adjustments
    - Investigation priorities
 
-ALWAYS report exact counts when a DATA SUMMARY is available. Be specific with numbers, IPs, and concrete findings."""
+Be specific with numbers, IPs, and concrete findings from the available log data."""
 
         # 9. Threat Hunting
         elif analysis_type == "security_risk_analysis" or any(kw in query_lower for kw in ['reputation', 'malware', 'sandbox', 'emulation', 'url reputation', 'ip reputation', 'file reputation', 'check url', 'check ip', 'analyze file']):
@@ -2319,13 +2317,11 @@ ALWAYS report exact counts when a DATA SUMMARY is available. Be specific with nu
 
 User Query: {user_query}
 
-⚠️ CRITICAL: If you see a "COMPLETE DATA SUMMARY" section in the context, USE THOSE EXACT COUNTS for your analysis. The summary contains full statistics from ALL threat logs before truncation. Always use the summary's precise totals, never count sample data.
-
 Based on threat intelligence (Threat Prevention, Reputation Service, Threat Emulation, HTTPS Inspection), provide:
 
 1. **Threat Summary**:
-   - Active threats detected (USE EXACT COUNT FROM DATA SUMMARY if present)
-   - Severity levels (Critical/High/Medium/Low) with exact counts
+   - Active threats detected
+   - Severity levels (Critical/High/Medium/Low) with counts
    - Attack types observed (by blade/category with counts)
    - Affected systems or networks
 
@@ -2504,64 +2500,36 @@ Be comprehensive and focus on actionable findings from the actual data collected
         if truncation_needed:
             print(f"[WARNING] Data exceeds model capacity: {estimated_tokens:,} > {max_input_tokens:,} tokens")
             
-            if is_log_analysis:
-                # Extract metadata for aggregated summary
-                metadata_summary = self._extract_log_metadata(data_collected)
-                
-                # Prepare user warning message
-                data_loss_pct = int(((estimated_tokens - max_input_tokens) / estimated_tokens) * 100)
-                user_warning = f"""
+            # Calculate truncation percentage
+            data_loss_pct = int(((estimated_tokens - max_input_tokens) / estimated_tokens) * 100)
+            
+            # Prepare user warning (same for all query types)
+            user_warning = f"""
 ⚠️ **DATA TRUNCATION NOTICE** ⚠️
 
 Your query returned **{estimated_tokens:,} tokens** of data, which exceeds the model's capacity of **{max_input_tokens:,} tokens**.
 
-**Approximately {data_loss_pct}% of the detailed log data will be truncated.**
+**Approximately {data_loss_pct}% of the data will be excluded to fit the model.**
 
-**To get full field-level analysis, please:**
+The AI will analyze the available data (most recent logs and critical information are prioritized).
+
+**To analyze ALL data, please:**
 - Narrow your time range (e.g., "last 24 hours" instead of "last week")
-- Filter by specific gateway or source IP
-- Query specific threat types or blades
+- Filter by specific gateway, IP, or criteria
 - Break your analysis into smaller time windows
-
-**Current Analysis Mode: AGGREGATED METADATA ONLY**
-The analysis below is based on statistical aggregation (counts, distributions) rather than complete field-level detail (individual IPs, ports, timestamps).
+- Query specific threat types or security blades
 
 ---
 """
-                # Add metadata to context for LLM (but not full warning - we'll show that to user separately)
-                context = (metadata_summary or "") + "\n\n" + context
-                
-                # Truncate context to fit model
-                max_chars = max_input_tokens * 4
-                if len(context) > max_chars:
-                    keep_start = int(max_chars * 0.6)
-                    keep_end = int(max_chars * 0.2)
-                    context = context[:keep_start] + f"\n\n... [Log details truncated - {data_loss_pct}% of data omitted] ...\n\n" + context[-keep_end:]
-                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Context truncated from ~{estimated_tokens:,} to ~{len(context) // 4:,} tokens")
-            else:
-                # Standard analysis truncation
-                data_loss_pct = int(((estimated_tokens - max_input_tokens) / estimated_tokens) * 100)
-                user_warning = f"""
-⚠️ **DATA TRUNCATION NOTICE** ⚠️
-
-Your query returned **{estimated_tokens:,} tokens** of data, which exceeds the model's capacity of **{max_input_tokens:,} tokens**.
-
-**Approximately {data_loss_pct}% of the data will be truncated.**
-
-**To get complete analysis, please:**
-- Narrow your query scope (specific gateways, objects, or rules)
-- Break your question into smaller parts
-- Filter by specific criteria
-
----
-"""
-                max_chars = max_input_tokens * 4
-                if len(context) > max_chars:
-                    keep_start = int(max_chars * 0.6)
-                    keep_end = int(max_chars * 0.2)
-                    truncation_msg = f"\n\n... [Data truncated - {data_loss_pct}% omitted to fit model limits] ...\n\n"
-                    context = context[:keep_start] + truncation_msg + context[-keep_end:]
-                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Context truncated from ~{estimated_tokens:,} to ~{len(context) // 4:,} tokens")
+            
+            # Truncate context to fit model (prioritize recent data = end of logs)
+            max_chars = max_input_tokens * 4
+            if len(context) > max_chars:
+                keep_start = int(max_chars * 0.3)  # Keep less from start
+                keep_end = int(max_chars * 0.7)    # Keep more from end (recent logs)
+                truncation_msg = f"\n\n... [Older logs truncated - showing most recent {data_loss_pct}% of data] ...\n\n"
+                context = context[:keep_start] + truncation_msg + context[-keep_end:]
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Context truncated from ~{estimated_tokens:,} to ~{len(context) // 4:,} tokens (prioritized recent data)")
         
         # Generate final analysis with low temperature for precise formatting
         # max_tokens is auto-calculated based on model's context window for OpenRouter
