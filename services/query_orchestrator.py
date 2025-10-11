@@ -561,7 +561,33 @@ CRITICAL RULES FOR MCP SERVER SELECTION:
    - This enables session context caching for follow-up queries
    - Extract the actual gateway NAME from the query, not time expressions like "last" or "this"
 
-7. Return ONLY valid JSON, no other text
+7. Gateway Script Executor - Direct CLI Commands (CRITICAL PRIORITIZATION):
+   IF Gateway Script Executor is enabled AND task requires gateway diagnostics:
+   
+   A. SECURITY INVESTIGATIONS (threats, attacks, suspicious activity):
+      → PRIORITIZE LOG ANALYSIS COMMANDS (firewall tables & logs):
+      - "run_script:fw tab -t connections -s" (active connections)
+      - "run_script:fw log" (recent security events)  
+      - "run_script:fw ctl pstat" (packet filtering stats)
+      - "run_script:fw ctl conntab" (connection table details)
+      - "run_script:fwaccel stats" (SecureXL statistics)
+      - "run_script:cpstat fw -f multi_cpu" (CPU distribution for attack analysis)
+      
+   B. SYSTEM HEALTH CHECKS (performance, status, versions):
+      → Use system diagnostics:
+      - "run_script:fw ver" (firewall version)
+      - "run_script:top -bn1" (CPU/memory snapshot)
+      - "run_script:cphaprob state" (HA cluster status)
+      - "run_script:ifconfig -a" (network interfaces)
+   
+   C. NEVER mix investigation types:
+      - Threat/security query → LOG ANALYSIS commands ONLY
+      - Health/version query → SYSTEM commands ONLY
+      
+   D. Format: Prefix each CLI command with "run_script:" in data_to_fetch array
+      Example: ["run_script:fw tab -t connections -s", "run_script:fw log"]
+
+8. Return ONLY valid JSON, no other text
 
 Technical Execution Plan:"""
 
