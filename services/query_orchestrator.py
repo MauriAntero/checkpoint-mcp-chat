@@ -377,11 +377,23 @@ Intent Analysis:"""
             client = self.ollama_client
             model_name = self.ollama_client.general_model
         
-        response = client.generate_response(
-            prompt=intent_prompt,
-            model=model_name,
-            temperature=0.2  # Very low temperature for precise intent extraction
-        )
+        try:
+            response = client.generate_response(
+                prompt=intent_prompt,
+                model=model_name,
+                temperature=0.2  # Very low temperature for precise intent extraction
+            )
+        except Exception as api_error:
+            # Catch API errors during intent analysis
+            error_msg = str(api_error)
+            print(f"[QueryOrchestrator] API Error during intent analysis: {error_msg}")
+            return {
+                "task_type": "general_info",
+                "primary_goal": f"API Error: {error_msg}",
+                "data_requirements": {"data_types": [], "time_scope": "not_applicable"},
+                "expected_outcome": "error_response",
+                "api_error": error_msg  # Pass error through for later handling
+            }
         
         if not response:
             return {
@@ -563,11 +575,22 @@ Technical Execution Plan:"""
             model_name = self.ollama_client.general_model
         
         # Use appropriate client for planning
-        response = client.generate_response(
-            prompt=planning_prompt,
-            model=model_name,
-            temperature=0.3  # Low temperature for more structured output
-        )
+        try:
+            response = client.generate_response(
+                prompt=planning_prompt,
+                model=model_name,
+                temperature=0.3  # Low temperature for more structured output
+            )
+        except Exception as api_error:
+            # Catch API errors and return them to user
+            error_msg = str(api_error)
+            print(f"[QueryOrchestrator] API Error during planning: {error_msg}")
+            return {
+                "error": f"API Error: {error_msg}",
+                "understanding": f"⚠️ {error_msg}",
+                "required_servers": [],
+                "execution_steps": []
+            }
         
         if not response:
             return {
@@ -2543,13 +2566,31 @@ Your query returned **{estimated_tokens:,} tokens** of data, which exceeds the m
         # Ollama will use explicit value
         max_tokens_arg = None if client.__class__.__name__ == 'OpenRouterClient' else 4000
         
-        response = client.generate_response(
-            prompt=analysis_prompt,
-            model=model_name,
-            context=context,
-            temperature=0.1,  # Very low temperature to ensure strict format compliance
-            max_tokens=max_tokens_arg  # Auto-calculated for OpenRouter, explicit for Ollama
-        )
+        try:
+            response = client.generate_response(
+                prompt=analysis_prompt,
+                model=model_name,
+                context=context,
+                temperature=0.1,  # Very low temperature to ensure strict format compliance
+                max_tokens=max_tokens_arg  # Auto-calculated for OpenRouter, explicit for Ollama
+            )
+        except Exception as api_error:
+            # Catch API errors and show them to user
+            error_msg = str(api_error)
+            print(f"[QueryOrchestrator] API Error during analysis: {error_msg}")
+            analysis_text = f"""⚠️ **API Error**
+
+{error_msg}
+
+**What happened:**
+The AI model failed to analyze your query due to an API issue.
+
+**Next steps:**
+- If this is a credit/billing issue, resolve it with your provider
+- If this is a rate limit, wait a moment and try again
+- Consider switching to a different AI model (Ollama/OpenRouter) in Settings
+- Check that your API keys are valid in Settings"""
+            return analysis_text, final_model
         
         if response:
             analysis_text = response

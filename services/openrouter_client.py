@@ -371,10 +371,41 @@ class OpenRouterClient:
                     print(f"[OpenRouter ERROR] Response data: {response.text[:500]}")
                     return None  # Return None to trigger standard error handling
             else:
-                print(f"Generation failed: {response.status_code} - {response.text}")
-                return None
+                # Parse error response to extract meaningful message
+                error_message = f"API Error {response.status_code}"
+                try:
+                    error_data = response.json()
+                    if 'error' in error_data:
+                        if isinstance(error_data['error'], dict):
+                            error_message = error_data['error'].get('message', error_message)
+                        else:
+                            error_message = str(error_data['error'])
+                except:
+                    error_message = response.text[:200] if response.text else error_message
+                
+                print(f"Generation failed: {response.status_code} - {error_message}")
+                
+                # Raise exception with user-friendly message instead of returning None
+                if response.status_code == 402:
+                    raise Exception(f"OpenRouter: Insufficient credits. Please add more credits at https://openrouter.ai/settings/credits")
+                elif response.status_code == 401:
+                    raise Exception(f"OpenRouter: Invalid API key. Please check your API key in Settings.")
+                elif response.status_code == 429:
+                    raise Exception(f"OpenRouter: Rate limit exceeded. Please wait a moment and try again.")
+                elif response.status_code == 400:
+                    raise Exception(f"OpenRouter: Bad request - {error_message}")
+                else:
+                    raise Exception(f"OpenRouter API Error ({response.status_code}): {error_message}")
                 
         except Exception as e:
+            # Re-raise API errors so orchestrator can handle them with proper messages
+            error_str = str(e)
+            if any(keyword in error_str for keyword in ['OpenRouter:', 'Insufficient credits', 'Invalid API key', 'Rate limit', 'API Error']):
+                # This is one of our structured API errors - re-raise it
+                print(f"[OpenRouter] Re-raising API error for orchestrator to handle: {error_str}")
+                raise
+            
+            # For other exceptions (network issues, etc.), log and return None
             print(f"Error generating response: {str(e)}")
             print(f"Exception type: {type(e).__name__}")
             import traceback
