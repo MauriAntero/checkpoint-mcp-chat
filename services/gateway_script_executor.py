@@ -95,7 +95,7 @@ class CommandValidator:
         r'^vpn\s+tu\s+tlist$',
         r'^cpca_client\s+lscert$',
         r'^cpinfo$',
-        r'^cpview\s+-p$',  # ONLY cpview -p (non-interactive print mode) is allowed
+        r'^cpview\s+-(p|m)$',  # ONLY cpview -p (print mode) and cpview -m (memory) are allowed
         
         # Log files (read-only with specific paths)
         r'^cat\s+(/var/log/messages|\$FWDIR/log/[a-z]+\.elg|\$CPDIR/log/[a-z]+\.elg)$',
@@ -129,7 +129,7 @@ class CommandValidator:
         r'\bclusterXL_admin\s+down\b',
         
         # Interactive Tools (must be blocked or require specific non-interactive flags)
-        r'\bcpview(?!\s+-p\b)',  # Block cpview UNLESS it's "cpview -p" (non-interactive print mode)
+        r'\bcpview(?!\s+-[pm]\b)',  # Block cpview UNLESS it's "cpview -p" (print) or "cpview -m" (memory)
         r'\bfw\s+monitor\b',  # Interactive packet capture - always blocked
         r'^top(?!\s+-[bn]).*$',  # Block 'top' unless it has -n (iterations) or -b (batch mode)
         
@@ -565,7 +565,9 @@ GATEWAY_EXECUTOR_LLM_PROMPT = """
 
 **IMPORTANT Command Usage Rules:**
 - `ifconfig -a` - Shows all network interfaces with details (recommended over plain ifconfig)
-- `cpview -p` - Print mode is the ONLY allowed cpview usage (regular cpview is blocked because it's interactive)
+- `cpview -p` - Print all performance metrics (non-interactive mode)
+- `cpview -m` - Memory-specific performance metrics (non-interactive mode)
+- Regular `cpview` is blocked (interactive dashboard) - ONLY -p and -m flags are allowed
 - Use flags/arguments when they provide better data (e.g., netstat -rn, top -n 1, vmstat 1 5)
 
 **Format in data_to_fetch:**
