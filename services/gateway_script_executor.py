@@ -515,13 +515,35 @@ GATEWAY_EXECUTOR_LLM_PROMPT = """
 - cpstop, cpstart, kill, rm, chmod, fw unloadlocal
 - Any interactive shells, pipes, redirects
 
-**Example Execution Plan:**
+**Example Execution Plans:**
+
 User: "Show gateway version"
 {
   "required_servers": ["quantum-management"],
   "data_to_fetch": ["run_script:fw ver", "run_script:show version all"],
   "analysis_type": "gateway_diagnostics"
 }
+
+User: "Make a full diagnosis on cp-gw" or "Comprehensive gateway health check"
+{
+  "required_servers": ["quantum-management"],
+  "data_to_fetch": [
+    "gateway_identifier:cp-gw",
+    "run_script:fw ver",
+    "run_script:show version all",
+    "run_script:cphaprob state",
+    "run_script:fw stat",
+    "run_script:fwaccel stat",
+    "run_script:cpstat os -f all",
+    "run_script:ifconfig",
+    "run_script:netstat -rn",
+    "run_script:df -h",
+    "run_script:uptime"
+  ],
+  "analysis_type": "comprehensive_diagnostics"
+}
+
+**IMPORTANT: For comprehensive diagnostics, combine multiple relevant commands to provide thorough analysis!**
 
 **Use quantum-management run-script for ALL gateway diagnostic commands!**
 """
