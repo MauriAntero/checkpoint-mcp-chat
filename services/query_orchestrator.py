@@ -701,26 +701,59 @@ Technical Execution Plan:"""
         # PARALLEL EXECUTION: Query all required servers simultaneously
         import asyncio
         
-        # Create coroutines for all servers
-        async def run_parallel_queries():
-            tasks = []
+        # CRITICAL FIX: quantum-management must run FIRST to populate gateway directory
+        # before quantum-gw-cli tries to resolve IPs to gateway names
+        async def run_queries_with_dependencies():
+            """Execute queries with dependency handling for gateway directory"""
+            all_results = []
             server_task_map = {}
             
-            for server_name in required_servers:
-                if server_name in all_servers:
-                    task = self._query_mcp_server_async(server_name, data_to_fetch, user_parameter_selections, query_text)
-                    tasks.append(task)
-                    server_task_map[len(tasks) - 1] = server_name
-                else:
-                    results["errors"].append(f"Required server '{server_name}' is not configured. Please add it in MCP Servers page.")
-            
-            # Only run gather if we have tasks (safety check for alignment)
-            if tasks:
-                return await asyncio.gather(*tasks, return_exceptions=True), server_task_map
+            # Phase 1: Execute quantum-management first if it's required
+            # This populates the gateway directory before other servers need it
+            if 'quantum-management' in required_servers and 'quantum-management' in all_servers:
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Phase 1: Querying quantum-management first (gateway directory dependency)")
+                try:
+                    mgmt_result = await self._query_mcp_server_async('quantum-management', data_to_fetch, user_parameter_selections, query_text)
+                    all_results.append(mgmt_result)
+                    server_task_map[0] = 'quantum-management'
+                    
+                    # Update gateway directory immediately after quantum-management completes
+                    if mgmt_result and 'tool_results' in mgmt_result:
+                        self._update_gateway_directory_from_results(mgmt_result['tool_results'])
+                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Gateway directory updated, ready for quantum-gw-cli")
+                except Exception as e:
+                    # Capture exception (same behavior as return_exceptions=True in asyncio.gather)
+                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] quantum-management failed: {e}")
+                    all_results.append(e)
+                    server_task_map[0] = 'quantum-management'
+                    results["errors"].append(f"Server 'quantum-management' failed: {str(e)}")
+                
+                # Remove quantum-management from list (already processed)
+                remaining_servers = [s for s in required_servers if s != 'quantum-management']
             else:
-                return [], {}
+                remaining_servers = required_servers
+            
+            # Phase 2: Execute remaining servers in parallel
+            if remaining_servers:
+                tasks = []
+                task_start_index = len(all_results)
+                
+                for server_name in remaining_servers:
+                    if server_name in all_servers:
+                        task = self._query_mcp_server_async(server_name, data_to_fetch, user_parameter_selections, query_text)
+                        tasks.append(task)
+                        server_task_map[task_start_index + len(tasks) - 1] = server_name
+                    else:
+                        results["errors"].append(f"Required server '{server_name}' is not configured. Please add it in MCP Servers page.")
+                
+                if tasks:
+                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Phase 2: Querying {len(tasks)} servers in parallel")
+                    parallel_results = await asyncio.gather(*tasks, return_exceptions=True)
+                    all_results.extend(parallel_results)
+            
+            return all_results, server_task_map
         
-        # Execute all server queries in parallel
+        # Execute queries with dependency handling
         if required_servers:
             num_servers = len([s for s in required_servers if s in all_servers])
             print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Executing {num_servers} MCP server queries in PARALLEL...")
@@ -735,11 +768,11 @@ Technical Execution Plan:"""
                 # If we have a running loop, we need to use nest_asyncio or run in executor
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, run_parallel_queries())
+                    future = executor.submit(asyncio.run, run_queries_with_dependencies())
                     parallel_results, server_task_map = future.result()
             except RuntimeError:
                 # No running event loop, safe to use asyncio.run()
-                parallel_results, server_task_map = asyncio.run(run_parallel_queries())
+                parallel_results, server_task_map = asyncio.run(run_queries_with_dependencies())
             
             # Process results from parallel execution
             for idx, result in enumerate(parallel_results):
