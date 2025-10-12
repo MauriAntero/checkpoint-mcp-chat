@@ -1450,107 +1450,98 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             return ", ".join(summary_parts)
     
     def _truncate_content(self, content: Any, max_chars: int) -> Any:
-        """Smart truncation preserving critical security data
-        
-        Instead of keeping only the first item, this method:
-        1. Identifies if content contains security logs (with severity, action fields)
-        2. Keeps a severity-sorted sample of most critical logs
-        3. Preserves temporal distribution (recent + historical)
-        4. Falls back to simple truncation for non-log data
-        """
+        """Simple truncation without data manipulation - send as-is up to max_chars"""
         if isinstance(content, list):
             if not content:
                 return []
-            
-            # Check if first item is a text-type log entry
+            # Keep only first item
             first = content[0]
             if isinstance(first, dict) and first.get("type") == "text":
-                text = first.get("text", "")
-                
-                # Try to parse as JSON to check if it contains log data
-                try:
-                    parsed_data = json.loads(text)
-                    
-                    # Check if this contains log arrays (logs, threat_logs, etc.)
-                    log_arrays = []
-                    for key, value in parsed_data.items():
-                        if isinstance(value, list) and len(value) > 0:
-                            # Check if first item looks like a log (has time, action, severity, etc.)
-                            first_item = value[0] if isinstance(value, list) and value else None
-                            if isinstance(first_item, dict):
-                                has_time = any(k in first_item for k in ['time', 'timestamp', 'datetime'])
-                                has_action = any(k in first_item for k in ['action', 'severity', 'blade', 'threat'])
-                                if has_time and has_action:
-                                    log_arrays.append((key, value))
-                    
-                    # If we found log arrays, apply smart sampling
-                    if log_arrays:
-                        for key, logs in log_arrays:
-                            original_count = len(logs)
-                            
-                            # Smart sampling: Keep high-severity and diverse sample
-                            # Priority 1: Critical/High severity
-                            # Priority 2: Dropped/Rejected actions
-                            # Priority 3: Recent logs (temporal distribution)
-                            
-                            critical_logs = []
-                            dropped_logs = []
-                            recent_logs = []
-                            
-                            for log in logs:
-                                # Severity-based filtering
-                                severity = str(log.get('severity', '')).lower()
-                                if any(s in severity for s in ['critical', 'high', 'urgent']):
-                                    critical_logs.append(log)
-                                
-                                # Action-based filtering (drops, rejects are most important)
-                                action = str(log.get('action', '')).lower()
-                                if any(a in action for a in ['drop', 'reject', 'deny', 'block']):
-                                    dropped_logs.append(log)
-                            
-                            # Keep most recent logs for temporal context
-                            recent_logs = logs[-10:] if len(logs) > 10 else logs
-                            
-                            # Combine: critical + dropped + recent (dedup by creating set of log strings)
-                            important_logs = []
-                            seen = set()
-                            
-                            for log_list in [critical_logs, dropped_logs, recent_logs]:
-                                for log in log_list:
-                                    log_key = f"{log.get('time')}_{log.get('src')}_{log.get('dst')}"
-                                    if log_key not in seen:
-                                        important_logs.append(log)
-                                        seen.add(log_key)
-                                        if len(important_logs) >= 30:  # Cap at 30 logs
-                                            break
-                                if len(important_logs) >= 30:
-                                    break
-                            
-                            # If still over max_chars, keep top by severity then truncate
-                            truncated_count = original_count - len(important_logs)
-                            parsed_data[key] = important_logs
-                            
-                            # Add summary message if logs were reduced
-                            if truncated_count > 0:
-                                if 'summary' not in parsed_data:
-                                    parsed_data['summary'] = {}
-                                parsed_data['summary']['truncation'] = f"Showing {len(important_logs)} most critical logs (high severity, drops/rejects, recent activity). {truncated_count} lower-priority logs omitted for token efficiency."
-                        
-                        # Re-serialize to JSON
-                        new_text = json.dumps(parsed_data)
-                        return [{"type": "text", "text": new_text}]
-                    
-                except (json.JSONDecodeError, KeyError):
-                    pass  # Not JSON or not log data, fallback to simple truncation
-                
-                # Fallback: Simple text truncation for non-log data
-                truncated_text = text[:max_chars]
-                return [{"type": "text", "text": truncated_text + f"... [+{len(content)-1} items truncated]"}]
-            
+                text = first.get("text", "")[:max_chars]
+                return [{"type": "text", "text": text + f"... [+{len(content)-1} items truncated]"}]
             return [first]
         elif isinstance(content, str):
             return content[:max_chars] + "..."
         return content
+    
+    def _analyze_duplicate_data(self, data_collected: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze data for duplicates across MCP servers
+        
+        This checks if the same logs or objects are being sent multiple times,
+        which wastes tokens and confuses the LLM.
+        
+        Returns:
+            Dict with duplicate analysis results
+        """
+        print(f"[DEBUG] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Starting duplicate data analysis...")
+        
+        # Track all unique data items across servers
+        all_logs = []
+        all_objects = []
+        log_hashes = set()
+        object_hashes = set()
+        duplicate_count = 0
+        
+        for server_name, server_data in data_collected.items():
+            if not isinstance(server_data, dict):
+                continue
+            
+            # Analyze tool_results
+            tool_results = server_data.get('tool_results', [])
+            for tool_result in tool_results:
+                if isinstance(tool_result, dict) and 'result' in tool_result:
+                    result = tool_result['result']
+                    
+                    # Check content array
+                    if isinstance(result, dict) and 'content' in result:
+                        for item in result.get('content', []):
+                            if isinstance(item, dict) and item.get('type') == 'text':
+                                try:
+                                    text_data = json.loads(item.get('text', '{}'))
+                                    
+                                    # Check for log arrays
+                                    for key, value in text_data.items():
+                                        if isinstance(value, list) and len(value) > 0:
+                                            first_item = value[0]
+                                            if isinstance(first_item, dict):
+                                                # Check if it's a log (has time/action fields)
+                                                has_time = any(k in first_item for k in ['time', 'timestamp'])
+                                                has_action = any(k in first_item for k in ['action', 'severity', 'blade'])
+                                                
+                                                if has_time and has_action:
+                                                    # It's a log - check for duplicates
+                                                    for log in value:
+                                                        log_hash = f"{log.get('time')}_{log.get('src')}_{log.get('dst')}_{log.get('action')}"
+                                                        if log_hash in log_hashes:
+                                                            duplicate_count += 1
+                                                        else:
+                                                            log_hashes.add(log_hash)
+                                                        all_logs.append(log)
+                                                else:
+                                                    # It's an object (rules, gateways, etc)
+                                                    for obj in value:
+                                                        obj_hash = f"{obj.get('name')}_{obj.get('type')}_{obj.get('uid', '')}"
+                                                        if obj_hash in object_hashes:
+                                                            duplicate_count += 1
+                                                        else:
+                                                            object_hashes.add(obj_hash)
+                                                        all_objects.append(obj)
+                                except (json.JSONDecodeError, KeyError):
+                                    pass
+        
+        # Build analysis report
+        analysis = {
+            "duplicates_found": duplicate_count > 0,
+            "duplicate_count": duplicate_count,
+            "total_unique_logs": len(log_hashes),
+            "total_unique_objects": len(object_hashes),
+            "total_logs": len(all_logs),
+            "total_objects": len(all_objects),
+            "summary": f"{duplicate_count} duplicate items found out of {len(all_logs) + len(all_objects)} total items"
+        }
+        
+        print(f"[DEBUG] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Duplicate analysis: {analysis['summary']}")
+        return analysis
     
     def _filter_log_fields(self, data_collected: Dict[str, Any]) -> Dict[str, Any]:
         """Filter log data to remove Check Point metadata and reduce token usage
@@ -1800,11 +1791,38 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         # Apply intelligent log field filtering to reduce token usage while preserving valuable security information
         data_collected = self._filter_log_fields(data_collected)
         
+        # DEBUG LOGGING: Analyze for duplicate data
+        duplicate_analysis = self._analyze_duplicate_data(data_collected)
+        
+        # DEBUG LOGGING: Write filtered data to file for analysis
+        debug_file_path = "./logs/llm_input_debug.json"
+        try:
+            import os
+            os.makedirs("./logs", exist_ok=True)
+            with open(debug_file_path, 'w') as f:
+                json.dump({
+                    "timestamp": datetime.now().isoformat(),
+                    "filtered_data": data_collected,
+                    "metadata": {
+                        "servers_count": len(data_collected),
+                        "servers": list(data_collected.keys())
+                    },
+                    "duplicate_analysis": duplicate_analysis
+                }, f, indent=2)
+            print(f"[DEBUG] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Written filtered data to {debug_file_path}")
+            if duplicate_analysis.get("duplicates_found"):
+                print(f"[DEBUG] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ⚠️ DUPLICATES DETECTED: {duplicate_analysis['summary']}")
+        except Exception as e:
+            print(f"[DEBUG] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Failed to write debug file: {e}")
+        
         # Extract discovered resources for investigation capabilities note (don't duplicate in context)
         has_discovered_resources = any('discovered_resources' in server_data for server_data in data_collected.values())
         
         # Convert MCP data to JSON - discovered_resources already included here, no need to duplicate
         data_json = json.dumps(data_collected, indent=2)
+        
+        # DEBUG: Log data size before building context
+        print(f"[DEBUG] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Data JSON size: {len(data_json):,} chars (~{len(data_json)//4:,} tokens)")
         
         # Check if there are errors or missing data
         errors = execution_results.get('errors', [])
@@ -1891,6 +1909,29 @@ Analyze the provided data and answer the user's question based solely on what is
         # This catches "uid": "abc123..." or "rule_uid": "abc123..." patterns
         uid_field_pattern = r'("(?:rule_)?uid"\s*:\s*"[0-9a-f]{20,}")'
         context = re.sub(uid_field_pattern, r'"uid": "<UUID>"', context, flags=re.IGNORECASE)
+        
+        # DEBUG LOGGING: Write full LLM context to file for analysis
+        debug_context_file = "./logs/llm_full_context.txt"
+        try:
+            with open(debug_context_file, 'w') as f:
+                f.write("="*80 + "\n")
+                f.write("FULL CONTEXT SENT TO LLM\n")
+                f.write(f"Timestamp: {datetime.now().isoformat()}\n")
+                f.write(f"Model: {final_model}\n")
+                f.write("="*80 + "\n\n")
+                f.write("CONTEXT:\n")
+                f.write("-"*80 + "\n")
+                f.write(context)
+                f.write("\n" + "-"*80 + "\n\n")
+                f.write("ANALYSIS PROMPT:\n")
+                f.write("-"*80 + "\n")
+                f.write(analysis_prompt)
+                f.write("\n" + "-"*80 + "\n\n")
+                f.write(f"Estimated size: {len(context)} chars context + {len(analysis_prompt)} chars prompt = {len(context) + len(analysis_prompt)} total chars\n")
+                f.write(f"Estimated tokens: ~{(len(context) + len(analysis_prompt))//4:,}\n")
+            print(f"[DEBUG] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Written full LLM context to {debug_context_file}")
+        except Exception as e:
+            print(f"[DEBUG] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Failed to write context debug file: {e}")
         
         # Context management for LLM
         # Estimate token count of the LLM prompt context string
