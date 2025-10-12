@@ -1167,26 +1167,40 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                     print(f"[MCP_DEBUG] [{_ts()}] ⚠️ OVERRIDE MODE: call_all_tools=True - Calling ALL {len(selected_tools)} available tools")
                     print(f"[MCP_DEBUG] [{_ts()}] This provides comprehensive coverage but may impact performance")
                 else:
-                    # STANDARD MODE: Score-based intelligent selection
+                    # STANDARD MODE: Score-based intelligent selection with rate limit protection
                     RELEVANCE_THRESHOLD = 15  # Only call tools with score > 15 (filters out noise)
                     AGGRESSIVE_THRESHOLD = 100  # Very high relevance (exact keyword matches)
+                    MAX_TOOLS = 8  # Maximum tools to call in parallel (prevents API rate limiting)
                     
                     selected_tools = []
                     
-                    # Phase 1: Add ALL tools above relevance threshold (NO CAP)
-                    # This ensures we call every tool that's actually relevant to the query
-                    relevant_tools = [(t, a, s) for t, a, s in tools_with_scores if s > RELEVANCE_THRESHOLD]
-                    selected_tools.extend(relevant_tools)  # NO CAP - include all relevant tools
+                    # Phase 1: Intelligent tool selection with cap to prevent rate limiting
+                    # Priority: aggressive-match tools first, then high-relevance, then medium
+                    aggressive_tools = [(t, a, s) for t, a, s in tools_with_scores if s > AGGRESSIVE_THRESHOLD]
+                    high_tools = [(t, a, s) for t, a, s in tools_with_scores if 50 < s <= AGGRESSIVE_THRESHOLD]
+                    medium_tools = [(t, a, s) for t, a, s in tools_with_scores if RELEVANCE_THRESHOLD < s <= 50]
+                    
+                    # Add tools by priority, STRICTLY enforcing MAX_TOOLS cap at each step
+                    selected_tools.extend(aggressive_tools[:MAX_TOOLS])  # Take up to MAX_TOOLS aggressive tools
+                    remaining = MAX_TOOLS - len(selected_tools)
+                    
+                    if remaining > 0:
+                        selected_tools.extend(high_tools[:remaining])  # Fill remaining slots with high-relevance
+                        remaining = MAX_TOOLS - len(selected_tools)
+                    
+                    if remaining > 0:
+                        selected_tools.extend(medium_tools[:remaining])  # Fill remaining slots with medium-relevance
                     
                     # Count by score tier for visibility
-                    aggressive_count = len([s for t, a, s in relevant_tools if s > AGGRESSIVE_THRESHOLD])
-                    high_count = len([s for t, a, s in relevant_tools if 50 < s <= AGGRESSIVE_THRESHOLD])
-                    medium_count = len([s for t, a, s in relevant_tools if RELEVANCE_THRESHOLD < s <= 50])
+                    aggressive_count = len(aggressive_tools)
+                    high_count = len(high_tools)
+                    medium_count = len(medium_tools)
                     
-                    print(f"[MCP_DEBUG] [{_ts()}] Selected {len(relevant_tools)} tools above threshold ({RELEVANCE_THRESHOLD}):")
+                    print(f"[MCP_DEBUG] [{_ts()}] Tool selection (max {MAX_TOOLS} to prevent rate limiting):")
                     print(f"[MCP_DEBUG] [{_ts()}]   - {aggressive_count} aggressive-match tools (score > {AGGRESSIVE_THRESHOLD})")
                     print(f"[MCP_DEBUG] [{_ts()}]   - {high_count} high-relevance tools (score 51-{AGGRESSIVE_THRESHOLD})")
                     print(f"[MCP_DEBUG] [{_ts()}]   - {medium_count} medium-relevance tools (score {RELEVANCE_THRESHOLD+1}-50)")
+                    print(f"[MCP_DEBUG] [{_ts()}] Selected {len(selected_tools)} tools (capped at {MAX_TOOLS})")
                     
                     # Phase 2: Filter out tools with empty/useless args that would return irrelevant data
                     # CRITICAL: Tools like show_objects with {} args return 12,000+ random objects!
