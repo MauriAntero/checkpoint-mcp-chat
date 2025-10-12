@@ -1592,12 +1592,23 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
                                                             sample_original_fields = 0
                                                             sample_filtered_fields = 0
                                                             
-                                                            for item in value:
+                                                            for idx, item in enumerate(value):
                                                                 if isinstance(item, dict):
                                                                     if sample_original_fields == 0:
                                                                         sample_original_fields = len(item)
+                                                                        # DEBUG: Show actual fields in first item
+                                                                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] DEBUG: First item in '{field}' has fields: {list(item.keys())}")
+                                                                    
                                                                     # Keep only essential fields
                                                                     filtered_item = {k: v for k, v in item.items() if k in ESSENTIAL_FIELDS}
+                                                                    
+                                                                    # DEBUG: Show what was filtered out from first item
+                                                                    if idx == 0 and len(item) > 0:
+                                                                        removed_fields = [k for k in item.keys() if k not in ESSENTIAL_FIELDS]
+                                                                        threat_fields_removed = [k for k in removed_fields if any(kw in k.lower() for kw in ['attack', 'threat', 'malware', 'severity', 'bot', 'ips', 'virus', 'protection'])]
+                                                                        if threat_fields_removed:
+                                                                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ⚠️ WARNING: Removed threat-related fields: {threat_fields_removed}")
+                                                                    
                                                                     if sample_filtered_fields == 0 and filtered_item:
                                                                         sample_filtered_fields = len(filtered_item)
                                                                     if filtered_item:
