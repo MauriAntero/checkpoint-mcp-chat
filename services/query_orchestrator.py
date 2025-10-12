@@ -45,10 +45,11 @@ class QueryOrchestrator:
             server_type="threat-prevention",
             package="@chkp/threat-prevention-mcp",
             capabilities=[
-                "threat policies", "IPS profiles", "anti-bot protection",
-                "threat indicators", "IOC feeds"
+                "IPS profiles", "anti-bot profiles", "anti-virus profiles",
+                "zero phishing profiles", "threat emulation profiles",
+                "threat indicators", "IOC feeds", "threat prevention policies"
             ],
-            data_types=["threat policies", "IPS signatures", "IOC data"],
+            data_types=["IPS protections", "anti-bot data", "anti-virus signatures", "zero phishing detections", "threat policies", "IOC data"],
             tools=None  # Auto-detect: Let system discover actual tools from MCP server
         ),
         "https-inspection": MCPServerCapability(
@@ -574,8 +575,8 @@ You MUST NOT select forbidden servers: {', '.join(forbidden_servers) if forbidde
 
 TOOL NAMING RULES:
 - For management-logs: Use "show_logs"
-- For threat-prevention: Use "show_ips_profile", "show_anti_bot_profile", or "auto-detect"
-- For https-inspection: Use "show_https_layer", "show_https_rule", or "auto-detect"
+- For threat-prevention: Tools will auto-detect (IPS, Anti-Bot, Anti-Virus, Zero Phishing profiles)
+- For https-inspection: Tools will auto-detect (HTTPS inspection policies and rules)
 - For quantum-management: Use "show_access_rulebase", "show_nat_rulebase", "show_hosts", "show_networks"
 - NEVER use CLI commands like "fw log" or "cpstat"
 
