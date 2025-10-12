@@ -49,7 +49,7 @@ class QueryOrchestrator:
                 "threat indicators", "IOC feeds"
             ],
             data_types=["threat policies", "IPS signatures", "IOC data"],
-            tools=["show_threat_prevention_profile", "show_ips_profile", "show_anti_bot_profile"]
+            tools=None  # Auto-detect: Let system discover actual tools from MCP server
         ),
         "https-inspection": MCPServerCapability(
             server_type="https-inspection",
@@ -59,7 +59,7 @@ class QueryOrchestrator:
                 "certificate management", "inspection exceptions"
             ],
             data_types=["HTTPS policies", "certificates", "inspection rules"],
-            tools=["show_https_inspection_policy", "show_https_layer", "show_https_rule"]
+            tools=None  # Auto-detect: Let system discover actual tools from MCP server
         ),
         "harmony-sase": MCPServerCapability(
             server_type="harmony-sase",
