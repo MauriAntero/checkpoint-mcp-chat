@@ -1071,21 +1071,23 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                     is_log_query = any(kw in search_keywords for kw in log_keywords)
                     is_policy_query = any(kw in search_keywords for kw in policy_keywords)
                     
-                    # Determine primary query type
+                    # Determine primary query type with mixed-intent support
                     query_type = 'other'
-                    if is_threat_query or is_log_query:
-                        query_type = 'threat_log'  # Security investigation query
-                    elif is_policy_query and not (is_threat_query or is_log_query):
-                        query_type = 'policy'  # Policy/config query
+                    if is_policy_query and (is_threat_query or is_log_query):
+                        query_type = 'mixed'  # Mixed threat/policy query (e.g., "suspicious policy changes")
+                    elif is_threat_query or is_log_query:
+                        query_type = 'threat_log'  # Pure security investigation query
+                    elif is_policy_query:
+                        query_type = 'policy'  # Pure policy/config query
                     
-                    # CRITICAL RULE: For threat/log queries, EXCLUDE policy/config tools
-                    # These queries need logs and threat data, NOT policy rules!
+                    # CRITICAL RULE: For PURE threat/log queries (NOT mixed), EXCLUDE policy/config tools
+                    # Mixed queries need both logs AND policy tools
                     policy_tools = ['access_rulebase', 'nat_rulebase', 'access_rule', 'nat_rule', 
                                    'access_section', 'nat_section', 'access_layer', 'find_zero_hits']
-                    if query_type == 'threat_log':
+                    if query_type == 'threat_log':  # Only exclude for PURE threat queries
                         if any(pt in tool_name_lower for pt in policy_tools):
-                            score -= 1000  # MASSIVE penalty - exclude these from threat queries
-                            print(f"[MCP_DEBUG] [{_ts()}] 🚫 Excluding '{tool.name}' from threat/log query (policy tool)")
+                            score -= 1000  # MASSIVE penalty - exclude these from pure threat queries
+                            print(f"[MCP_DEBUG] [{_ts()}] 🚫 Excluding '{tool.name}' from pure threat/log query (policy tool)")
                     
                     # Exact keyword matches in tool name (highest priority)
                     # CRITICAL: Include HTTPS/SSL/TLS keywords for inspection tools
