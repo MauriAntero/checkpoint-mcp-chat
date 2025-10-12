@@ -1499,6 +1499,10 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
                                 try:
                                     text_data = json.loads(item.get('text', '{}'))
                                     
+                                    # Skip if not a dict (could be a list or other type)
+                                    if not isinstance(text_data, dict):
+                                        continue
+                                    
                                     # Check for log arrays
                                     for key, value in text_data.items():
                                         if isinstance(value, list) and len(value) > 0:
