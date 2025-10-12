@@ -793,14 +793,32 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             time_frame = "last-30-days"
                         elif any(pattern in search_text for pattern in ['7 day', 'last 7 days', 'last-7-days', 'past 7 days', 'last week', 'past week']):
                             time_frame = "last-7-days"
-                        # CheckPoint API doesn't support 2-6 days, map to nearest valid values
-                        elif any(pattern in search_text for pattern in ['6 day', 'last 6 days', 'last-6-days', 'past 6 days', 
-                                                                        '5 day', 'last 5 days', 'last-5-days', 'past 5 days',
-                                                                        '4 day', 'last 4 days', 'last-4-days', 'past 4 days']):
-                            time_frame = "last-7-days"  # Map 4-6 days → last-7-days (closest option)
-                        elif any(pattern in search_text for pattern in ['3 day', 'last 3 days', 'last-3-days', 'past 3 days',
-                                                                        '2 day', 'last 2 days', 'last-2-days', 'past 2 days', '48 hour', 'last 48 hours']):
-                            time_frame = "this-week"  # Map 2-3 days → this-week (closest option)
+                        # CheckPoint API supports custom date ranges for 2-6 days via time-frame object
+                        elif any(pattern in search_text for pattern in ['6 day', 'last 6 days', 'last-6-days', 'past 6 days']):
+                            from datetime import datetime, timedelta
+                            end_date = datetime.now().strftime("%Y-%m-%d")
+                            start_date = (datetime.now() - timedelta(days=6)).strftime("%Y-%m-%d")
+                            time_frame = {"from-date": start_date, "to-date": end_date}  # Custom 6-day range
+                        elif any(pattern in search_text for pattern in ['5 day', 'last 5 days', 'last-5-days', 'past 5 days']):
+                            from datetime import datetime, timedelta
+                            end_date = datetime.now().strftime("%Y-%m-%d")
+                            start_date = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d")
+                            time_frame = {"from-date": start_date, "to-date": end_date}  # Custom 5-day range
+                        elif any(pattern in search_text for pattern in ['4 day', 'last 4 days', 'last-4-days', 'past 4 days']):
+                            from datetime import datetime, timedelta
+                            end_date = datetime.now().strftime("%Y-%m-%d")
+                            start_date = (datetime.now() - timedelta(days=4)).strftime("%Y-%m-%d")
+                            time_frame = {"from-date": start_date, "to-date": end_date}  # Custom 4-day range
+                        elif any(pattern in search_text for pattern in ['3 day', 'last 3 days', 'last-3-days', 'past 3 days']):
+                            from datetime import datetime, timedelta
+                            end_date = datetime.now().strftime("%Y-%m-%d")
+                            start_date = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d")
+                            time_frame = {"from-date": start_date, "to-date": end_date}  # Custom 3-day range
+                        elif any(pattern in search_text for pattern in ['2 day', 'last 2 days', 'last-2-days', 'past 2 days', '48 hour', 'last 48 hours']):
+                            from datetime import datetime, timedelta
+                            end_date = datetime.now().strftime("%Y-%m-%d")
+                            start_date = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+                            time_frame = {"from-date": start_date, "to-date": end_date}  # Custom 2-day range
                         elif any(pattern in search_text for pattern in ['24 hour', 'last 24 hours', 'last-24-hours', 'past 24 hours']):
                             time_frame = "last-24-hours"
                         elif any(pattern in search_text for pattern in ['last hour', 'past hour', 'last 60 min']):
@@ -1298,26 +1316,47 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         # Specific queries can fetch more pages for comprehensive results
                         time_range_days = 1  # Default
                         if 'new-query' in args and isinstance(args['new-query'], dict):
-                            time_frame_str = args['new-query'].get('time-frame', 'last-1-days')
-                            if '30-days' in time_frame_str or '30-day' in time_frame_str:
-                                time_range_days = 30
-                            elif '7-days' in time_frame_str or '7-day' in time_frame_str or 'week' in time_frame_str:
-                                time_range_days = 7
-                            elif '24-hours' in time_frame_str or '1-day' in time_frame_str or time_frame_str == 'today':
-                                time_range_days = 1
+                            time_frame_val = args['new-query'].get('time-frame', 'last-1-days')
+                            # Handle both string and dict (custom date range) time frames
+                            if isinstance(time_frame_val, dict):
+                                # Custom date range - calculate days from from-date to to-date
+                                from datetime import datetime
+                                try:
+                                    from_date = datetime.strptime(time_frame_val.get('from-date', ''), '%Y-%m-%d')
+                                    to_date = datetime.strptime(time_frame_val.get('to-date', ''), '%Y-%m-%d')
+                                    time_range_days = (to_date - from_date).days + 1  # +1 to include both days
+                                except:
+                                    time_range_days = 7  # Default if parsing fails
+                            elif isinstance(time_frame_val, str):
+                                time_frame_str = time_frame_val
+                                if '30-days' in time_frame_str or '30-day' in time_frame_str:
+                                    time_range_days = 30
+                                elif '7-days' in time_frame_str or '7-day' in time_frame_str or 'week' in time_frame_str:
+                                    time_range_days = 7
+                                elif '24-hours' in time_frame_str or '1-day' in time_frame_str or time_frame_str == 'today':
+                                    time_range_days = 1
                         
                         # Calculate MAX_PAGES based on time range to prevent token overflow
                         # No log-level filtering (user wants all data including Accept logs for traffic analysis)
                         # Token estimates with deduplication (~50% reduction) and field filtering (~35% reduction):
                         # 30 days: 4 pages (~280 logs → ~140 unique → ~50k tokens after field filtering)
                         # 7 days: 6 pages (~420 logs → ~210 unique → ~70k tokens after field filtering)
+                        # 5 days: 7 pages (~490 logs → ~245 unique → ~80k tokens) - custom date range
+                        # 3 days: 8 pages (~560 logs → ~280 unique → ~90k tokens) - custom date range
+                        # 2 days: 9 pages (~630 logs → ~315 unique → ~100k tokens) - custom date range
                         # 1 day: 10 pages (~700 logs → ~350 unique → ~120k tokens)
                         if time_range_days >= 30:
                             MAX_PAGES = 4  # Last 30 days: limited pagination
                         elif time_range_days >= 7:
-                            MAX_PAGES = 6  # Last 7 days or this-week: 6 pages
+                            MAX_PAGES = 6  # Last 7 days: 6 pages
+                        elif time_range_days >= 5:
+                            MAX_PAGES = 7  # 5-6 days (custom): 7 pages
+                        elif time_range_days >= 3:
+                            MAX_PAGES = 8  # 3-4 days (custom): 8 pages
+                        elif time_range_days >= 2:
+                            MAX_PAGES = 9  # 2 days (custom): 9 pages
                         else:
-                            MAX_PAGES = 10  # Last 24 hours or today: 10 pages
+                            MAX_PAGES = 10  # 1 day: 10 pages
                         
                         logs_per_page = args.get('new-query', {}).get('max-logs-per-request', 70) if isinstance(args.get('new-query'), dict) else 70
                         print(f"[MCP_DEBUG] [{_ts()}] 📊 Intelligent pagination: {time_range_days}-day query limited to {MAX_PAGES} pages (max ~{MAX_PAGES * logs_per_page} logs)")
