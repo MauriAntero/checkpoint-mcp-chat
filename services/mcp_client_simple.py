@@ -401,7 +401,7 @@ def extract_resource_identifiers(tool_name: str, content: Any) -> List[Dict[str,
 async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str], 
                                   data_points: List[str], user_parameter_selections: Optional[Dict[str, str]] = None,
                                   discovery_mode: bool = True, user_query: str = "", 
-                                  call_all_tools: bool = False) -> Dict[str, Any]:
+                                  call_all_tools: bool = False, session_gateway: Optional[str] = None) -> Dict[str, Any]:
     """Query an MCP server for data (async version)
     
     Args:
@@ -412,6 +412,7 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
         discovery_mode: If True, first discover available resources before querying
         user_query: Original user query string for context
         call_all_tools: If True, bypass scoring and call ALL available tools (override mode)
+        session_gateway: Gateway name from session context (preferred for target_gateway)
         
     Returns:
         Dict containing tools and their results
@@ -843,34 +844,53 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                     
                     # 2. GATEWAY CLI: All tools require target_gateway parameter
                     if 'target_gateway' in required and 'target_gateway' not in args:
-                        # Try to find gateway from previous discovery or data_points
-                        if gateways and len(gateways) > 0:
-                            args['target_gateway'] = gateways[0].get('name')
-                            print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway: {args['target_gateway']}")
-                        else:
-                            # No gateways discovered - try to extract from user query or use GATEWAY_HOST
-                            # Look for gateway name in user query (e.g., "routing on cp-gw", "diagnose gateway01")
-                            if user_query:
-                                # Pattern 1: "on <gateway>" or "for <gateway>" or "in <gateway>"
-                                match = re.search(r'\b(?:on|for|in|from|at)\s+([a-zA-Z0-9][a-zA-Z0-9._-]+)', user_query, re.IGNORECASE)
-                                if match:
-                                    potential_gateway = match.group(1)
-                                    # Exclude common words
-                                    if potential_gateway.lower() not in ['the', 'this', 'that', 'my', 'our', 'all', 'each', 'every', 'gateway', 'firewall']:
-                                        args['target_gateway'] = potential_gateway
-                                        print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from user query: {args['target_gateway']}")
-                                
-                                # Pattern 2: Direct gateway name mention (cp-gw, gw-01, firewall-dmz, etc.)
-                                if 'target_gateway' not in args:
-                                    match = re.search(r'\b([a-zA-Z0-9]+[-_][a-zA-Z0-9][a-zA-Z0-9._-]*)', user_query)
-                                    if match:
-                                        args['target_gateway'] = match.group(1)
-                                        print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from identifier pattern: {args['target_gateway']}")
+                        # Helper function to check if string is an IP address
+                        def is_ip_address(s):
+                            if not s:
+                                return False
+                            parts = s.split('.')
+                            if len(parts) != 4:
+                                return False
+                            try:
+                                return all(0 <= int(part) <= 255 for part in parts)
+                            except ValueError:
+                                return False
+                        
+                        # Priority 1: Use session gateway (most reliable, from QueryOrchestrator)
+                        if session_gateway and not is_ip_address(session_gateway):
+                            args['target_gateway'] = session_gateway
+                            print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from session: {args['target_gateway']}")
+                        # Priority 2: Try discovered gateways (but skip if it's an IP address)
+                        elif gateways and len(gateways) > 0:
+                            gateway_name = gateways[0].get('name')
+                            if gateway_name and not is_ip_address(gateway_name):
+                                args['target_gateway'] = gateway_name
+                                print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from discovery: {args['target_gateway']}")
+                            else:
+                                print(f"[MCP_DEBUG] [{_ts()}] ⚠️ Discovered gateway has IP in name field ({gateway_name}), skipping...")
+                        
+                        # Priority 3: Extract from user query
+                        if 'target_gateway' not in args and user_query:
+                            # Pattern 1: "on <gateway>" or "for <gateway>" or "in <gateway>"
+                            match = re.search(r'\b(?:on|for|in|from|at)\s+([a-zA-Z0-9][a-zA-Z0-9._-]+)', user_query, re.IGNORECASE)
+                            if match:
+                                potential_gateway = match.group(1)
+                                # Exclude common words
+                                if potential_gateway.lower() not in ['the', 'this', 'that', 'my', 'our', 'all', 'each', 'every', 'gateway', 'firewall']:
+                                    args['target_gateway'] = potential_gateway
+                                    print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from user query: {args['target_gateway']}")
                             
-                            # Fallback: use GATEWAY_HOST environment variable if available
-                            if 'target_gateway' not in args and 'GATEWAY_HOST' in env_vars:
-                                args['target_gateway'] = env_vars['GATEWAY_HOST']
-                                print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from GATEWAY_HOST env: {args['target_gateway']}")
+                            # Pattern 2: Direct gateway name mention (cp-gw, gw-01, firewall-dmz, etc.)
+                            if 'target_gateway' not in args:
+                                match = re.search(r'\b([a-zA-Z0-9]+[-_][a-zA-Z0-9][a-zA-Z0-9._-]*)', user_query)
+                                if match:
+                                    args['target_gateway'] = match.group(1)
+                                    print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from identifier pattern: {args['target_gateway']}")
+                        
+                        # Priority 4: Fallback to GATEWAY_HOST environment variable
+                        if 'target_gateway' not in args and 'GATEWAY_HOST' in env_vars:
+                            args['target_gateway'] = env_vars['GATEWAY_HOST']
+                            print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from GATEWAY_HOST env: {args['target_gateway']}")
                     
                     # 3. GAIA: Requires gateway_ip parameter for authentication
                     if 'gateway_ip' in required and 'gateway_ip' not in args:
@@ -953,6 +973,32 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         if 'show_raw' not in args:
                             args['show_raw'] = True
                             print(f"[MCP_DEBUG] [{_ts()}] Set show_raw=true for {tool.name} (bypass server formatting, get raw JSON)")
+                    
+                    # FIX: Special handling for show_access_rule, show_access_section, show_nat_section
+                    # These tools have specific parameter requirements that differ from rulebases
+                    if tool.name == 'show_access_rule':
+                        # show_access_rule requires: uid OR rule-number OR name
+                        # If we have 'layer' but no identifier, skip this tool (can't show all rules)
+                        if 'uid' not in args and 'rule-number' not in args and 'name' not in args:
+                            print(f"[MCP_DEBUG] [{_ts()}] ⚠️ show_access_rule needs uid/rule-number/name, skipping...")
+                            skip_tool = True
+                    
+                    elif tool.name == 'show_access_section':
+                        # show_access_section requires: name OR uid (of the section)
+                        # If we have 'layer' but no section identifier, skip this tool
+                        if 'name' not in args and 'uid' not in args:
+                            print(f"[MCP_DEBUG] [{_ts()}] ⚠️ show_access_section needs name/uid of section, skipping...")
+                            skip_tool = True
+                    
+                    elif tool.name == 'show_nat_section':
+                        # show_nat_section does NOT accept 'layer' parameter - remove it if present
+                        if 'layer' in args:
+                            del args['layer']
+                            print(f"[MCP_DEBUG] [{_ts()}] Removed invalid 'layer' parameter from show_nat_section")
+                        # show_nat_section needs: name OR uid (of the section) plus package
+                        if ('name' not in args and 'uid' not in args) or 'package' not in args:
+                            print(f"[MCP_DEBUG] [{_ts()}] ⚠️ show_nat_section needs name/uid + package, skipping...")
+                            skip_tool = True
                     
                     # Add tool ONLY if ALL required parameters are filled
                     required_filled = all(param in args for param in required) if required else True

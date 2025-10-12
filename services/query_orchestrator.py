@@ -932,7 +932,9 @@ Technical Execution Plan:"""
         # Use the simplified MCP client to query the server
         # This will start its own subprocess, connect, query, and clean up
         try:
-            results = await query_mcp_server_async(package_name, env_vars, data_points, user_parameter_selections, True, user_query)
+            # Pass session gateway for reliable target_gateway auto-fill
+            session_gw = self.session_context.get("last_gateway")
+            results = await query_mcp_server_async(package_name, env_vars, data_points, user_parameter_selections, True, user_query, False, session_gw)
             
             # Add server name to results
             results["server_name"] = server_name
@@ -1517,7 +1519,7 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             'severity', 'protection', 'cve', 'confidence',
             'dns', 'url', 'file', 'hash', 'verdict', 'scan',
             'reason', 'reject', 'drop', 'blade',
-            'vpn', 'encryption', 'dlp'
+            'vpn', 'encryption', 'dlp', 'nat'
         }
         
         # Fields to ALWAYS remove (truly useless metadata)
