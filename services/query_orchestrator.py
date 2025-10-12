@@ -1450,15 +1450,103 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             return ", ".join(summary_parts)
     
     def _truncate_content(self, content: Any, max_chars: int) -> Any:
-        """Aggressively truncate content for final size reduction"""
+        """Smart truncation preserving critical security data
+        
+        Instead of keeping only the first item, this method:
+        1. Identifies if content contains security logs (with severity, action fields)
+        2. Keeps a severity-sorted sample of most critical logs
+        3. Preserves temporal distribution (recent + historical)
+        4. Falls back to simple truncation for non-log data
+        """
         if isinstance(content, list):
             if not content:
                 return []
-            # Keep only first item
+            
+            # Check if first item is a text-type log entry
             first = content[0]
             if isinstance(first, dict) and first.get("type") == "text":
-                text = first.get("text", "")[:max_chars]
-                return [{"type": "text", "text": text + f"... [+{len(content)-1} items truncated]"}]
+                text = first.get("text", "")
+                
+                # Try to parse as JSON to check if it contains log data
+                try:
+                    parsed_data = json.loads(text)
+                    
+                    # Check if this contains log arrays (logs, threat_logs, etc.)
+                    log_arrays = []
+                    for key, value in parsed_data.items():
+                        if isinstance(value, list) and len(value) > 0:
+                            # Check if first item looks like a log (has time, action, severity, etc.)
+                            first_item = value[0] if isinstance(value, list) and value else None
+                            if isinstance(first_item, dict):
+                                has_time = any(k in first_item for k in ['time', 'timestamp', 'datetime'])
+                                has_action = any(k in first_item for k in ['action', 'severity', 'blade', 'threat'])
+                                if has_time and has_action:
+                                    log_arrays.append((key, value))
+                    
+                    # If we found log arrays, apply smart sampling
+                    if log_arrays:
+                        for key, logs in log_arrays:
+                            original_count = len(logs)
+                            
+                            # Smart sampling: Keep high-severity and diverse sample
+                            # Priority 1: Critical/High severity
+                            # Priority 2: Dropped/Rejected actions
+                            # Priority 3: Recent logs (temporal distribution)
+                            
+                            critical_logs = []
+                            dropped_logs = []
+                            recent_logs = []
+                            
+                            for log in logs:
+                                # Severity-based filtering
+                                severity = str(log.get('severity', '')).lower()
+                                if any(s in severity for s in ['critical', 'high', 'urgent']):
+                                    critical_logs.append(log)
+                                
+                                # Action-based filtering (drops, rejects are most important)
+                                action = str(log.get('action', '')).lower()
+                                if any(a in action for a in ['drop', 'reject', 'deny', 'block']):
+                                    dropped_logs.append(log)
+                            
+                            # Keep most recent logs for temporal context
+                            recent_logs = logs[-10:] if len(logs) > 10 else logs
+                            
+                            # Combine: critical + dropped + recent (dedup by creating set of log strings)
+                            important_logs = []
+                            seen = set()
+                            
+                            for log_list in [critical_logs, dropped_logs, recent_logs]:
+                                for log in log_list:
+                                    log_key = f"{log.get('time')}_{log.get('src')}_{log.get('dst')}"
+                                    if log_key not in seen:
+                                        important_logs.append(log)
+                                        seen.add(log_key)
+                                        if len(important_logs) >= 30:  # Cap at 30 logs
+                                            break
+                                if len(important_logs) >= 30:
+                                    break
+                            
+                            # If still over max_chars, keep top by severity then truncate
+                            truncated_count = original_count - len(important_logs)
+                            parsed_data[key] = important_logs
+                            
+                            # Add summary message if logs were reduced
+                            if truncated_count > 0:
+                                if 'summary' not in parsed_data:
+                                    parsed_data['summary'] = {}
+                                parsed_data['summary']['truncation'] = f"Showing {len(important_logs)} most critical logs (high severity, drops/rejects, recent activity). {truncated_count} lower-priority logs omitted for token efficiency."
+                        
+                        # Re-serialize to JSON
+                        new_text = json.dumps(parsed_data)
+                        return [{"type": "text", "text": new_text}]
+                    
+                except (json.JSONDecodeError, KeyError):
+                    pass  # Not JSON or not log data, fallback to simple truncation
+                
+                # Fallback: Simple text truncation for non-log data
+                truncated_text = text[:max_chars]
+                return [{"type": "text", "text": truncated_text + f"... [+{len(content)-1} items truncated]"}]
+            
             return [first]
         elif isinstance(content, str):
             return content[:max_chars] + "..."

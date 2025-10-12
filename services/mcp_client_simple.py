@@ -859,7 +859,7 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         # Priority 1: Use session gateway (most reliable, from QueryOrchestrator)
                         if session_gateway and not is_ip_address(session_gateway):
                             args['target_gateway'] = session_gateway
-                            print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from session: {args['target_gateway']}")
+                            print(f"[MCP_DEBUG] [{_ts()}] ✓ Auto-filled target_gateway from session context: {args['target_gateway']}")
                         # Priority 2: Try discovered gateways (but skip if it's an IP address)
                         elif gateways and len(gateways) > 0:
                             gateway_name = gateways[0].get('name')
@@ -887,10 +887,26 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                     args['target_gateway'] = match.group(1)
                                     print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from identifier pattern: {args['target_gateway']}")
                         
-                        # Priority 4: Fallback to GATEWAY_HOST environment variable
-                        if 'target_gateway' not in args and 'GATEWAY_HOST' in env_vars:
-                            args['target_gateway'] = env_vars['GATEWAY_HOST']
-                            print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from GATEWAY_HOST env: {args['target_gateway']}")
+                        # Priority 4: Fallback to GATEWAY_HOST environment variable (ONLY if not in discovery mode)
+                        # CRITICAL: In discovery mode, skip tools that need gateway-specific parameters if we only have IP
+                        # This prevents 404 errors during discovery when gateway name isn't available yet
+                        if 'target_gateway' not in args:
+                            if 'GATEWAY_HOST' in env_vars:
+                                gateway_host_value = env_vars['GATEWAY_HOST']
+                                # Check if it's an IP address
+                                if is_ip_address(gateway_host_value):
+                                    # IP address - only use in non-discovery mode
+                                    if not discovery_mode:
+                                        args['target_gateway'] = gateway_host_value
+                                        print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from GATEWAY_HOST env: {args['target_gateway']}")
+                                    else:
+                                        # Discovery mode + IP only = skip this tool to avoid 404
+                                        print(f"[MCP_DEBUG] [{_ts()}] ⚠️ Discovery mode: Skipping tool '{tool.name}' (only IP available, gateway name needed for run-script API)")
+                                        continue  # Skip this tool
+                                else:
+                                    # Not an IP - it's a hostname/gateway name, safe to use
+                                    args['target_gateway'] = gateway_host_value
+                                    print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from GATEWAY_HOST env: {args['target_gateway']}")
                     
                     # 3. GAIA: Requires gateway_ip parameter for authentication
                     if 'gateway_ip' in required and 'gateway_ip' not in args:
