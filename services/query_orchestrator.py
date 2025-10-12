@@ -1916,8 +1916,18 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             if 'succeeded' in description or 'established' in description:
                 return False
         
-        # Default: Keep logs that don't match filter criteria (conservative approach)
-        # This ensures we don't accidentally filter out important unknown log types
+        # FILTER OUT: Routine firewall Accept logs (normal connection traffic without security context)
+        # These are the bulk of noise - allowed connections that passed policy
+        if log_type == 'connection' and action == 'accept' and product_family == 'access':
+            # These are routine firewall logs showing normal allowed traffic
+            # Only keep if they have unusual characteristics (e.g., large byte count, unusual ports)
+            return False
+        
+        # FILTER OUT: Log-type logs without security context (generic logging)
+        if log_type == 'log' and action == 'accept' and not description:
+            return False
+        
+        # Default: Keep logs for safety (anything unusual or not explicitly filtered)
         return True
     
     def _filter_log_fields(self, data_collected: Dict[str, Any]) -> Dict[str, Any]:
