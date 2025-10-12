@@ -2042,10 +2042,29 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
                                 for idx, item in enumerate(result['content']):
                                     if isinstance(item, dict) and item.get('type') == 'text':
                                         text_str = item.get('text', '')
-                                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Processing text item {idx}, length: {len(text_str)} chars")
-                                        # Parse JSON from text field
+                                        
+                                        # Handle both string (JSON) and dict (already parsed by MCP client)
+                                        if isinstance(text_str, dict):
+                                            # Already parsed (e.g., plain text wrapped by MCP client)
+                                            text_data = text_str
+                                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Text already dict (plain text or pre-parsed), keys: {list(text_data.keys())}")
+                                        elif isinstance(text_str, str):
+                                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Processing text item {idx}, length: {len(text_str)} chars")
+                                            # Parse JSON from text field
+                                            try:
+                                                text_data = json.loads(text_str)
+                                            except (json.JSONDecodeError, KeyError) as e:
+                                                # Keep item as-is if parsing fails
+                                                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Failed to parse JSON: {e}")
+                                                filtered_content.append(item)
+                                                continue
+                                        else:
+                                            # Unknown type, skip
+                                            filtered_content.append(item)
+                                            continue
+                                        
+                                        # Continue with text_data processing
                                         try:
-                                            text_data = json.loads(text_str)
                                             
                                             # Handle both dict and list responses
                                             if isinstance(text_data, dict):
