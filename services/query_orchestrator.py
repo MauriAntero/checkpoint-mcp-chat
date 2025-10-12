@@ -625,53 +625,56 @@ Technical Execution Plan:"""
         data_to_fetch = self._apply_session_context(plan.get("data_to_fetch", []), query_text)
         
         # PRIORITY VALIDATION: Ensure management sources are primary for ANY data-oriented queries
-        # Gateway Script Executor runs as supplemental only (not blocked, but management-logs is always added for data queries)
+        # This runs for ALL queries to ensure management-logs is used when needed
+        query_lower = query_text.lower()
+        
+        # Expanded detection: ANY data/log/traffic/security query needs management sources
+        # Only specific security/data nouns - NO generic verbs, NO time keywords (time is contextual)
+        security_data_keywords = [
+            # Log/event keywords
+            'log', 'logs', 'event', 'events', 'alert', 'alerts',
+            # Threat/security keywords
+            'threat', 'threats', 'suspicious', 'attack', 'attacks', 'malicious', 'intrusion', 'incident', 'incidents',
+            # Traffic/connection keywords (specific data context)
+            'traffic', 'connection', 'connections', 'session', 'sessions', 'flow', 'flows',
+            # Action keywords (security-related)
+            'dropped', 'blocked', 'rejected', 'denied', 'accepted', 'allowed',
+            # Security investigation keywords
+            'malware', 'virus', 'exploit', 'vulnerability', 'breach'
+        ]
+        
+        # Time keywords (only meaningful when combined with security/data keywords)
+        time_keywords = ['last', 'days', 'hours', 'minutes', 'yesterday', 'past', 'week', 'month', 'ago', 'since', 'from', 'to', 'recent']
+        
+        # Pure diagnostic keywords (system/gateway health checks)
+        pure_diagnostic_keywords = ['health', 'cpu', 'memory', 'disk', 'uptime', 'performance', 'status', 'cluster', 'interface', 'ha', 'gateway', 'firewall']
+        
+        # Data query detection: security/data keywords present (time keywords alone don't count)
+        has_security_data = any(keyword in query_lower for keyword in security_data_keywords)
+        has_time_context = any(keyword in query_lower for keyword in time_keywords)
+        has_data_query = has_security_data  # Only security/data keywords trigger, not time alone
+        is_pure_diagnostic = any(keyword in query_lower for keyword in pure_diagnostic_keywords) and not has_data_query
+        has_logs_server = 'management-logs' in required_servers
+        
+        # Check if run_script commands are present (for supplemental diagnostics)
+        run_script_commands = []
         if self.gateway_script_executor:
             run_script_commands = [item for item in data_to_fetch if isinstance(item, str) and item.startswith("run_script:")]
-            if run_script_commands:
-                query_lower = query_text.lower()
+        
+        # RULE: If it's a data query OR management-logs already selected, ENSURE management-logs is PRIMARY
+        # run_script can run as supplemental, but management-logs must be primary for data queries
+        if (has_data_query or has_logs_server) and not is_pure_diagnostic:
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] PRIORITY VALIDATION: Data query detected (data_query={has_data_query}, logs_server={has_logs_server}, pure_diagnostic={is_pure_diagnostic})")
+            
+            # Ensure management-logs is PRIMARY source (add it if missing)
+            if 'management-logs' not in required_servers:
+                required_servers.insert(0, 'management-logs')  # Insert at beginning for priority
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Auto-added management-logs as PRIMARY source for data query")
                 
-                # Expanded detection: ANY data/log/traffic/security query needs management sources
-                # Only specific security/data nouns - NO generic verbs, NO time keywords (time is contextual)
-                security_data_keywords = [
-                    # Log/event keywords
-                    'log', 'logs', 'event', 'events', 'alert', 'alerts',
-                    # Threat/security keywords
-                    'threat', 'threats', 'suspicious', 'attack', 'attacks', 'malicious', 'intrusion', 'incident', 'incidents',
-                    # Traffic/connection keywords (specific data context)
-                    'traffic', 'connection', 'connections', 'session', 'sessions', 'flow', 'flows',
-                    # Action keywords (security-related)
-                    'dropped', 'blocked', 'rejected', 'denied', 'accepted', 'allowed',
-                    # Security investigation keywords
-                    'malware', 'virus', 'exploit', 'vulnerability', 'breach'
-                ]
-                
-                # Time keywords (only meaningful when combined with security/data keywords)
-                time_keywords = ['last', 'days', 'hours', 'minutes', 'yesterday', 'past', 'week', 'month', 'ago', 'since', 'from', 'to', 'recent']
-                
-                # Pure diagnostic keywords (system/gateway health checks)
-                pure_diagnostic_keywords = ['health', 'cpu', 'memory', 'disk', 'uptime', 'performance', 'status', 'cluster', 'interface', 'ha', 'gateway', 'firewall']
-                
-                # Data query detection: security/data keywords present (time keywords alone don't count)
-                has_security_data = any(keyword in query_lower for keyword in security_data_keywords)
-                has_time_context = any(keyword in query_lower for keyword in time_keywords)
-                has_data_query = has_security_data  # Only security/data keywords trigger, not time alone
-                is_pure_diagnostic = any(keyword in query_lower for keyword in pure_diagnostic_keywords) and not has_data_query
-                has_logs_server = 'management-logs' in required_servers
-                
-                # RULE: If run_script is present AND (it's a data query OR management-logs already selected), 
-                # ENSURE management-logs is PRIMARY (don't remove run_script - it's supplemental)
-                if (has_data_query or has_logs_server) and not is_pure_diagnostic:
-                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] PRIORITY VALIDATION: Data query detected (data_query={has_data_query}, logs_server={has_logs_server}, pure_diagnostic={is_pure_diagnostic})")
-                    
-                    # Ensure management-logs is PRIMARY source (add it if missing)
-                    if 'management-logs' not in required_servers:
-                        required_servers.insert(0, 'management-logs')  # Insert at beginning for priority
-                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Auto-added management-logs as PRIMARY source for data query")
-                        
-                        results["warnings"].append(
-                            "ℹ️ Using management-logs MCP as primary data source with gateway diagnostics as supplemental context."
-                        )
+                if run_script_commands:
+                    results["warnings"].append(
+                        "ℹ️ Using management-logs MCP as primary data source with gateway diagnostics as supplemental context."
+                    )
         
         # PARALLEL EXECUTION: Query all required servers simultaneously
         import asyncio
@@ -1834,22 +1837,18 @@ Provide a comprehensive analysis based on the available data."""
             model_name = final_model
             print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Using Ollama client (no prefix detected), Model: {model_name}")
         
-        # FINAL UUID CLEANUP PASS - Aggressively remove ALL CheckPoint UID variants from context
-        # This ensures the LLM never sees UIDs even if cleaning missed some
+        # FINAL UUID CLEANUP PASS - Remove CheckPoint UIDs from context
+        # Be conservative to avoid redacting legitimate data
         import re
         
-        # Pattern 1: Standard hyphenated UUIDs (8-4-4-4-12)
+        # Pattern 1: Standard hyphenated UUIDs (8-4-4-4-12) - most common UUID format
         hyphenated_uuid_pattern = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
-        context = re.sub(hyphenated_uuid_pattern, '<REDACTED>', context, flags=re.IGNORECASE)
+        context = re.sub(hyphenated_uuid_pattern, '<UUID>', context, flags=re.IGNORECASE)
         
-        # Pattern 2: Non-hyphenated 32-character hex strings (CheckPoint UID variant)
-        # Must not be part of a longer hex string, and must be standalone
-        non_hyphenated_uuid_pattern = r'\b[0-9a-f]{32}\b'
-        context = re.sub(non_hyphenated_uuid_pattern, '<REDACTED>', context, flags=re.IGNORECASE)
-        
-        # Pattern 3: Catch any remaining suspicious long hex strings (28+ chars)
-        long_hex_pattern = r'\b[0-9a-f]{28,}\b'
-        context = re.sub(long_hex_pattern, '<REDACTED>', context, flags=re.IGNORECASE)
+        # Pattern 2: Check Point specific UID fields (only when explicitly labeled as UID)
+        # This catches "uid": "abc123..." or "rule_uid": "abc123..." patterns
+        uid_field_pattern = r'("(?:rule_)?uid"\s*:\s*"[0-9a-f]{20,}")'
+        context = re.sub(uid_field_pattern, r'"uid": "<UUID>"', context, flags=re.IGNORECASE)
         
         # Context management for LLM
         # Estimate token count of the LLM prompt context string
