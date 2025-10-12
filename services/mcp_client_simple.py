@@ -1198,12 +1198,16 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         
                         # Exclude tools with no meaningful filtering parameters
                         # These return massive amounts of irrelevant data OR require specific parameters
-                        # VPN community singular tools REQUIRE name/uid - exclude them if not provided
-                        vpn_singular_tools = ['show_vpn_community_star', 'show_vpn_community_meshed', 
-                                             'show_vpn_community_remote_access']
+                        # Singular tools REQUIRE name/uid - exclude them if not provided
+                        singular_tools_requiring_params = [
+                            'show_vpn_community_star', 'show_vpn_community_meshed', 'show_vpn_community_remote_access',
+                            'show_simple_gateway', 'show_lsm_gateway', 'show_simple_cluster', 'show_lsm_cluster',
+                            'show_cluster_member', 'show_access_layer', 'show_access_rule', 'show_access_section',
+                            'show_nat_section'
+                        ]
                         if not meaningful_args and (t.name in ['show_objects', 'show_hosts', 'show_networks', 
                                                               'show_services', 'show_service_groups'] or
-                                                   t.name in vpn_singular_tools):
+                                                   t.name in singular_tools_requiring_params):
                             print(f"[MCP_DEBUG] [{_ts()}] ⚠️ Excluding '{t.name}' - no filtering params (would return irrelevant data or API error)")
                             excluded_count += 1
                             continue
