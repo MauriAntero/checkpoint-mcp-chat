@@ -831,9 +831,12 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             blade_filter = 'service:"VPN" OR service:"IKE" OR service:"ISAKMP" OR product:"VPN"'
                             # VPN traffic is typically lower volume - reduce max logs to prevent excessive pagination
                             max_logs = 50
-                        # Threat Prevention umbrella - ONLY for specific threat product queries
-                        # Removed broad keywords (suspicious, attack, blocked, dropped) to allow all logs for general queries
-                        elif any(kw in search_text for kw in ['threat prevention', 'threat prevention logs', 
+                        # Threat Prevention umbrella - apply for both specific AND general threat keywords
+                        # RESTORED broad keywords: suspicious, attack, malicious, threat - these indicate user wants THREAT DATA
+                        elif any(kw in search_text for kw in ['suspicious', 'threat', 'attack', 'malicious', 'malware', 
+                                                             'exploit', 'compromise', 'breach', 'infected', 'phishing', 
+                                                             'botnet', 'ransomware', 'blocked threat', 'dropped attack',
+                                                             'threat prevention', 'threat prevention logs', 
                                                              'ips attack', 'ips detection', 'intrusion prevention', 
                                                              'threat emulation', 'threat extraction', 'zero-phishing', 
                                                              'zero phishing', 'anti-bot', 'anti bot', 'bot protection',
@@ -841,6 +844,7 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                                              'malware detection', 'malware scan']):
                             # Use OR logic to capture all threat-related blades
                             blade_filter = 'blade:"Threat Prevention" OR blade:"Anti-Bot" OR blade:"Anti-Virus" OR blade:"IPS" OR blade:"Threat Emulation"'
+                            print(f"[MCP_DEBUG] [{_ts()}] 🎯 Threat query detected - applying blade filter for security events")
                         elif any(kw in search_text for kw in ['content awareness', 'content', 'dlp', 'data loss']):
                             blade_filter = 'blade:"Content Awareness"'
                         elif any(kw in search_text for kw in ['https inspection', 'ssl inspection', 'tls inspection']):
