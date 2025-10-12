@@ -483,8 +483,9 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                     print(f"[MCP_DEBUG] [{_ts()}] === Phase 1: Resource Discovery ===")
                     # Identify discovery tools (tools that list/show available resources)
                     # Normalize both hyphens and underscores for matching
+                    # NOTE: show_objects is excluded here - it's called separately with proper filters below
                     discovery_keywords = ['show.gateways', 'list.packages', 'show.packages', 
-                                         'list.policy.packages', 'show.objects', 'show.access.layers', 'show.https.layers', 'init']
+                                         'list.policy.packages', 'show.access.layers', 'show.https.layers', 'init']
                     discovery_tools = [t for t in tools_result.tools 
                                       if any(kw in t.name.lower().replace('-', '.').replace('_', '.') for kw in discovery_keywords)]
                     
@@ -1119,7 +1120,6 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                 else:
                     # STANDARD MODE: Score-based intelligent selection
                     RELEVANCE_THRESHOLD = 15  # Only call tools with score > 15 (filters out noise)
-                    MIN_TOOLS = 3  # Always call at least this many tools
                     AGGRESSIVE_THRESHOLD = 100  # Very high relevance (exact keyword matches)
                     
                     selected_tools = []
@@ -1134,20 +1134,32 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                     high_count = len([s for t, a, s in relevant_tools if 50 < s <= AGGRESSIVE_THRESHOLD])
                     medium_count = len([s for t, a, s in relevant_tools if RELEVANCE_THRESHOLD < s <= 50])
                     
-                    print(f"[MCP_DEBUG] [{_ts()}] Selected {len(relevant_tools)} tools above threshold ({RELEVANCE_THRESHOLD}) - NO LIMIT:")
+                    print(f"[MCP_DEBUG] [{_ts()}] Selected {len(relevant_tools)} tools above threshold ({RELEVANCE_THRESHOLD}):")
                     print(f"[MCP_DEBUG] [{_ts()}]   - {aggressive_count} aggressive-match tools (score > {AGGRESSIVE_THRESHOLD})")
                     print(f"[MCP_DEBUG] [{_ts()}]   - {high_count} high-relevance tools (score 51-{AGGRESSIVE_THRESHOLD})")
                     print(f"[MCP_DEBUG] [{_ts()}]   - {medium_count} medium-relevance tools (score {RELEVANCE_THRESHOLD+1}-50)")
                     
-                    # Phase 2: If still below minimum, add remaining tools to reach MIN_TOOLS
-                    # This only happens for very generic queries with no strong keyword matches
-                    if len(selected_tools) < MIN_TOOLS:
-                        remaining_needed = MIN_TOOLS - len(selected_tools)
-                        already_selected_names = {t.name for t, a, s in selected_tools}
-                        remaining_tools = [(t, a, s) for t, a, s in tools_with_scores 
-                                          if t.name not in already_selected_names]
-                        selected_tools.extend(remaining_tools[:remaining_needed])
-                        print(f"[MCP_DEBUG] [{_ts()}] Added {len(remaining_tools[:remaining_needed])} additional tools to reach minimum of {MIN_TOOLS}")
+                    # Phase 2: Filter out tools with empty/useless args that would return irrelevant data
+                    # CRITICAL: Tools like show_objects with {} args return 12,000+ random objects!
+                    filtered_tools = []
+                    excluded_count = 0
+                    for t, a, s in selected_tools:
+                        # Check if tool has empty or minimal args
+                        meaningful_args = {k: v for k, v in a.items() if not k.startswith('_') and v}
+                        
+                        # Exclude tools with no meaningful filtering parameters
+                        # These return massive amounts of irrelevant data
+                        if not meaningful_args and t.name in ['show_objects', 'show_hosts', 'show_networks', 
+                                                              'show_services', 'show_service_groups']:
+                            print(f"[MCP_DEBUG] [{_ts()}] ⚠️ Excluding '{t.name}' - no filtering params (would return irrelevant data)")
+                            excluded_count += 1
+                            continue
+                        
+                        filtered_tools.append((t, a, s))
+                    
+                    selected_tools = filtered_tools
+                    if excluded_count > 0:
+                        print(f"[MCP_DEBUG] [{_ts()}] Excluded {excluded_count} tools with empty args to prevent irrelevant data")
                 
                 # Extract tool and args (drop scores)
                 tools_to_call = [(tool, args) for tool, args, score in selected_tools]
