@@ -826,7 +826,9 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         elif any(kw in search_text for kw in ['threat prevention', 'threat', 'ips', 'intrusion', 
                                                              'threat emulation', 'threat extraction', 'zero-phishing', 
                                                              'zero phishing', 'anti-bot', 'anti bot', 'bot protection',
-                                                             'anti-virus', 'antivirus', 'malware']):
+                                                             'anti-virus', 'antivirus', 'malware', 'suspicious', 'attack',
+                                                             'exploit', 'malicious', 'compromise', 'breach', 'infected',
+                                                             'phishing', 'botnet', 'ransomware', 'blocked', 'dropped']):
                             # Use OR logic to capture all threat-related blades
                             blade_filter = 'blade:"Threat Prevention" OR blade:"Anti-Bot" OR blade:"Anti-Virus" OR blade:"IPS" OR blade:"Threat Emulation"'
                         elif any(kw in search_text for kw in ['content awareness', 'content', 'dlp', 'data loss']):
