@@ -349,36 +349,28 @@ class QueryOrchestrator:
             print(f"[QueryOrchestrator] Could not load network context: {e}")
             network_context_text = "\nNETWORK TOPOLOGY: Not available\n"
         
-        intent_prompt = f"""You are an expert at understanding user intent for CheckPoint security infrastructure queries.
+        intent_prompt = f"""You are analyzing a Check Point security platform query to understand what the user needs.
 
-Available MCP Server Capabilities:
+Available Capabilities:
 {capabilities_desc}
 {network_context_text}
 User Query: "{user_query}"
 
-Analyze this query and extract the user's true intent. Return a JSON object with this structure:
+Return a JSON object describing the user's intent:
 {{
-    "task_type": "One of: log_analysis, security_investigation, troubleshooting, policy_review, network_analysis, threat_assessment, general_info",
-    "primary_goal": "What the user wants to achieve (1 sentence)",
+    "task_type": "log_analysis | security_investigation | troubleshooting | policy_review | network_analysis | threat_assessment | general_info",
+    "primary_goal": "What the user wants to achieve",
     "data_requirements": {{
-        "data_types": ["list of data types needed: logs, policies, configs, threat_data, network_topology, etc."],
-        "time_scope": "real-time, historical, specific_period, or not_applicable",
-        "specific_period": "if time_scope is specific_period, specify: last_hour, today, yesterday, last_24_hours, this_week, this_month, last_7_days, last_30_days, all_time, or custom",
-        "filters": ["any specific filters mentioned: IP addresses, users, applications, etc."]
+        "data_types": ["logs | policies | configs | threat_data | network_topology | etc."],
+        "time_scope": "real-time | historical | specific_period | not_applicable",
+        "specific_period": "last_hour | today | yesterday | last_24_hours | this_week | this_month | last_7_days | last_30_days | all_time | custom",
+        "filters": ["IP addresses | users | applications | etc."]
     }},
-    "expected_outcome": "What format/type of answer user expects (summary, detailed_report, troubleshooting_steps, etc.)",
-    "urgency": "routine, important, or critical",
-    "context_clues": ["Any implicit requirements or context from the query"],
-    "file_path": "Extract file path if mentioned (e.g., '/tmp/threat_emulation/abc_file.exe' or null if none)"
+    "expected_outcome": "summary | detailed_report | troubleshooting_steps | etc.",
+    "urgency": "routine | important | critical",
+    "context_clues": ["implicit requirements or context"],
+    "file_path": "file path if mentioned, otherwise null"
 }}
-
-IMPORTANT:
-1. Focus ONLY on understanding WHAT the user wants, not HOW to get it
-2. Be specific about task_type - log_analysis is for analyzing logs/traffic, security_investigation is for active threats, threat_assessment is for file/malware analysis
-3. Extract all time-related information accurately
-4. Extract file paths from query (look for patterns like /tmp/, /path/to/, or [Uploaded file: ... at PATH])
-5. Identify any implicit requirements (e.g., "unusual patterns" implies comparison/baseline analysis)
-6. Return ONLY valid JSON, no other text
 
 Intent Analysis:"""
 
@@ -512,146 +504,38 @@ Intent Analysis:"""
             from services.gateway_script_executor import GATEWAY_EXECUTOR_LLM_PROMPT
             gateway_executor_instructions = f"\n\n{GATEWAY_EXECUTOR_LLM_PROMPT}"
         
-        planning_prompt = f"""You are a technical planner for CheckPoint MCP servers. Your job is to create a precise execution plan based on user intent.
+        planning_prompt = f"""You are creating a technical plan to retrieve data from Check Point security platform MCP servers.
 
-Available MCP Servers and Their Capabilities:
+Available MCP Servers:
 {capabilities_desc}
 {network_context_text}
-Currently Active Servers: {', '.join(active_server_types) if active_server_types else 'None'}{gateway_executor_instructions}
+Active Servers: {', '.join(active_server_types) if active_server_types else 'None'}{gateway_executor_instructions}
 
-USER INTENT ANALYSIS (from Stage 1):
-- Task Type: {task_type}
-- Primary Goal: {primary_goal}
-- Required Data Types: {', '.join(data_types)}
-- Time Scope: {time_scope}
-{f"- Specific Period: {specific_period}" if specific_period else ""}
+User Intent:
+- Task: {task_type}
+- Goal: {primary_goal}
+- Data Needed: {', '.join(data_types)}
+- Time Scope: {time_scope} {f"({specific_period})" if specific_period else ""}
 {f"- Filters: {', '.join(filters)}" if filters else ""}
 {f"- File Path: {file_path}" if file_path else ""}
 
-Original User Query: "{user_query}"
+User Query: "{user_query}"
 
-Based on this intent analysis, create a JSON execution plan with this structure:
+Return a JSON execution plan:
 {{
     "understanding": "{primary_goal}",
-    "required_servers": ["server names that can provide the required data types"],
-    "data_to_fetch": ["specific data points matching the intent requirements"],
+    "required_servers": ["server names to query"],
+    "data_to_fetch": ["specific data points to retrieve"],
     "analysis_type": "{task_type}",
     "time_parameters": {{
         "time_scope": "{time_scope}",
         "specific_period": "{specific_period if specific_period else 'not_applicable'}"
     }},
     "execution_steps": [
-        {{"step": 1, "action": "Query relevant servers for required data", "server": "server-name"}},
-        {{"step": 2, "action": "Analyze data according to task type"}}
+        {{"step": 1, "action": "describe action", "server": "server-name"}}
     ],
-    "expected_output": "Format matching user's expectations"
+    "expected_output": "expected format"
 }}
-
-CRITICAL RULES FOR MCP SERVER SELECTION:
-1. Match data_types from intent to server capabilities:
-   - logs, traffic_data, connection_data → "management-logs"
-   - policies, rules, firewall_config → "quantum-management"  
-   - threat_data, IPS, IOC → "threat-prevention"
-   - HTTPS_policies, certificates → "https-inspection"
-   - gateway_diagnostics, interface_status → "quantum-gw-cli"
-   - malware_analysis, file_sandboxing → "threat-emulation"
-   - URL/IP/file_reputation → "reputation-service"
-
-2. TASK-SPECIFIC SERVER RULES (CRITICAL):
-   - policy_review task → ONLY use "quantum-management" (policies/rules stored here, NOT in logs)
-   - log_analysis task → ONLY use "management-logs" (for analyzing historical connections/traffic)
-   - security_investigation → MAY use BOTH if correlating policy with actual traffic
-   - troubleshooting → quantum-management for config, management-logs for traffic patterns
-   
-3. Server names (use EXACTLY these):
-   quantum-management, management-logs, threat-prevention, https-inspection, 
-   harmony-sase, reputation-service, quantum-gw-cli, quantum-gw-connection-analysis,
-   threat-emulation, quantum-gaia, spark-management
-
-4. IMPORTANT - Rulebase Distinction:
-   - "rulebase", "firewall rules", "access rules", "security rules" → ALWAYS fetch ACCESS CONTROL rules (NOT NAT)
-   - "NAT rules", "NAT policy", "NAT rulebase" → fetch NAT rules ONLY when explicitly mentioned
-   - Default: When user says "show rules" or "rulebase" without qualification → ACCESS CONTROL rules
-   - In data_to_fetch, specify "access_control_rules" or "nat_rules" clearly
-
-4. Time parameters: If specific_period is provided, include it in data_to_fetch for time-sensitive queries
-
-5. File paths: If file_path is provided from intent, MUST include it as the FIRST item in data_to_fetch array (this enables auto-parameter filling for threat-emulation tools)
-
-6. Gateway Identification (CRITICAL for session caching):
-   - If user query mentions a specific gateway/firewall name (e.g., "cp-gw", "main-fw", "edge-gateway"), MUST include as first item in data_to_fetch: "gateway_identifier:<gateway-name>"
-   - Examples: "show logs from cp-gw" → data_to_fetch: ["gateway_identifier:cp-gw", ...]
-   - Examples: "traffic on main-fw" → data_to_fetch: ["gateway_identifier:main-fw", ...]
-   - This enables session context caching for follow-up queries
-   - Extract the actual gateway NAME from the query, not time expressions like "last" or "this"
-
-7. Gateway Script Executor - Direct CLI Diagnostics (IF ENABLED):
-   
-   PLATFORM: Check Point R81/R82 Gateways (NOT Cisco/Palo Alto)
-   
-   ⛔ FORBIDDEN PARAMETERS (will cause command rejection):
-   - Time filters: --since, --until, --from, --to, -t <time>, --last, --days, --hours
-   - IP/network filters: -s <IP>, -d <IP>, -src, -dst, --source, --destination
-   - Action filters: -c <action>, --action, --drop, --accept
-   - Any parameter NOT explicitly listed below
-   
-   🔴 HARD RULE - HISTORICAL/FILTERED DATA:
-   IF query asks for:
-   - "last X days/hours/minutes" OR
-   - "from <date> to <date>" OR  
-   - "traffic between X and Y" OR
-   - "dropped/blocked/accepted traffic" OR
-   - "suspicious activity" OR
-   - any time-based or filter-based analysis
-   
-   THEN: Use "management-logs" MCP server ONLY. DO NOT use Gateway CLI - it will fail!
-   
-   Gateway CLI = CURRENT STATE ONLY (no history, no filters)
-   
-   AVAILABLE COMMANDS (run EXACTLY as shown, any addition will be rejected):
-   
-   Firewall Analysis (current state):
-   - Run exactly: "fw tab -t connections -s" (active connections now)
-   - Run exactly: "fw tab -t xlate -s" (NAT translations now)
-   - Run exactly: "fw log" (last ~50 events only, no filters)
-   - Run exactly: "fw ctl pstat" (packet stats)
-   - Run exactly: "fw ctl conntab" (connection details)
-   - Run exactly: "fw stat" (firewall status)
-   - Run exactly: "fw ver" (version info)
-   
-   Performance (current):
-   - Run exactly: "fwaccel stats" (SecureXL stats)
-   - Run exactly: "cpstat fw -f multi_cpu" (CPU distribution)
-   - Run exactly: "top -bn1" (system snapshot)
-   - Run exactly: "vmstat 1 5" (memory stats, 5 samples)
-   
-   Clustering (current):
-   - Run exactly: "cphaprob state" (cluster state)
-   - Run exactly: "cphaprob stat" (cluster stats)
-   
-   Network (current):
-   - Run exactly: "ifconfig -a" (interfaces)
-   - Run exactly: "netstat -rn" (routing table)
-   - Run exactly: "arp -an" (ARP cache)
-   
-   System Info:
-   - Run exactly: "cpinfo -y all" (diagnostic bundle)
-   - Run exactly: "cplic print" (license info)
-   
-   WHEN TO USE:
-   ✅ "What connections are active NOW?" → run_script:fw tab -t connections -s
-   ✅ "Is cluster active?" → run_script:cphaprob state
-   ✅ "Current CPU usage?" → run_script:top -bn1
-   ✅ "Gateway version?" → run_script:fw ver
-   
-   ❌ "Dropped traffic last 30 days" → Use management-logs MCP, NOT run_script
-   ❌ "Suspicious activity yesterday" → Use management-logs MCP, NOT run_script
-   ❌ "Traffic between 192.168.1.0 and 10.0.0.0" → Use management-logs MCP, NOT run_script
-   
-   FORMAT: Prefix with "run_script:" in data_to_fetch
-   Example: ["run_script:fw tab -t connections -s"]
-
-8. Return ONLY valid JSON, no other text
 
 Technical Execution Plan:"""
 
@@ -1909,636 +1793,24 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         if warnings:
             warnings_text = f"\nWarnings:\n" + "\n".join([f"- {w}" for w in warnings])
         
-        context = f"""Execution Plan: {plan.get('understanding', 'N/A')}
+        context = f"""You are analyzing Check Point security platform data to answer the user's question.
 
-Data Collected from MCP Servers:
+Execution Plan: {plan.get('understanding', 'N/A')}
+
+Data from MCP Servers:
 {data_json}
 
 Servers Queried: {', '.join(servers_queried)}
 Errors: {', '.join(errors) if errors else 'None'}{warnings_text}{resources_text}
 
----
-
-## CRITICAL - ABSOLUTE PROHIBITION ON DATA FABRICATION
-
----
-
-YOU MUST NEVER:
-✗ Invent statistics, numbers, IP addresses, or any data not present in the Data Collected section above
-✗ Make up placeholder data like "100,000 connections" or "192.168.1.100" if not in actual results
-✗ Fabricate traffic summaries, log counts, or security findings that don't exist in the data
-✗ Pretend API calls succeeded when they failed with errors
-✗ Create fictional analysis from missing data
-
-YOU MUST ALWAYS:
-✓ Only analyze data that actually exists in the "Data Collected from MCP Servers" section above
-✓ If a tool failed with "CheckPoint API error" or "missing parameter", explicitly state that tool failed
-✓ If data is missing or unavailable, clearly say "Data not available" - never invent it
-✓ If you cannot fully answer the question with available data, be honest about limitations
-✓ Base every statistic, IP address, and finding on actual data from the results above
-
-HANDLING ERRORS:
-- If tools failed, list which specific tools failed and why (e.g., "show_logs failed: missing parameter")
-- If NO useful data was collected, say "No data available to analyze" - do not make up results
-- If SOME data exists but is limited, analyze what's there and clearly state what's missing
-
-USING DISCOVERED RESOURCES:
-- If discovered resources are shown above, inform the user about what resources are available (gateways, policy packages, etc.)
-- Suggest specific follow-up queries using the discovered resource names (e.g., "show me policy 'Standard' rules")
-- Guide users on how to query specific resources they see in the discovery results
-
----
-
-## CRITICAL - OUTPUT FORMATTING REQUIREMENTS (APPLIES TO ALL RESPONSES)
-
----
-
-OBJECT DISPLAY RULES - ABSOLUTELY CRITICAL:
-
-When you see CheckPoint objects in the data, they may contain BOTH "uid" and "name" fields like this:
-{{"uid": "40ff1fb1-a84e-4179-9b7b-590450450022", "name": "All_Internet"}}
-
-YOU MUST:
-✓ Extract and display ONLY the "name" field value: "All_Internet"
-✓ Use CheckPoint standard names: "Any", "Internet", "All_Internet", "Original"
-✓ Use object names like: "wifi-192.168.1.15", "nat-81.197.113.204", "tcp-9053"
-✓ Use plain IP addresses when that's the name: "192.168.1.15"
-✓ Use network names when available: "Internal_Network", "DMZ"
-
-YOU MUST NEVER:
-✗ Display the "uid" field - IGNORE IT COMPLETELY
-✗ Display UUIDs (those long hex strings like "40ff1fb1-a84e-4179-9b7b-590450450022")
-✗ Show patterns like "uuid (name)" - extract the name only
-✗ Show any alphanumeric string that looks like "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-
-If data contains: {{"uid": "c32bd5f2...", "name": "wifi-192.168.1.15"}}
-Display: "wifi-192.168.1.15" (name field ONLY)
-
-FIREWALL RULE FORMATTING - MANDATORY MARKDOWN TABLE STRUCTURE:
-
-YOU MUST format rules as markdown tables to match Check Point's GUI structure.
-
-For Access/Firewall Rules - Use this EXACT markdown table format:
-
-| No. | Name | Source | Destination | Service | Action | Track |
-|-----|------|--------|-------------|---------|--------|-------|
-| 1 | [rule-name] | [source] | [destination] | [service] | [action] | Log |
-| 2 | [rule-name] | [source] | [destination] | [service] | [action] | Log |
-
-EXAMPLE Access/Firewall Rule Table:
-
-| No. | Name | Source | Destination | Service | Action | Track |
-|-----|------|--------|-------------|---------|--------|-------|
-| 1 | Unnamed Rule | sisaverkko | Any | Botnets, Critical Risk, Phishing, Spyware | Inform | Log |
-| 2 | Unnamed Rule | All_Internet | cp-gw, sisaverkko | Botnets, Spyware | Drop | Log |
-| 3 | Unnamed Rule | All_Internet | cp-gw, wifi-192.168.1.15 | tcp-9030, tcp-9053 | Accept | Log |
-| 4 | Unnamed Rule | sisaverkko | All_Internet | Any | Accept | Log |
-| 9 | Cleanup rule | Any | Any | Any | Drop | Log |
-
-For NAT Rules - Use this EXACT markdown table format:
-
-| No. | Name | Original Source | Translated Source | Original Dest | Translated Dest | Original Service | Translated Service |
-|-----|------|-----------------|-------------------|---------------|-----------------|------------------|--------------------|
-| 1 | [rule-name] | [orig-src] | [trans-src] | [orig-dest] | [trans-dest] | [orig-svc] | [trans-svc] |
-
-EXAMPLE NAT Rule Table:
-
-| No. | Name | Original Source | Translated Source | Original Dest | Translated Dest | Original Service | Translated Service |
-|-----|------|-----------------|-------------------|---------------|-----------------|------------------|--------------------|
-| 1 | Port Forward SSH | nat-81.197.113.204 | wifi-192.168.1.15 | Original | Original | tcp-22 | Original |
-| 2 | Automatic Office Mode | CP_default_Office_Mode_addresses_pool | wifi-192.168.1.15 | Original | Original | Original | Original |
-
-For HTTPS Inspection Rules - Use this EXACT markdown table format:
-
-| No. | Name | Source | Destination | Service | Site Category | Action | Track |
-|-----|------|--------|-------------|---------|---------------|--------|-------|
-| 1 | [rule-name] | [source] | [destination] | [service] | [site-categories] | [action] | Log |
-
-EXAMPLE HTTPS Inspection Rule Table:
-
-| No. | Name | Source | Destination | Service | Site Category | Action | Track |
-|-----|------|--------|-------------|---------|---------------|--------|-------|
-| 1 | Predefined Rule | Any | Internet | HTTPS default services | Critical Risk, High Risk | Inspect | Log |
-| 2 | Bypass Internal | Internal_Network | Internal_Network | HTTPS | Any | Bypass | Log |
-
-NOTE: Site Category column may contain URL filtering categories like "Critical Risk", "High Risk", "Phishing", "Social Networking", etc.
-
-CRITICAL FORMATTING RULES FOR ALL RULE TABLES:
-✓ ALWAYS use markdown table format with | separators
-✓ Include header row and separator row (|-----|-----|)
-✓ One rule per table row
-✓ Keep columns aligned for readability
-✓ Display object names ONLY (e.g., "wifi-192.168.1.15", "All_Internet", "tcp-9053")
-✓ For multiple services/objects in same cell, use comma separation
-✗ NEVER display UIDs/UUIDs (those long hex strings like "40ff1fb1-a84e-4179-9b7b-590450450022")
-✗ NEVER use multi-line text format - ONLY markdown tables for rules
-
-This markdown table format applies to ALL rule displays regardless of analysis type (NAT, Access, Firewall, Threat Prevention, Application Control, etc.).
 """
         
-        # Create appropriate prompt based on query intent detection
+        # Simple unified analysis prompt
         user_query = plan.get('user_query', 'N/A')
-        query_lower = user_query.lower()
         
-        # Intent detection using keyword patterns
-        
-        # 1. Compliance & Audit
-        if any(kw in query_lower for kw in ['audit', 'compliance', 'policy change', 'who changed', 'who accessed', 'failed login', 'failed access', 'admin action', 'change history', 'pci', 'hipaa', 'sox', 'gdpr']):
-            analysis_prompt = f"""You are a Check Point compliance auditor analyzing security audit data.
+        analysis_prompt = f"""User Query: {user_query}
 
-User Query: {user_query}
-
-Based on the audit logs and management data, provide:
-
-1. **Audit Summary**:
-   - Total events/changes in the time period
-   - Admin users involved
-   - Systems or policies affected
-   - Timeline of key activities
-
-2. **Change Details**:
-   - Specific policy/config changes made
-   - Who made each change and when
-   - Before/after states if available
-   - Authorization/approval status
-
-3. **Access Patterns**:
-   - Failed vs successful access attempts
-   - Unusual access times or locations
-   - Privileged account usage
-   - Suspicious admin activity
-
-4. **Compliance Status**:
-   - Regulatory requirement coverage
-   - Gaps or violations identified
-   - Evidence for audit trail
-   - Recommendations for compliance
-
-Be specific with timestamps, usernames, and exact changes made."""
-
-        # 2. Policy Optimization
-        elif any(kw in query_lower for kw in ['unused', 'optimize', 'rule base', 'consolidate', 'permissive rule', 'any any', 'shadowed rule', 'redundant', 'cleanup', 'rule hit', 'overly permissive', 'inconsistent', 'compare polic']):
-            analysis_prompt = f"""You are a Check Point firewall optimization specialist analyzing rule base efficiency across your gateway infrastructure.
-
-User Query: {user_query}
-
-Based on the policy data and rule statistics, provide:
-
-1. **Rule Base Analysis** (per gateway if multiple):
-   - Total number of rules analyzed across all gateways
-   - Rules with zero hits (unused) - specify which gateways
-   - Overly permissive rules (any/any/any) - list affected gateways
-   - Shadowed or redundant rules
-
-2. **Optimization Opportunities**:
-   - Rules that can be consolidated across gateways
-   - Duplicate or overlapping rules between gateways
-   - Gateway-specific vs shared policy recommendations
-   - Rules that can be removed safely
-
-3. **Cross-Gateway Consistency**:
-   - Policy inconsistencies between gateways
-   - Security level variations across sites
-   - Best practice violations by gateway
-
-4. **Action Plan**:
-   - Specific rule numbers to modify/remove per gateway
-   - Standardization recommendations
-   - Priority order for fleet-wide cleanup
-   - Testing recommendations
-
-Provide gateway names, rule numbers, specific IPs/services, and exact recommendations."""
-
-        # 3. Capacity Planning & Performance
-        elif any(kw in query_lower for kw in ['bandwidth', 'capacity', 'performance', 'top consumer', 'utilization', 'trend', 'forecast', 'peak', 'connection table', 'resource', 'which gateway', 'highest usage']):
-            analysis_prompt = f"""You are a Check Point capacity planning analyst assessing network performance across your gateway infrastructure.
-
-User Query: {user_query}
-
-Based on the performance metrics and traffic data, provide:
-
-1. **Resource Utilization** (break down by gateway if multiple):
-   - Bandwidth usage statistics per gateway
-   - Connection table utilization by location
-   - Peak vs average usage across the fleet
-   - Trend analysis (growing/stable/declining) by site
-
-2. **Top Consumers**:
-   - Top gateways by bandwidth consumption
-   - Top IPs/users by bandwidth (across all sites)
-   - Top applications by traffic (fleet-wide)
-   - Specific numbers and percentages
-
-3. **Capacity Assessment**:
-   - Which gateways are approaching limits
-   - Projected growth rates per location
-   - When each gateway will reach capacity
-   - Bottleneck identification across infrastructure
-
-4. **Recommendations**:
-   - Capacity upgrade priorities by gateway
-   - Traffic optimization opportunities
-   - Load balancing suggestions between sites
-   - Monitoring improvements
-
-Include specific metrics, gateway names, percentages, and time-based trends."""
-
-        # 4. User/Application Behavior
-        elif any(kw in query_lower for kw in ['user behavior', 'top user', 'baseline', 'anomaly', 'unusual behavior', 'shadow it', 'app usage', 'user activity', 'application usage', 'applications are']):
-            analysis_prompt = f"""You are a Check Point user behavior analyst examining network activity patterns.
-
-User Query: {user_query}
-
-Based on user and application traffic data, provide:
-
-1. **User Activity Summary**:
-   - Top users by traffic/connections
-   - Unusual user behavior detected
-   - User access patterns
-   - Off-hours activity
-
-2. **Application Analysis**:
-   - Most used applications
-   - Unauthorized/shadow IT apps
-   - Application bandwidth consumption
-   - Application security risks
-
-3. **Baseline Comparison**:
-   - Normal vs current behavior
-   - Statistical anomalies detected
-   - Deviation from baseline
-   - Contextual analysis
-
-4. **Risk Assessment**:
-   - High-risk user behaviors
-   - Unauthorized application usage
-   - Data exfiltration indicators
-   - Recommended investigations
-
-Be specific with usernames, applications, and behavioral metrics."""
-
-        # 5. Incident Response & Forensics
-        elif any(kw in query_lower for kw in ['incident', 'attack', 'breach', 'compromise', 'forensic', 'timeline', 'lateral movement', 'exfiltration', 'investigate', 'trace', 'reconstruct']):
-            analysis_prompt = f"""You are a Check Point incident response analyst conducting security forensics.
-
-User Query: {user_query}
-
-Based on the security event data, provide a forensic analysis:
-
-1. **Incident Timeline**:
-   - Chronological sequence of events
-   - Initial compromise indicators
-   - Attack progression stages
-   - Key timestamps and actions
-
-2. **Attack Analysis**:
-   - Attack vectors used
-   - Systems/accounts compromised
-   - Lateral movement patterns
-   - Data exfiltration attempts
-
-3. **Evidence Collection**:
-   - Malicious IPs and indicators
-   - Compromised credentials
-   - Attack signatures matched
-   - Log evidence for each finding
-
-4. **Remediation & Recovery**:
-   - Immediate containment actions
-   - Systems requiring investigation
-   - Evidence preservation steps
-   - Post-incident hardening
-
-Provide detailed timeline, specific IPs/hosts, and complete attack chain."""
-
-        # 6. Security Posture Assessment
-        elif any(kw in query_lower for kw in ['posture', 'exposure', 'exposed', 'internet facing', 'vulnerability', 'best practice', 'security gap', 'protection gap', 'risk assessment', 'hardening', 'security check', 'compare security', 'which gateway']):
-            analysis_prompt = f"""You are a Check Point security architect assessing security posture across your gateway infrastructure.
-
-User Query: {user_query}
-
-Based on the configuration and topology data, provide:
-
-1. **Exposure Analysis** (per gateway if multiple):
-   - Internet-facing services/ports by gateway
-   - Public IP exposure across the fleet
-   - Inbound access points per location
-   - Attack surface comparison between gateways
-
-2. **Configuration Review**:
-   - Security best practice violations by gateway
-   - Weak or missing protections per site
-   - SSL/TLS policy inconsistencies
-   - NAT and routing security gaps
-
-3. **Gap Identification**:
-   - Missing security controls (specify which gateways)
-   - Unprotected traffic flows across infrastructure
-   - Incomplete threat prevention coverage
-   - Policy coverage gaps by location
-
-4. **Fleet-Wide Risk Assessment**:
-   - Which gateways have the highest risk exposure
-   - Security maturity comparison across sites
-   - Standardization opportunities
-   - Priority remediation by gateway
-
-5. **Hardening Recommendations**:
-   - Gateway-specific configuration improvements
-   - Fleet-wide security control additions
-   - Priority remediation items with gateway names
-   - Implementation guidance
-
-Be specific with gateway names, service names, ports, and exact configuration recommendations."""
-
-        # 7. Troubleshooting (MUST come before log analysis due to "connection" keyword conflict)
-        elif any(kw in query_lower for kw in ['troubleshoot', 'debug', 'fix', 'problem', 'issue', 'error', "can't", "cannot connect", 'why can', 'interface', 'routing', 'gateway status', 'network interface']) or analysis_type == "troubleshooting":
-            analysis_prompt = f"""You are a Check Point network engineer troubleshooting connectivity issues using comprehensive diagnostics.
-
-User Query: {user_query}
-
-Analyze diagnostic data from Gateway CLI, Connection Analysis, GAIA interfaces, and logs to provide:
-
-1. **Problem Identification**:
-   - What's not working (be specific)
-   - Symptoms observed in the data
-   - Affected connections, services, or interfaces
-
-2. **Root Cause Analysis**:
-   - Likely cause based on logs/configs
-   - Policy rules blocking traffic
-   - Routing or NAT issues
-   - Interface status problems (from GAIA)
-   - Gateway-level diagnostics (from CLI)
-   - Connection-specific debug logs
-
-3. **Step-by-Step Solution**:
-   - Immediate fixes to try
-   - Policy or config changes needed
-   - Interface configuration adjustments
-   - Gateway commands to run
-   - Verification steps
-
-4. **Prevention**:
-   - How to avoid this issue
-   - Monitoring recommendations
-   - Network configuration best practices
-
-Be technical and specific with gateway names, interface IDs, rule numbers, IPs, ports, and exact commands."""
-
-        # 8a. NAT Policy/Rule Review (only when explicitly requested)
-        elif any(kw in query_lower for kw in ['nat rule', 'nat policy', 'show nat', 'nat rulebase', 'show my nat', 'current nat']):
-            analysis_prompt = f"""You are a Check Point firewall administrator reviewing NAT policies.
-
-User Query: {user_query}
-
-Based on the NAT policy data collected from Check Point Management, provide a clear, well-formatted presentation of the NAT rules:
-
-1. **NAT Rule Summary**:
-   - Total number of NAT rules found
-   - Policy package name
-   - Automatic vs manual rules
-
-2. **NAT Rule Details**:
-   - Use the structured format specified in the global formatting requirements above
-   - Show rule numbers and names clearly
-   - Indicate if translation is "Original" (no change)
-   - Highlight automatic NAT rules
-
-3. **Key Observations**:
-   - Important NAT implications
-   - Potential conflicts
-   - Recommendations
-
-Remember: Follow the global formatting requirements for object names and rule display. DO NOT expect or request log data unless logs were specifically queried."""
-
-        # 8b. General Policy Review (comprehensive - both Access and NAT)
-        elif any(kw in query_lower for kw in ['analyze policy', 'review policy', 'current policy', 'firewall policy', 'my policy', 'policy analysis', 'policy review']):
-            analysis_prompt = f"""You are a Check Point firewall administrator conducting a comprehensive policy review.
-
-User Query: {user_query}
-
-Based on the policy data from Check Point Management, provide a structured analysis:
-
-1. **Policy Summary**:
-   - Policy package name
-   - Total number of Access Control rules  
-   - Total number of NAT rules (manual + automatic)
-   - Zero-hits analysis status
-
-2. **ACCESS RULEBASE** (MANDATORY):
-   Present ALL access control rules using this EXACT 7-column table format:
-   
-   | No. | Name | Source | Destination | Service | Action | Track |
-   
-   Follow the global formatting requirements - object names without UUIDs.
-
-3. **NAT RULEBASE** (MANDATORY):
-   Present ALL NAT rules using this EXACT 8-column table format:
-   
-   | No. | Name | Original Source | Translated Source | Original Dest | Translated Dest | Original Service | Translated Service |
-   
-   Follow the global formatting requirements. Indicate automatic rules if present.
-
-4. **Key Observations**:
-   - Security implications
-   - Overly permissive rules
-   - Recommendations
-
-CRITICAL: You MUST display BOTH access and NAT rulebases in markdown tables. This is a complete policy review."""
-
-        # 8c. Access Control / Firewall Rule Review (default for "rulebase")
-        elif any(kw in query_lower for kw in ['access rule', 'firewall rule', 'rulebase', 'show rule', 'list rule', 'what rule', 'policy package', 'security rule', 'access control', 'show my rule', 'current rule']):
-            analysis_prompt = f"""You are a Check Point firewall administrator reviewing security policies and rules.
-
-User Query: {user_query}
-
-Based on the policy data collected from Check Point Management, provide a clear, well-formatted presentation of the rules:
-
-1. **Rule Summary**:
-   - Total number of rules found
-   - Rule types (NAT, Access, etc.)
-   - Policy package name
-
-2. **Rule Details**:
-   - Use the structured format specified in the global formatting requirements above
-   - Show rule numbers and names clearly
-   - Indicate if NAT translation is "Original" (no change)
-
-3. **Key Observations**:
-   - Important security implications
-   - Overly permissive rules (if any)
-   - Gaps or recommendations
-
-Remember: Follow the global formatting requirements for object names and rule display. DO NOT expect or request log data unless logs were specifically queried."""
-
-        # 9. Log/Traffic Analysis
-        elif any(kw in query_lower for kw in ['log', 'traffic', 'connection', 'activity', 'audit trail', 'session']):
-            analysis_prompt = f"""You are a Check Point network security administrator analyzing firewall data from multiple sources.
-
-User Query: {user_query}
-
-Based on the collected data (Management Logs, Gateway CLI, Connection Analysis), provide:
-
-1. **Traffic Summary** (if log data available):
-   - Total connections/sessions analyzed
-   - Top source and destination IPs
-   - Most common ports and protocols
-   - Blocked vs allowed traffic ratio
-
-2. **Anomalies and Patterns**:
-   - Unusual connection patterns detected
-   - Suspicious port usage or protocols
-   - Geographic anomalies (unexpected countries)
-   - Time-based patterns (off-hours activity)
-
-3. **Security Events** (if available):
-   - IPS/threat prevention hits
-   - High-severity alerts
-   - Blocked threats by type
-   - Attack patterns observed
-   - SSL/TLS inspection findings
-
-4. **Actionable Insights**:
-   - Specific IPs or hosts requiring attention
-   - Recommended policy adjustments
-   - Investigation priorities
-
-Be specific with numbers, IPs, and concrete findings from the available log data."""
-
-        # 9. Threat Hunting
-        elif analysis_type == "security_risk_analysis" or any(kw in query_lower for kw in ['reputation', 'malware', 'sandbox', 'emulation', 'url reputation', 'ip reputation', 'file reputation', 'check url', 'check ip', 'analyze file']):
-            analysis_prompt = f"""You are a Check Point security analyst investigating threats using multiple intelligence sources.
-
-User Query: {user_query}
-
-Based on threat intelligence (Threat Prevention, Reputation Service, Threat Emulation, HTTPS Inspection), provide:
-
-1. **Threat Summary**:
-   - Active threats detected
-   - Severity levels (Critical/High/Medium/Low) with counts
-   - Attack types observed (by blade/category with counts)
-   - Affected systems or networks
-
-2. **Indicators of Compromise (IOCs)**:
-   - Malicious IPs, URLs, or file hashes (from Reputation Service)
-   - Known attack signatures matched
-   - Bot/DDoS activity detected
-   - SSL/TLS-based threats (HTTPS Inspection)
-   - Malware analysis results (Threat Emulation sandbox)
-
-3. **Impact Assessment**:
-   - Systems or data at risk
-   - Current protection status
-   - Gaps in coverage
-
-4. **Immediate Actions**:
-   - Specific threats to block
-   - Policy changes needed (including HTTPS inspection policies)
-   - Investigation steps
-   - Files requiring sandboxing
-
-ALWAYS report exact event counts when a DATA SUMMARY is available. Focus on actionable intelligence with specific IOCs and evidence."""
-
-        # 10. General/Fallback (including SASE, Spark, and other specialized queries)
-        else:
-            # Detect if this is a SASE or Spark Management query
-            is_sase = any(kw in query_lower for kw in ['sase', 'harmony sase', 'cloud security', 'ztna', 'casb'])
-            is_spark = any(kw in query_lower for kw in ['spark', 'msp', 'quantum spark', 'customer appliance'])
-            
-            if is_sase:
-                analysis_prompt = f"""You are a Check Point Harmony SASE administrator analyzing cloud security configurations.
-
-User Query: {user_query}
-
-IMPORTANT: Check the context above for errors. If the harmony-sase server is not active:
-- Inform the user that Harmony SASE MCP server is not configured or activated
-- Explain that they need to go to the MCP Servers page and configure the harmony-sase server
-- Describe what Harmony SASE provides (ZTNA, CASB, cloud security) so they understand the value
-
-If Harmony SASE data IS available, provide:
-
-1. **SASE Configuration Summary**:
-   - Current SASE policies and settings
-   - Zero Trust Network Access (ZTNA) configurations
-   - Cloud Application Security Broker (CASB) policies
-   - Remote access configurations
-
-2. **Security Posture**:
-   - Active security policies
-   - User access patterns
-   - Application controls
-   - Data protection status
-
-3. **Recommendations**:
-   - Configuration improvements
-   - Policy optimization opportunities
-   - Security enhancements
-
-Be specific with policy names and configuration details."""
-            
-            elif is_spark:
-                analysis_prompt = f"""You are an MSP administrator managing Quantum Spark appliances for customers.
-
-User Query: {user_query}
-
-IMPORTANT: Check the context above for errors. If the spark-management server is not active:
-- Inform the user that Quantum Spark Management MCP server is not configured or activated
-- Explain that they need to go to the MCP Servers page and configure the spark-management server
-- Describe what Spark Management provides (MSP customer appliance management) so they understand the value
-
-If Spark Management data IS available, provide:
-
-1. **Appliance Overview**:
-   - Spark appliances under management
-   - Customer deployments
-   - Appliance health and status
-   - Version information
-
-2. **Management Insights**:
-   - Configuration status by customer
-   - Security posture across customers
-   - Update and maintenance requirements
-   - Performance metrics
-
-3. **MSP Recommendations**:
-   - Customer-specific actions needed
-   - Fleet-wide improvements
-   - Service delivery enhancements
-
-Be specific with customer names, appliance IDs, and actionable recommendations."""
-            
-            else:
-                analysis_prompt = f"""You are a Check Point administrator with FULL AUTONOMOUS CAPABILITIES responding to this query:
-
-"{user_query}"
-
-Based on data from available Check Point services (Management, Logs, Threat Prevention, HTTPS Inspection, Reputation, Gateway CLI, GAIA, Connection Analysis, Threat Emulation, SASE, Spark), provide:
-
-1. **Direct Answer**: Address the user's specific question with comprehensive analysis
-2. **Key Data Points**: Highlight relevant information from the collected data
-3. **Context**: Explain what the data shows and which services provided it  
-4. **Analysis & Findings**: Complete analysis of all available data
-
-⚠️ CRITICAL - AUTONOMOUS INVESTIGATION RULE:
-YOU HAVE FULL CAPABILITY TO RUN COMMANDS AND GATHER DATA AUTOMATICALLY.
-
-**NEVER suggest the user do manual work like:**
-❌ "Run show_threat_rule for specific threat detections"
-❌ "Use cpview or gateway statistics to check traffic patterns"  
-❌ "Consider collecting additional logs"
-❌ "You may want to investigate further"
-❌ ANY suggestion for the user to manually run tools, commands, or collect data
-
-**INSTEAD, if more investigation is needed:**
-✓ State that you have the capability to investigate automatically
-✓ Explain what specific investigation you would perform
-✓ Tell the user to ask you to "investigate further" or specify what they want you to look into
-✓ Example: "I can automatically run gateway diagnostics and collect threat intelligence. Would you like me to investigate [specific area] in detail?"
-
-**Remember:** You are an autonomous agent with CLI execution, MCP tool access, and threat analysis capabilities. The user should NEVER need to manually run commands - you do it for them!
-
-Be comprehensive and focus on actionable findings from the actual data collected."""
+Analyze the data and answer the question."""
         
         # Determine which client to use based on model prefix
         if isinstance(final_model, str) and (":" in final_model):
