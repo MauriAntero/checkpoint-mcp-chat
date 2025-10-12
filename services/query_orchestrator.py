@@ -14,6 +14,7 @@ class MCPServerCapability:
     package: str
     capabilities: List[str]
     data_types: List[str]
+    tools: List[str] = None  # Main tool names for this MCP server
     
 class QueryOrchestrator:
     """Orchestrates query execution across MCP servers and LLM models"""
@@ -27,7 +28,8 @@ class QueryOrchestrator:
                 "policy management", "object management", "network topology",
                 "access rules", "NAT rules", "firewall configuration"
             ],
-            data_types=["policies", "rules", "network objects", "hosts", "gateways"]
+            data_types=["policies", "rules", "network objects", "hosts", "gateways"],
+            tools=["show_access_rulebase", "show_nat_rulebase", "show_hosts", "show_networks", "show_gateways_and_servers"]
         ),
         "management-logs": MCPServerCapability(
             server_type="management-logs",
@@ -36,7 +38,8 @@ class QueryOrchestrator:
                 "connection logs", "audit logs", "log analysis",
                 "traffic patterns", "connection history"
             ],
-            data_types=["connection logs", "audit logs", "traffic data"]
+            data_types=["connection logs", "audit logs", "traffic data"],
+            tools=["show_logs"]
         ),
         "threat-prevention": MCPServerCapability(
             server_type="threat-prevention",
@@ -521,11 +524,16 @@ User Intent:
 
 User Query: "{user_query}"
 
+CRITICAL: In data_to_fetch, use the EXACT tool names listed above for each server.
+- For management-logs: Use "show_logs" (NOT "run_script:fw log..." or CLI commands)
+- For quantum-management: Use tool names like "show_access_rulebase", "show_nat_rulebase", "show_hosts"
+- DO NOT use gateway CLI commands (fw log, cpstat, etc.) - those are for quantum-gw-cli only
+
 Return a JSON execution plan:
 {{
     "understanding": "{primary_goal}",
     "required_servers": ["server names to query"],
-    "data_to_fetch": ["specific data points to retrieve"],
+    "data_to_fetch": ["exact tool names from Tools list above"],
     "analysis_type": "{task_type}",
     "time_parameters": {{
         "time_scope": "{time_scope}",
@@ -2171,9 +2179,10 @@ The AI model failed to analyze your query due to an API issue.
         for server_type, capability in self.MCP_CAPABILITIES.items():
             caps = ", ".join(capability.capabilities)
             data = ", ".join(capability.data_types)
+            tools = ", ".join(capability.tools) if capability.tools else "auto-detect"
             desc_lines.append(
                 f"- {server_type} ({capability.package}): "
-                f"Capabilities: [{caps}] | Data Types: [{data}]"
+                f"Capabilities: [{caps}] | Data Types: [{data}] | Tools: [{tools}]"
             )
         
         return "\n".join(desc_lines)
