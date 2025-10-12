@@ -521,8 +521,20 @@ Intent Analysis:"""
         
         # Determine query classification based on keywords
         query_lower = user_query.lower()
-        threat_keywords = ['suspicious', 'attack', 'threat', 'malware', 'ips', 'intrusion', 'malicious', 'exploit', 'vulnerability', 'compromise', 'breach']
-        policy_keywords = ['rulebase', 'firewall rules', 'nat', 'access control', 'policy review', 'rule review']
+        
+        # Threat EVENT detection keywords (actual attacks/incidents, not configuration)
+        threat_keywords = [
+            'suspicious', 'attack', 'threat', 'malware', 'intrusion', 'malicious', 
+            'exploit', 'vulnerability', 'compromise', 'breach', 'infected', 'virus',
+            'phishing', 'botnet', 'ransomware', 'detected', 'blocked', 'dropped'
+        ]
+        
+        # Policy/Configuration keywords (reviewing settings, not looking for events)
+        policy_keywords = [
+            'rulebase', 'firewall rules', 'nat', 'access control', 'policy review', 'rule review',
+            'ips profile', 'anti-bot profile', 'https inspection', 'threat prevention profile',
+            'configuration', 'settings', 'layer', 'show profile', 'assess policy'
+        ]
         
         is_threat_query = any(keyword in query_lower for keyword in threat_keywords)
         is_policy_query = any(keyword in query_lower for keyword in policy_keywords)
@@ -530,18 +542,18 @@ Intent Analysis:"""
         # Build allowed servers list based on query type
         if is_threat_query and not is_policy_query:
             query_type = "PURE_THREAT"
-            allowed_servers = ["threat-prevention", "https-inspection", "management-logs"]
-            forbidden_servers = ["quantum-management"]
-            instructions = """This is a PURE THREAT/SECURITY query.
-ALLOWED servers: threat-prevention, https-inspection, management-logs
-FORBIDDEN servers: quantum-management (policy tools NOT relevant for threat detection)"""
+            allowed_servers = ["management-logs"]  # ONLY logs for actual threat data
+            forbidden_servers = ["quantum-management", "threat-prevention", "https-inspection"]
+            instructions = """This is a PURE THREAT/SECURITY query - looking for ACTUAL threat events.
+ALLOWED servers: management-logs (actual threat events in logs)
+FORBIDDEN servers: quantum-management, threat-prevention, https-inspection (these show POLICY/CONFIGURATION, not threat data)"""
         elif is_policy_query and not is_threat_query:
             query_type = "PURE_POLICY"
-            allowed_servers = ["quantum-management", "management-logs"]
-            forbidden_servers = ["threat-prevention", "https-inspection"]
-            instructions = """This is a PURE POLICY query.
-ALLOWED servers: quantum-management, management-logs
-FORBIDDEN servers: threat-prevention, https-inspection (threat tools NOT relevant for policy)"""
+            allowed_servers = ["quantum-management", "threat-prevention", "https-inspection", "management-logs"]
+            forbidden_servers = []
+            instructions = """This is a PURE POLICY query - reviewing CONFIGURATION/SETTINGS.
+ALLOWED servers: quantum-management (firewall rules), threat-prevention (IPS/Anti-Bot profiles), https-inspection (HTTPS policies), management-logs (audit logs)
+FORBIDDEN servers: None"""
         else:
             query_type = "MIXED"
             allowed_servers = active_server_types
@@ -659,12 +671,17 @@ Technical Execution Plan:"""
                             if server in active_server_types:
                                 validated_servers.append(server)
                     
-                    # For PURE_THREAT queries, ensure threat servers are included
+                    # For PURE_THREAT queries, ensure ONLY management-logs is used (actual threat data)
                     if query_type == "PURE_THREAT":
-                        for threat_server in ["threat-prevention", "https-inspection", "management-logs"]:
-                            if threat_server not in validated_servers and threat_server in active_server_types:
-                                print(f"[QueryOrchestrator] ✅ ADDED required threat server '{threat_server}' for {query_type} query")
-                                validated_servers.append(threat_server)
+                        if "management-logs" not in validated_servers and "management-logs" in active_server_types:
+                            print(f"[QueryOrchestrator] ✅ ADDED required server 'management-logs' for {query_type} query (actual threat events)")
+                            validated_servers.append("management-logs")
+                        # Remove any policy/config servers that shouldn't be there
+                        policy_servers = ["threat-prevention", "https-inspection", "quantum-management"]
+                        for policy_server in policy_servers:
+                            if policy_server in validated_servers:
+                                validated_servers.remove(policy_server)
+                                print(f"[QueryOrchestrator] ❌ REMOVED policy server '{policy_server}' from {query_type} query (not threat data)")
                     
                     # Update plan with validated servers
                     if validated_servers != original_servers:
