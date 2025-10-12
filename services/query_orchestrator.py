@@ -524,24 +524,37 @@ User Intent:
 
 User Query: "{user_query}"
 
-CRITICAL SERVER SELECTION RULES:
-- For THREAT/SECURITY queries (suspicious, attack, threat, malware): Use ONLY "management-logs" server with "show_logs" tool
-- For POLICY queries (rulebase, firewall rules, NAT): Use "quantum-management" server with policy tools
-- Do NOT mix threat and policy servers unless query explicitly asks for both
+CRITICAL SERVER SELECTION RULES - QUERY TYPE CLASSIFICATION:
+
+1. **PURE THREAT/SECURITY QUERIES** (suspicious, attack, threat, malware, IPS, intrusion, malicious):
+   - PRIMARY: "threat-prevention" (IPS, Anti-Bot, Anti-Virus threats)
+   - PRIMARY: "https-inspection" (HTTPS/SSL inspection threats)
+   - PRIMARY: "management-logs" (connection logs with threat context)
+   - FORBIDDEN: "quantum-management" (policy tools NOT relevant for threat detection)
+
+2. **PURE POLICY QUERIES** (rulebase, firewall rules, NAT, access control, policy review):
+   - PRIMARY: "quantum-management" (access/NAT rulebases, policy configuration)
+   - SUPPLEMENTAL: "management-logs" (policy change audit logs)
+   - FORBIDDEN: "threat-prevention", "https-inspection" (threat tools NOT relevant for policy)
+
+3. **MIXED QUERIES** (suspicious policy changes, threat prevention configuration):
+   - Use BOTH threat and policy servers as appropriate
+   - Example: "suspicious policy changes" → management-logs + quantum-management
 
 CRITICAL TOOL NAMING RULES:
 1. ONLY use tool names from the "Tools:" list above for each server
-2. For management-logs: The ONLY valid tool is "show_logs"
-3. For quantum-management: Valid tools are "show_access_rulebase", "show_nat_rulebase", "show_hosts", "show_networks", "show_gateways_and_servers"
-4. NEVER use:
-   - CLI commands like "fw log", "cpstat", "run_script:"
-   - Generic names like "status", "configuration", "logs"
-   - Tools from other servers
+2. For management-logs: Use "show_logs" with appropriate filters
+3. For threat-prevention: Use threat detection tools
+4. For https-inspection: Use HTTPS inspection tools
+5. For quantum-management: Use "show_access_rulebase", "show_nat_rulebase", "show_hosts", "show_networks"
+6. NEVER use CLI commands like "fw log", "cpstat", or generic names
 
 EXAMPLES:
-✅ THREAT QUERY: {{"required_servers": ["management-logs"], "data_to_fetch": ["show_logs"]}}
-✅ POLICY QUERY: {{"required_servers": ["quantum-management"], "data_to_fetch": ["show_access_rulebase"]}}
-❌ WRONG: {{"required_servers": ["management-logs", "quantum-management"], "data_to_fetch": ["run_script:fw log", "logs"]}}
+✅ PURE THREAT: {{"required_servers": ["threat-prevention", "https-inspection", "management-logs"], "data_to_fetch": ["threat_tools", "show_logs"]}}
+✅ PURE POLICY: {{"required_servers": ["quantum-management"], "data_to_fetch": ["show_access_rulebase", "show_nat_rulebase"]}}
+✅ MIXED: {{"required_servers": ["management-logs", "quantum-management"], "data_to_fetch": ["show_logs", "show_access_rulebase"]}}
+❌ WRONG - Threat query using policy tools: {{"required_servers": ["quantum-management"], "data_to_fetch": ["show_access_rulebase"]}}
+❌ WRONG - Policy query using threat tools: {{"required_servers": ["threat-prevention"], "data_to_fetch": ["threat_tools"]}}
 
 Return a JSON execution plan:
 {{
