@@ -1298,11 +1298,11 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                 time_range_days = 1
                         
                         # Calculate MAX_PAGES based on time range to prevent token overflow
-                        # 7 days: 3 pages (210 logs ≈ 52k tokens) - prevents 200k overflow
+                        # 7 days: 6 pages (420 logs ≈ 105k tokens) - optimized for 131k context windows
                         # 3 days: 5 pages (350 logs ≈ 87k tokens) - balanced
                         # 1 day: 8 pages (560 logs ≈ 140k tokens) - detailed recent analysis
                         if time_range_days >= 7:
-                            MAX_PAGES = 3  # CRITICAL: Limit broad queries to prevent token explosion
+                            MAX_PAGES = 6  # Increased from 3 to utilize available context window headroom
                         elif time_range_days >= 3:
                             MAX_PAGES = 5
                         else:
