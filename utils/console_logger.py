@@ -51,6 +51,10 @@ class ConsoleLogger:
             except:
                 pass
     
+    def fileno(self):
+        """Return the file descriptor of the underlying terminal for subprocess compatibility"""
+        return self.terminal.fileno()
+    
     def close(self):
         """Close the log file"""
         if self.log_file and not self.log_file.closed:
