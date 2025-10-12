@@ -1489,126 +1489,46 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         Returns:
             Filtered data with only essential security fields
         """
-        # Essential fields to keep - COMPREHENSIVE security data while filtering useless metadata
+        # Essential fields - AGGRESSIVELY REDUCED to prevent token overflow
+        # Focus on what LLM actually needs for analysis
         ESSENTIAL_FIELDS = {
-            # Core connection data
-            'time', 'date', 'src', 'source', 'dst', 'destination', 'service', 'service_id',
-            's_port', 'd_port', 'proto', 'action',
+            # Core connection data (REQUIRED)
+            'time', 'src', 'dst', 'service', 's_port', 'd_port', 'action',
             
-            # Blade/Origin info
-            'origin', 'product', 'blade_name', 'log_id', 'origin_sic_name',
+            # Origin/Product
+            'origin', 'product', 'blade_name',
             
-            # Policy context (logs)
-            'rule', 'rule_uid', 'rule_name', 'layer_name', 'layer_uid', 'match_id', 'policy',
-            'sub_policy_name', 'sub_policy_uid', 'parent_rule',
-            'access_rule_number', 'access_rule_name', 'matched_rules',  # Access rule hierarchy
-            'blade',  # Blade identifier (APPI, URLF, IPS, ABOT, etc.)
+            # Rule context (for policy analysis)
+            'rule_name', 'layer_name', 'access_rule_number', 'blade',
             
-            # Rule/Policy details (rulebase objects)
-            'rule-number', 'enabled', 'install-on', 'track', 'comments',
+            # Rulebase objects (for show_access_rulebase, show_nat_rulebase)
+            'rule-number', 'name', 'enabled', 'source', 'destination',
             'original-source', 'original-destination', 'translated-source', 'translated-destination',
-            'original-service', 'translated-service',
             
-            # NAT information (logs)
-            'xlatesrc', 'xlatedst', 'xlatesport', 'xlatedport', 'nat_addtnl_rulenum', 'nat_rulenum',
+            # Identity (basic only)
+            'user', 'src_user_name', 'user_group',
             
-            # User/Application - CRITICAL for identity tracking
-            'user', 'src_user_name', 'dst_user_name', 'username', 'identity',
-            'user_group', 'src_user_group', 'dst_user_group', 'source_user_group',  # AD/LDAP groups (directional)
-            'auth_method', 'identity_type',  # Authentication context
-            'src_machine_name', 'dst_machine_name',  # Machine names
-            'application', 'appi_name', 'application_name', 'application_id', 'app_sig_name',  # Application identification
-            'app_category', 'app_risk', 'app_desc', 'app_properties',
-            'methods', 'user_agent', 'referer',  # HTTP methods and headers
+            # Application (basic)
+            'application', 'appi_name', 'application_name',
             
-            # Traffic details
-            'bytes', 'sent_bytes', 'received_bytes', 'packets', 'duration', 'conn_direction',
-            'ifdir', 'ifname', 'interface_direction',
+            # THREAT DATA - CRITICAL (must keep for security analysis)
+            'attack_name', 'attack_id', 'severity', 'confidence_level',
+            'protection_name', 'malware_type', 'malware_action', 'threat_name',
+            'blade',  # Security blade (IPS, ABOT, URLF, etc.)
+            'bot_name', 'matched_patterns',  # Anti-Bot
+            'cveid', 'cve',  # Vulnerabilities
             
-            # Threat information - CRITICAL for analysis
-            'attack', 'attack_info', 'attack_name', 'attack_id', 'severity', 'confidence_level',
-            'protection_name', 'malware_action', 'malware_type', 'threat_prevention_action', 'threat_description',
-            'signature_name', 'cveid', 'cve', 'cvss', 'performance_impact',
-            'update_version', 'protection_type', 'category', 'matched_category',
-            'bot_name', 'matched_patterns', 'indicators', 'indicator_info',  # Anti-Bot specific
-            'packet_capture', 'inline_layer_name', 'protection_layer_name',  # IPS details
-            'threat_type', 'threat_category', 'threat_severity',  # Additional threat classification
+            # Drop/Reject reasons (troubleshooting)
+            'reason', 'reject_reason', 'drop_reason',
             
-            # Drop/Reject reasons - CRITICAL for troubleshooting
-            'reason', 'message', 'description', 'reject_category', 'reject_reason',
-            'suppressed_logs',
+            # DNS/Web (for malware detection)
+            'dns_query', 'requested_hostname', 'url', 'uri',
             
-            # VPN specific
-            'vpn_feature_name', 'peer_gateway', 'encryption_method', 'encryption_failure', 'community',
+            # File analysis
+            'file_name', 'file_type', 'verdict', 'file_hash', 'md5', 'sha256',
             
-            # HTTPS Inspection
-            'site_name', 'resource', 'method', 'https_inspection_action',
-            'http_host', 'url', 'uri', 'web_server_type',
-            
-            # DNS Analysis - CRITICAL for malware DNS detection
-            'dns_query', 'requested_hostname', 'query_name', 'dns_type', 'dns_response',
-            'dns_message_type', 'answer', 'query_type', 'response_type',
-            
-            # Audit logs - CRITICAL
-            'administrator', 'operation', 'command',
-            
-            # Reputation Service (IOC checks)
-            'ip', 'file_hash', 'md5', 'sha1', 'sha256', 'reputation', 'risk', 
-            'threat_category', 'classification', 'first_seen', 'last_seen',
-            'indicator_type', 'indicator_description',  # IOC metadata
-            
-            # Data Loss Prevention (DLP)
-            'dlp_action', 'dlp_rule', 'dlp_incident_id', 'dlp_fingerprint',
-            'dlp_message_uid', 'dlp_attachment_name', 'dlp_attachment_md5', 'dlp_attachment_sha1',
-            'dlp_violation_type',  # DLP incident tracking
-            
-            # Threat Emulation (sandbox/malware analysis)
-            'file_name', 'file_type', 'file_size', 'verdict', 'status', 'analysis_status',
-            'threat_name', 'malware_family', 'confidence', 'extracted_iocs', 'suspicious_activities',
-            'te_action', 'te_verdict', 'te_filename', 'te_file_type', 'te_result',
-            'te_md5', 'te_sha1', 'te_sha256', 'te_flow_id', 'te_composite_id',  # TE hash/tracking
-            
-            # Gateway Connection Analysis
-            'connection_id', 'protocol', 'state', 'connection_state', 'packet_count',
-            'drop_reason', 'syn_ack', 'flags',
-            
-            # Quantum GAIA (OS/interface config)
-            'interface', 'mtu', 'link_state', 'speed', 'duplex',
-            'route', 'metric', 'dns', 'ntp',
-            
-            # Object/Gateway metadata - CRITICAL for name-to-IP mapping
-            'name',  # Friendly name (e.g., "HR-Server" instead of raw IP)
-            'ipv4-address', 'ipv6-address', 'type',  # IP addresses and object type
-            'hostname', 'fqdn', 'host', 'source_hostname', 'destination_hostname',  # Host identification
-            
-            # Geographic/Location data - useful for analysis
-            'source_location', 'destination_location', 'country', 'city',
-            
-            # Session/Connection tracking
-            'session_id', 'connection_uid', 'log_delay',
-            
-            # Client/OS information - helps with context
-            'source_os', 'destination_os', 'client_name', 'client_version', 'client_type',
-            
-            # Web filtering
-            'categories', 'matched_categories', 'resource_type',
-            
-            # Email security (if applicable)
-            'email_subject', 'email_sender', 'email_recipient', 'email_id',
-            
-            # Mobile Access & Endpoint Security
-            'mobile_device', 'mobile_app',
-            'endpoint_name', 'endpoint_id', 'compliance_status',  # Endpoint Compliance
-            
-            # Anti-Bot/Anti-Virus
-            'detected_malware_name', 'virus_name', 'scan_result',
-            
-            # IPS/AV additional fields
-            'protection_id', 'protection_severity', 'incident_extension',
-            
-            # SmartEvent correlation & Metadata
-            'event_count', 'aggregation_count',
-            'sequencenum', 'originsicname', 'loguid'  # Log sequence, origin, and unique ID
+            # Object metadata (for name mapping)
+            'name', 'hostname', 'ipv4-address', 'type'
         }
         
         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] _filter_log_fields: Starting log field filtering...")
@@ -1790,42 +1710,32 @@ Errors: {', '.join(errors) if errors else 'None'}{warnings_text}
 
 """
         
-        # Build analysis prompt based on query type
+        # Build evidence-first analysis prompt with anti-hallucination safeguards
         user_query = plan.get('user_query', 'N/A')
-        query_lower = user_query.lower()
         
-        # Detect if this is a security/threat-focused query
-        is_security_query = any(kw in query_lower for kw in [
-            'suspicious', 'threat', 'attack', 'malicious', 'malware', 'intrusion',
-            'breach', 'incident', 'security', 'ips', 'anti-bot', 'virus'
-        ])
-        
-        # Build appropriate analysis instructions
-        if is_security_query:
-            analysis_focus = """
-PRIORITY ANALYSIS FOCUS:
-1. **Threat Detection**: Analyze logs for IPS detections, malware, attacks, Anti-Bot events
-   - Look for: attack_name, threat_name, malware_type, severity, confidence_level
-   - Identify: IPs involved, attack patterns, threat categories, CVEs
-   
-2. **Security Events**: Review all security blade activity (IPS, Anti-Bot, HTTPS Inspection, DLP)
-   - Check: blade field, protection_name, threat_prevention_action
-   - Analyze: drop reasons, blocked threats, suspicious patterns
-   
-3. **Timeline & Context**: Build incident timeline from log timestamps
-   - Show: when attacks occurred, affected systems, threat progression
-
-4. **Actionable Intelligence**: Provide specific IOCs and recommendations
-   - List: malicious IPs, threat signatures, required actions"""
-        else:
-            analysis_focus = """
-ANALYSIS FOCUS:
-- Answer the user's specific question using the available data
-- Provide relevant context and details
-- Include specific values, timestamps, and identifiers"""
+        # Check if context was truncated
+        truncation_warning = ""
+        if warnings and any("truncation" in w.lower() or "truncated" in w.lower() for w in warnings):
+            truncation_warning = "\n⚠️ IMPORTANT: Some data was truncated to fit the model. If evidence is missing, report that limitation instead of making assumptions."
         
         analysis_prompt = f"""User Query: {user_query}
-{analysis_focus}
+
+CRITICAL INSTRUCTIONS - ANTI-HALLUCINATION RULES:
+1. **Evidence-Only Reporting**: Only report findings that are explicitly present in the provided data above
+   - Never invent IPs, timestamps, attack names, or any other details
+   - If no threats/issues are found in the data, state "No suspicious activity detected" or "No issues found"
+   - If data is incomplete or missing, acknowledge the limitation
+
+2. **Citation Required**: For any security finding, reference the actual data:
+   - Quote specific field values (e.g., "attack_name: SQL Injection")
+   - Include actual timestamps from the logs
+   - Show real IP addresses from the data
+   - If a field is absent, do not assume its value
+
+3. **Valid Outcomes**: 
+   - Security query with no threats → Report "No suspicious activity detected in the available logs"
+   - Missing data → Report "Unable to analyze [specific aspect] due to missing/truncated data"
+   - Clean logs → Report "All activity appears normal"{truncation_warning}
 
 FORMATTING REQUIREMENTS:
 - Display object names WITHOUT UUIDs (use human-readable names only)
@@ -1833,12 +1743,12 @@ FORMATTING REQUIREMENTS:
   * Access Control Rules: | No. | Name | Source | Destination | Service | Action | Track |
   * NAT Rules: | No. | Name | Original Source | Translated Source | Original Dest | Translated Dest | Original Service | Translated Service |
 - Use exact counts from data summaries when available
-- Show specific IPs, hostnames, rule numbers, and timestamps
+- Show specific values from the actual data (IPs, hostnames, rule numbers, timestamps)
 
 INVESTIGATION CAPABILITIES:
 {'Discovered resources in the data above are available for further investigation if needed.' if has_discovered_resources else 'You can request investigation using available MCP servers and tools if additional data is needed.'}
 
-Provide a comprehensive analysis based on the available data."""
+Analyze the provided data and answer the user's question based solely on what is present in the data."""
         
         # Determine which client to use based on model prefix
         if isinstance(final_model, str) and (":" in final_model):
