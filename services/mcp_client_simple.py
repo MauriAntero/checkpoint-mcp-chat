@@ -793,6 +793,16 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             time_frame = "last-30-days"
                         elif any(pattern in search_text for pattern in ['7 day', 'last 7 days', 'last-7-days', 'past 7 days', 'last week', 'past week']):
                             time_frame = "last-7-days"
+                        elif any(pattern in search_text for pattern in ['6 day', 'last 6 days', 'last-6-days', 'past 6 days']):
+                            time_frame = "last-6-days"
+                        elif any(pattern in search_text for pattern in ['5 day', 'last 5 days', 'last-5-days', 'past 5 days']):
+                            time_frame = "last-5-days"
+                        elif any(pattern in search_text for pattern in ['4 day', 'last 4 days', 'last-4-days', 'past 4 days']):
+                            time_frame = "last-4-days"
+                        elif any(pattern in search_text for pattern in ['3 day', 'last 3 days', 'last-3-days', 'past 3 days']):
+                            time_frame = "last-3-days"
+                        elif any(pattern in search_text for pattern in ['2 day', 'last 2 days', 'last-2-days', 'past 2 days', '48 hour', 'last 48 hours']):
+                            time_frame = "last-2-days"
                         elif any(pattern in search_text for pattern in ['24 hour', 'last 24 hours', 'last-24-hours', 'past 24 hours']):
                             time_frame = "last-24-hours"
                         elif any(pattern in search_text for pattern in ['last hour', 'past hour', 'last 60 min']):
@@ -1293,23 +1303,37 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             time_frame_str = args['new-query'].get('time-frame', 'last-1-days')
                             if '7-days' in time_frame_str or '7-day' in time_frame_str:
                                 time_range_days = 7
+                            elif '6-days' in time_frame_str or '6-day' in time_frame_str:
+                                time_range_days = 6
+                            elif '5-days' in time_frame_str or '5-day' in time_frame_str:
+                                time_range_days = 5
+                            elif '4-days' in time_frame_str or '4-day' in time_frame_str:
+                                time_range_days = 4
                             elif '3-days' in time_frame_str or '3-day' in time_frame_str:
                                 time_range_days = 3
+                            elif '2-days' in time_frame_str or '2-day' in time_frame_str:
+                                time_range_days = 2
                             elif '24-hours' in time_frame_str or '1-day' in time_frame_str:
                                 time_range_days = 1
                         
                         # Calculate MAX_PAGES based on time range to prevent token overflow
-                        # INCREASED LIMITS: Post-retrieval filtering removes ~50-70% of irrelevant logs
-                        # (control logs, policy updates, routine status) so we fetch more to compensate
-                        # 7 days: 9 pages (~630 logs → ~200 relevant after filtering ≈ 80k tokens)
-                        # 3 days: 7 pages (~490 logs → ~150 relevant after filtering ≈ 60k tokens)
-                        # 1 day: 12 pages (~840 logs → ~250 relevant after filtering ≈ 100k tokens)
+                        # No log-level filtering (user wants all data including Accept logs for traffic analysis)
+                        # Token estimates with deduplication (~50% reduction) and field filtering (~35% reduction):
+                        # 7 days: 6 pages (~420 logs → ~210 unique → ~70k tokens after field filtering)
+                        # 5 days: 6 pages (~420 logs → ~210 unique → ~70k tokens)
+                        # 3 days: 7 pages (~490 logs → ~245 unique → ~80k tokens)
+                        # 2 days: 8 pages (~560 logs → ~280 unique → ~90k tokens)
+                        # 1 day: 12 pages (~840 logs → ~420 unique → ~140k tokens - may need reduction)
                         if time_range_days >= 7:
-                            MAX_PAGES = 9  # Increased to compensate for log-level filtering
+                            MAX_PAGES = 6  # Reduced to fit within token limits
+                        elif time_range_days >= 5:
+                            MAX_PAGES = 6  # 5-6 days: 6 pages
                         elif time_range_days >= 3:
-                            MAX_PAGES = 7
+                            MAX_PAGES = 7  # 3-4 days: 7 pages
+                        elif time_range_days >= 2:
+                            MAX_PAGES = 8  # 2 days: 8 pages
                         else:
-                            MAX_PAGES = 12  # Recent/specific queries can fetch more
+                            MAX_PAGES = 10  # 1 day: reduced from 12 to prevent overflow
                         
                         logs_per_page = args.get('new-query', {}).get('max-logs-per-request', 70) if isinstance(args.get('new-query'), dict) else 70
                         print(f"[MCP_DEBUG] [{_ts()}] 📊 Intelligent pagination: {time_range_days}-day query limited to {MAX_PAGES} pages (max ~{MAX_PAGES * logs_per_page} logs)")
