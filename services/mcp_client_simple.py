@@ -1182,9 +1182,33 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         first_page_data = []
                         all_data = []
                         page_count = 1
-                        # With log field filtering (70% token reduction: 850→250 tokens/log), we can retrieve more logs
-                        # VPN logs: 10 pages (500 logs), Traffic/General logs: 10 pages (500-700 logs)
-                        MAX_PAGES = 10  # Increased from 3/5 to 10 with intelligent log field filtering
+                        
+                        # INTELLIGENT PAGINATION: Adjust max pages based on time range and query type
+                        # Broad time ranges (7 days) need fewer pages to prevent token overflow
+                        # Specific queries can fetch more pages for comprehensive results
+                        time_range_days = 1  # Default
+                        if 'new-query' in args and isinstance(args['new-query'], dict):
+                            time_frame_str = args['new-query'].get('time-frame', 'last-1-days')
+                            if '7-days' in time_frame_str or '7-day' in time_frame_str:
+                                time_range_days = 7
+                            elif '3-days' in time_frame_str or '3-day' in time_frame_str:
+                                time_range_days = 3
+                            elif '24-hours' in time_frame_str or '1-day' in time_frame_str:
+                                time_range_days = 1
+                        
+                        # Calculate MAX_PAGES based on time range to prevent token overflow
+                        # 7 days: 3 pages (210 logs ≈ 52k tokens) - prevents 200k overflow
+                        # 3 days: 5 pages (350 logs ≈ 87k tokens) - balanced
+                        # 1 day: 8 pages (560 logs ≈ 140k tokens) - detailed recent analysis
+                        if time_range_days >= 7:
+                            MAX_PAGES = 3  # CRITICAL: Limit broad queries to prevent token explosion
+                        elif time_range_days >= 3:
+                            MAX_PAGES = 5
+                        else:
+                            MAX_PAGES = 8  # Recent/specific queries can fetch more
+                        
+                        logs_per_page = args.get('new-query', {}).get('max-logs-per-request', 70) if isinstance(args.get('new-query'), dict) else 70
+                        print(f"[MCP_DEBUG] [{_ts()}] 📊 Intelligent pagination: {time_range_days}-day query limited to {MAX_PAGES} pages (max ~{MAX_PAGES * logs_per_page} logs)")
                         
                         # Parse first response and detect structure
                         print(f"[MCP_DEBUG] [{_ts()}] 📊 Analyzing response structure for pagination detection...")
