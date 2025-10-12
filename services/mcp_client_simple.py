@@ -822,13 +822,14 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             blade_filter = 'service:"VPN" OR service:"IKE" OR service:"ISAKMP" OR product:"VPN"'
                             # VPN traffic is typically lower volume - reduce max logs to prevent excessive pagination
                             max_logs = 50
-                        # Threat Prevention umbrella (includes Anti-Bot, Anti-Virus, IPS, Threat Emulation, etc.)
-                        elif any(kw in search_text for kw in ['threat prevention', 'threat', 'ips', 'intrusion', 
+                        # Threat Prevention umbrella - ONLY for specific threat product queries
+                        # Removed broad keywords (suspicious, attack, blocked, dropped) to allow all logs for general queries
+                        elif any(kw in search_text for kw in ['threat prevention', 'threat prevention logs', 
+                                                             'ips attack', 'ips detection', 'intrusion prevention', 
                                                              'threat emulation', 'threat extraction', 'zero-phishing', 
                                                              'zero phishing', 'anti-bot', 'anti bot', 'bot protection',
-                                                             'anti-virus', 'antivirus', 'malware', 'suspicious', 'attack',
-                                                             'exploit', 'malicious', 'compromise', 'breach', 'infected',
-                                                             'phishing', 'botnet', 'ransomware', 'blocked', 'dropped']):
+                                                             'anti-virus', 'antivirus', 'av detection', 
+                                                             'malware detection', 'malware scan']):
                             # Use OR logic to capture all threat-related blades
                             blade_filter = 'blade:"Threat Prevention" OR blade:"Anti-Bot" OR blade:"Anti-Virus" OR blade:"IPS" OR blade:"Threat Emulation"'
                         elif any(kw in search_text for kw in ['content awareness', 'content', 'dlp', 'data loss']):
