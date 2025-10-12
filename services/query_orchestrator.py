@@ -14,7 +14,7 @@ class MCPServerCapability:
     package: str
     capabilities: List[str]
     data_types: List[str]
-    tools: List[str] = None  # Main tool names for this MCP server
+    tools: Optional[List[str]] = None  # Main tool names for this MCP server
     
 class QueryOrchestrator:
     """Orchestrates query execution across MCP servers and LLM models"""
@@ -518,7 +518,42 @@ Intent Analysis:"""
             from services.gateway_script_executor import GATEWAY_EXECUTOR_LLM_PROMPT
             gateway_executor_instructions = f"\n\n{GATEWAY_EXECUTOR_LLM_PROMPT}"
         
+        # Determine query classification based on keywords
+        query_lower = user_query.lower()
+        threat_keywords = ['suspicious', 'attack', 'threat', 'malware', 'ips', 'intrusion', 'malicious', 'exploit', 'vulnerability', 'compromise', 'breach']
+        policy_keywords = ['rulebase', 'firewall rules', 'nat', 'access control', 'policy review', 'rule review']
+        
+        is_threat_query = any(keyword in query_lower for keyword in threat_keywords)
+        is_policy_query = any(keyword in query_lower for keyword in policy_keywords)
+        
+        # Build allowed servers list based on query type
+        if is_threat_query and not is_policy_query:
+            query_type = "PURE_THREAT"
+            allowed_servers = ["threat-prevention", "https-inspection", "management-logs"]
+            forbidden_servers = ["quantum-management"]
+            instructions = """This is a PURE THREAT/SECURITY query.
+ALLOWED servers: threat-prevention, https-inspection, management-logs
+FORBIDDEN servers: quantum-management (policy tools NOT relevant for threat detection)"""
+        elif is_policy_query and not is_threat_query:
+            query_type = "PURE_POLICY"
+            allowed_servers = ["quantum-management", "management-logs"]
+            forbidden_servers = ["threat-prevention", "https-inspection"]
+            instructions = """This is a PURE POLICY query.
+ALLOWED servers: quantum-management, management-logs
+FORBIDDEN servers: threat-prevention, https-inspection (threat tools NOT relevant for policy)"""
+        else:
+            query_type = "MIXED"
+            allowed_servers = active_server_types
+            forbidden_servers = []
+            instructions = """This is a MIXED query (or general query).
+ALLOWED servers: All servers available"""
+        
         planning_prompt = f"""You are creating a technical plan to retrieve data from Check Point security platform MCP servers.
+
+User Query: "{user_query}"
+
+QUERY CLASSIFICATION: {query_type}
+{instructions}
 
 Available MCP Servers:
 {capabilities_desc}
@@ -533,41 +568,16 @@ User Intent:
 {f"- Filters: {', '.join(filters)}" if filters else ""}
 {f"- File Path: {file_path}" if file_path else ""}
 
-User Query: "{user_query}"
+MANDATORY SERVER SELECTION:
+You MUST select ONLY from allowed servers: {', '.join(allowed_servers)}
+You MUST NOT select forbidden servers: {', '.join(forbidden_servers) if forbidden_servers else 'None'}
 
-CRITICAL SERVER SELECTION RULES - QUERY TYPE CLASSIFICATION:
-
-1. **PURE THREAT/SECURITY QUERIES** (suspicious, attack, threat, malware, IPS, intrusion, malicious):
-   - PRIMARY: "threat-prevention" (IPS, Anti-Bot, Anti-Virus threats)
-   - PRIMARY: "https-inspection" (HTTPS/SSL inspection threats)
-   - PRIMARY: "management-logs" (connection logs with threat context)
-   - FORBIDDEN: "quantum-management" (policy tools NOT relevant for threat detection)
-
-2. **PURE POLICY QUERIES** (rulebase, firewall rules, NAT, access control, policy review):
-   - PRIMARY: "quantum-management" (access/NAT rulebases, policy configuration)
-   - SUPPLEMENTAL: "management-logs" (policy change audit logs)
-   - FORBIDDEN: "threat-prevention", "https-inspection" (threat tools NOT relevant for policy)
-
-3. **MIXED QUERIES** (suspicious policy changes, threat prevention configuration):
-   - Use BOTH threat and policy servers as appropriate
-   - Example: "suspicious policy changes" → management-logs + quantum-management
-
-CRITICAL TOOL NAMING RULES:
-1. ONLY use tool names from the "Tools:" list above for each server
-2. For management-logs: Use "show_logs" with appropriate filters
-3. For threat-prevention: Use "show_threat_prevention_profile", "show_ips_profile", "show_anti_bot_profile"
-4. For https-inspection: Use "show_https_inspection_policy", "show_https_layer", "show_https_rule"
-5. For quantum-management: Use "show_access_rulebase", "show_nat_rulebase", "show_hosts", "show_networks"
-6. NEVER use CLI commands like "fw log", "cpstat", or generic names
-7. If exact tool is unknown, use "auto-detect" and let the system discover available tools
-
-EXAMPLES:
-✅ PURE THREAT: {{"required_servers": ["threat-prevention", "https-inspection", "management-logs"], "data_to_fetch": ["show_ips_profile", "show_https_layer", "show_logs"]}}
-✅ PURE POLICY: {{"required_servers": ["quantum-management"], "data_to_fetch": ["show_access_rulebase", "show_nat_rulebase"]}}
-✅ MIXED: {{"required_servers": ["management-logs", "quantum-management"], "data_to_fetch": ["show_logs", "show_access_rulebase"]}}
-✅ AUTO-DETECT: {{"required_servers": ["threat-prevention"], "data_to_fetch": ["auto-detect"]}}
-❌ WRONG - Threat query using policy tools: {{"required_servers": ["quantum-management"], "data_to_fetch": ["show_access_rulebase"]}}
-❌ WRONG - Policy query using threat tools: {{"required_servers": ["https-inspection"], "data_to_fetch": ["show_https_layer"]}}
+TOOL NAMING RULES:
+- For management-logs: Use "show_logs"
+- For threat-prevention: Use "show_ips_profile", "show_anti_bot_profile", or "auto-detect"
+- For https-inspection: Use "show_https_layer", "show_https_rule", or "auto-detect"
+- For quantum-management: Use "show_access_rulebase", "show_nat_rulebase", "show_hosts", "show_networks"
+- NEVER use CLI commands like "fw log" or "cpstat"
 
 Return a JSON execution plan:
 {{
@@ -630,6 +640,36 @@ Technical Execution Plan:"""
             if json_start >= 0 and json_end > json_start:
                 json_str = response[json_start:json_end]
                 plan = json.loads(json_str)
+                
+                # CRITICAL: ENFORCE server selection based on query classification
+                if 'required_servers' in plan:
+                    original_servers = plan['required_servers']
+                    
+                    # Filter out forbidden servers and ensure allowed servers are included
+                    validated_servers = []
+                    for server in original_servers:
+                        if server in forbidden_servers:
+                            print(f"[QueryOrchestrator] ❌ REJECTED forbidden server '{server}' for {query_type} query")
+                        elif server in allowed_servers:
+                            validated_servers.append(server)
+                        else:
+                            # Server not in allowed list but also not forbidden (e.g., reputation-service)
+                            # Allow it if not explicitly forbidden
+                            if server in active_server_types:
+                                validated_servers.append(server)
+                    
+                    # For PURE_THREAT queries, ensure threat servers are included
+                    if query_type == "PURE_THREAT":
+                        for threat_server in ["threat-prevention", "https-inspection", "management-logs"]:
+                            if threat_server not in validated_servers and threat_server in active_server_types:
+                                print(f"[QueryOrchestrator] ✅ ADDED required threat server '{threat_server}' for {query_type} query")
+                                validated_servers.append(threat_server)
+                    
+                    # Update plan with validated servers
+                    if validated_servers != original_servers:
+                        print(f"[QueryOrchestrator] 🔄 Server list corrected: {original_servers} → {validated_servers}")
+                        plan['required_servers'] = validated_servers
+                
                 # CRITICAL: Inject user_query into plan for session context caching
                 plan['user_query'] = user_query
                 return plan
