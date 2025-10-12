@@ -13,6 +13,12 @@ from services.ollama_client import OllamaClient
 from services.openrouter_client import OpenRouterClient
 from services.query_orchestrator import QueryOrchestrator
 from utils.file_manager import FileManager
+from utils.console_logger import setup_console_logging
+
+# Setup console logging to ./logs/debug.log (overwrites each run)
+if 'console_logger' not in st.session_state:
+    st.session_state.console_logger = setup_console_logging("./logs/debug.log")
+    print("[App Init] Console logging enabled -> ./logs/debug.log")
 
 # Application version
 __version__ = "0.0.1"
