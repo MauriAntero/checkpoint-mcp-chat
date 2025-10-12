@@ -206,17 +206,48 @@ class NetworkContextService:
         try:
             from services.mcp_client_simple import query_mcp_server_async
             
+            # CRITICAL: If no gateway_name provided, discover it from quantum-management FIRST
+            # This prevents IP lookup failures in quantum-gw-cli
+            if not gateway_name and 'quantum-management' in all_servers:
+                print(f"[NetworkContext] Discovering gateway from quantum-management...")
+                mgmt_config = all_servers['quantum-management']
+                mgmt_env = mgmt_config.get('env', {})
+                
+                # Query for gateways
+                mgmt_result = await query_mcp_server_async(
+                    '@chkp/quantum-management-mcp',
+                    mgmt_env,
+                    ['show_gateways_and_servers']
+                )
+                
+                # Extract first gateway name
+                if mgmt_result and 'tool_results' in mgmt_result:
+                    for tool_result in mgmt_result['tool_results']:
+                        if 'result' in tool_result and 'content' in tool_result['result']:
+                            for item in tool_result['result']['content']:
+                                if isinstance(item, dict) and item.get('type') == 'text':
+                                    try:
+                                        data = json.loads(item.get('text', '{}'))
+                                        if 'objects' in data and len(data['objects']) > 0:
+                                            gateway_name = data['objects'][0].get('name')
+                                            print(f"[NetworkContext] Discovered gateway: {gateway_name}")
+                                            break
+                                    except:
+                                        pass
+            
+            # If still no gateway_name, skip routing discovery
+            if not gateway_name:
+                print(f"[NetworkContext] No gateway discovered, skipping routing table query")
+                return {}
+            
             server_config = all_servers['quantum-gw-cli']
             server_env = server_config.get('env', {})
             package_name = '@chkp/quantum-gw-cli-mcp'
             
-            # Build query - use specific gateway or let MCP auto-discover
-            data_points = []
-            if gateway_name:
-                data_points.append(f"gateway_identifier:{gateway_name}")
-            data_points.append("run_clish_command:show route")
+            # Build query with discovered gateway name
+            data_points = [f"gateway_identifier:{gateway_name}", "run_clish_command:show route"]
             
-            print(f"[NetworkContext] Querying routing table...")
+            print(f"[NetworkContext] Querying routing table from gateway: {gateway_name}")
             routing_result = await query_mcp_server_async(
                 package_name,
                 server_env,
