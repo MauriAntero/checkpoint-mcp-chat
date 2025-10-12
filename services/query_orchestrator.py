@@ -1464,6 +1464,116 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             return content[:max_chars] + "..."
         return content
     
+    def _remove_duplicate_data(self, data_collected: Dict[str, Any]) -> Dict[str, Any]:
+        """Remove duplicate logs and objects across MCP servers
+        
+        This deduplicates the same logs or objects being sent multiple times,
+        which wastes tokens and confuses the LLM.
+        
+        Returns:
+            Deduplicated data_collected dict
+        """
+        print(f"[DEBUG] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Starting deduplication...")
+        
+        # Track seen items globally
+        seen_log_hashes = set()
+        seen_object_hashes = set()
+        removed_count = 0
+        
+        deduplicated_data = {}
+        
+        for server_name, server_data in data_collected.items():
+            if not isinstance(server_data, dict):
+                deduplicated_data[server_name] = server_data
+                continue
+            
+            deduplicated_server_data = server_data.copy()
+            deduplicated_tool_results = []
+            
+            # Process tool_results
+            tool_results = server_data.get('tool_results', [])
+            for tool_result in tool_results:
+                if isinstance(tool_result, dict) and 'result' in tool_result:
+                    result = tool_result['result']
+                    
+                    # Check content array
+                    if isinstance(result, dict) and 'content' in result:
+                        deduplicated_content = []
+                        
+                        for item in result.get('content', []):
+                            if isinstance(item, dict) and item.get('type') == 'text':
+                                try:
+                                    text_data = json.loads(item.get('text', '{}'))
+                                    
+                                    # Skip if not a dict
+                                    if not isinstance(text_data, dict):
+                                        deduplicated_content.append(item)
+                                        continue
+                                    
+                                    # Process each array in the data
+                                    deduplicated_text_data = {}
+                                    for key, value in text_data.items():
+                                        if isinstance(value, list) and len(value) > 0:
+                                            first_item = value[0]
+                                            if isinstance(first_item, dict):
+                                                # Check if it's a log
+                                                has_time = any(k in first_item for k in ['time', 'timestamp'])
+                                                has_action = any(k in first_item for k in ['action', 'severity', 'blade'])
+                                                
+                                                unique_items = []
+                                                if has_time and has_action:
+                                                    # It's a log - deduplicate
+                                                    for log in value:
+                                                        log_hash = f"{log.get('time')}_{log.get('src')}_{log.get('dst')}_{log.get('action')}"
+                                                        if log_hash not in seen_log_hashes:
+                                                            seen_log_hashes.add(log_hash)
+                                                            unique_items.append(log)
+                                                        else:
+                                                            removed_count += 1
+                                                else:
+                                                    # It's an object - deduplicate
+                                                    for obj in value:
+                                                        obj_hash = f"{obj.get('name')}_{obj.get('type')}_{obj.get('uid', '')}"
+                                                        if obj_hash not in seen_object_hashes:
+                                                            seen_object_hashes.add(obj_hash)
+                                                            unique_items.append(obj)
+                                                        else:
+                                                            removed_count += 1
+                                                
+                                                deduplicated_text_data[key] = unique_items
+                                            else:
+                                                # Not a dict array, keep as-is
+                                                deduplicated_text_data[key] = value
+                                        else:
+                                            # Not a list, keep as-is
+                                            deduplicated_text_data[key] = value
+                                    
+                                    # Update the text content with deduplicated data
+                                    item_copy = item.copy()
+                                    item_copy['text'] = json.dumps(deduplicated_text_data)
+                                    deduplicated_content.append(item_copy)
+                                    
+                                except (json.JSONDecodeError, KeyError):
+                                    deduplicated_content.append(item)
+                            else:
+                                deduplicated_content.append(item)
+                        
+                        # Update result with deduplicated content
+                        tool_result_copy = tool_result.copy()
+                        tool_result_copy['result'] = result.copy()
+                        tool_result_copy['result']['content'] = deduplicated_content
+                        deduplicated_tool_results.append(tool_result_copy)
+                    else:
+                        deduplicated_tool_results.append(tool_result)
+                else:
+                    deduplicated_tool_results.append(tool_result)
+            
+            deduplicated_server_data['tool_results'] = deduplicated_tool_results
+            deduplicated_data[server_name] = deduplicated_server_data
+        
+        print(f"[DEBUG] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Deduplication complete: removed {removed_count} duplicate items")
+        return deduplicated_data
+    
     def _analyze_duplicate_data(self, data_collected: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze data for duplicates across MCP servers
         
@@ -1795,7 +1905,10 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         # Apply intelligent log field filtering to reduce token usage while preserving valuable security information
         data_collected = self._filter_log_fields(data_collected)
         
-        # DEBUG LOGGING: Analyze for duplicate data
+        # Remove duplicate data across MCP servers
+        data_collected = self._remove_duplicate_data(data_collected)
+        
+        # DEBUG LOGGING: Analyze for duplicate data (should be 0 after deduplication)
         duplicate_analysis = self._analyze_duplicate_data(data_collected)
         
         # DEBUG LOGGING: Write filtered data to file for analysis

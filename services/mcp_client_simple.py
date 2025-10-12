@@ -1058,6 +1058,35 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                     string_data_points = [str(dp) for dp in data_points if isinstance(dp, str)]
                     search_keywords = ' '.join(string_data_points).lower()
                     
+                    # QUERY TYPE DETECTION - Distinguish threat/log queries from policy/config queries
+                    threat_keywords = ['suspicious', 'threat', 'attack', 'malware', 'intrusion', 'breach', 
+                                      'compromise', 'exploit', 'anomaly', 'incident', 'alert', 'detection',
+                                      'blocked', 'dropped', 'deny', 'reject', 'ips', 'ids', 'antivirus',
+                                      'anti-bot', 'anti-virus', 'infected', 'virus', 'bot', 'scan']
+                    log_keywords = ['log', 'activity', 'traffic', 'connection', 'session', 'event', 'audit']
+                    policy_keywords = ['policy', 'rule', 'rulebase', 'access', 'nat', 'configuration', 
+                                     'config', 'review', 'analyze', 'show', 'list', 'display']
+                    
+                    is_threat_query = any(kw in search_keywords for kw in threat_keywords)
+                    is_log_query = any(kw in search_keywords for kw in log_keywords)
+                    is_policy_query = any(kw in search_keywords for kw in policy_keywords)
+                    
+                    # Determine primary query type
+                    query_type = 'other'
+                    if is_threat_query or is_log_query:
+                        query_type = 'threat_log'  # Security investigation query
+                    elif is_policy_query and not (is_threat_query or is_log_query):
+                        query_type = 'policy'  # Policy/config query
+                    
+                    # CRITICAL RULE: For threat/log queries, EXCLUDE policy/config tools
+                    # These queries need logs and threat data, NOT policy rules!
+                    policy_tools = ['access_rulebase', 'nat_rulebase', 'access_rule', 'nat_rule', 
+                                   'access_section', 'nat_section', 'access_layer', 'find_zero_hits']
+                    if query_type == 'threat_log':
+                        if any(pt in tool_name_lower for pt in policy_tools):
+                            score -= 1000  # MASSIVE penalty - exclude these from threat queries
+                            print(f"[MCP_DEBUG] [{_ts()}] 🚫 Excluding '{tool.name}' from threat/log query (policy tool)")
+                    
                     # Exact keyword matches in tool name (highest priority)
                     # CRITICAL: Include HTTPS/SSL/TLS keywords for inspection tools
                     for keyword in ['nat', 'access', 'threat', 'log', 'vpn', 'gateway', 'policy', 'rule', 
