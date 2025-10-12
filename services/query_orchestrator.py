@@ -698,6 +698,17 @@ Technical Execution Plan:"""
                         "ℹ️ Using management-logs MCP as primary data source with gateway diagnostics as supplemental context."
                     )
         
+        # DEPENDENCY INJECTION: quantum-gw-cli requires quantum-management for gateway discovery
+        # Auto-add quantum-management if quantum-gw-cli is selected but quantum-management is not
+        if 'quantum-gw-cli' in required_servers and 'quantum-management' not in required_servers:
+            if 'quantum-management' in all_servers:
+                required_servers.insert(0, 'quantum-management')  # Add at beginning for Phase 1 execution
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Auto-injected quantum-management dependency for quantum-gw-cli")
+            else:
+                results["warnings"].append(
+                    "⚠️ quantum-gw-cli requires quantum-management for gateway discovery, but quantum-management is not configured."
+                )
+        
         # PARALLEL EXECUTION: Query all required servers simultaneously
         import asyncio
         
