@@ -1828,13 +1828,13 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         Returns:
             True if log should be kept for analysis, False to filter out
         """
-        # Extract key fields for analysis
-        log_type = log_item.get('type', '').lower()
-        product_family = log_item.get('product_family', '').lower()
-        product = log_item.get('product', '').lower()
-        action = log_item.get('action', '').lower()
-        description = log_item.get('description', '').lower()
-        severity = log_item.get('severity', '').lower()
+        # Extract key fields for analysis (safely handle None values)
+        log_type = (log_item.get('type') or '').lower()
+        product_family = (log_item.get('product_family') or '').lower()
+        product = (log_item.get('product') or '').lower()
+        action = (log_item.get('action') or '').lower()
+        description = (log_item.get('description') or '').lower()
+        severity = (log_item.get('severity') or '').lower()
         
         # ALWAYS FILTER OUT: Control and system operational logs
         irrelevant_patterns = [
