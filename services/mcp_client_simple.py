@@ -1383,10 +1383,12 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                     except Exception as parse_error:
                                         print(f"[MCP_DEBUG] [{_ts()}] ⚠️ JSON parse error for item {idx}: {parse_error}")
                                         # Gateway CLI tools often return plain text, not JSON - wrap it for safe processing
-                                        if isinstance(item.get('text'), str):
+                                        current_text = item.get('text')
+                                        print(f"[MCP_DEBUG] [{_ts()}] 📝 Current item['text'] type: {type(current_text)}, value: {current_text if len(str(current_text)) < 100 else str(current_text)[:100] + '...'}")
+                                        if isinstance(current_text, str):
                                             # Keep plain text as-is (for gateway CLI output like cpinfo, show commands)
-                                            item['text'] = {"message": item['text'], "_plain_text": True}
-                                            print(f"[MCP_DEBUG] [{_ts()}] 📝 Wrapped plain text response in message field")
+                                            item['text'] = {"message": current_text, "_plain_text": True}
+                                            print(f"[MCP_DEBUG] [{_ts()}] 📝 Wrapped plain text response in message field: {item['text']}")
                                         import traceback
                                         print(f"[MCP_DEBUG] [{_ts()}] ⚠️ Traceback: {traceback.format_exc()}")
                         
