@@ -1298,15 +1298,17 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                 time_range_days = 1
                         
                         # Calculate MAX_PAGES based on time range to prevent token overflow
-                        # 7 days: 6 pages (420 logs ≈ 105k tokens) - optimized for 131k context windows
-                        # 3 days: 5 pages (350 logs ≈ 87k tokens) - balanced
-                        # 1 day: 8 pages (560 logs ≈ 140k tokens) - detailed recent analysis
+                        # INCREASED LIMITS: Post-retrieval filtering removes ~50-70% of irrelevant logs
+                        # (control logs, policy updates, routine status) so we fetch more to compensate
+                        # 7 days: 9 pages (~630 logs → ~200 relevant after filtering ≈ 80k tokens)
+                        # 3 days: 7 pages (~490 logs → ~150 relevant after filtering ≈ 60k tokens)
+                        # 1 day: 12 pages (~840 logs → ~250 relevant after filtering ≈ 100k tokens)
                         if time_range_days >= 7:
-                            MAX_PAGES = 6  # Increased from 3 to utilize available context window headroom
+                            MAX_PAGES = 9  # Increased to compensate for log-level filtering
                         elif time_range_days >= 3:
-                            MAX_PAGES = 5
+                            MAX_PAGES = 7
                         else:
-                            MAX_PAGES = 8  # Recent/specific queries can fetch more
+                            MAX_PAGES = 12  # Recent/specific queries can fetch more
                         
                         logs_per_page = args.get('new-query', {}).get('max-logs-per-request', 70) if isinstance(args.get('new-query'), dict) else 70
                         print(f"[MCP_DEBUG] [{_ts()}] 📊 Intelligent pagination: {time_range_days}-day query limited to {MAX_PAGES} pages (max ~{MAX_PAGES * logs_per_page} logs)")

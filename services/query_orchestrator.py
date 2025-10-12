@@ -1807,6 +1807,110 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         print(f"[DEBUG] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Duplicate analysis: {analysis['summary']}")
         return analysis
     
+    def _is_relevant_security_log(self, log_item: Dict[str, Any]) -> bool:
+        """Determine if a log entry is relevant for security analysis
+        
+        Filters out:
+        - Control logs (policy installations, updates, reboots)
+        - Informational system logs (configuration changes, status updates)
+        - Routine operational logs (successful connections without security context)
+        
+        Keeps:
+        - Actual security events (IPS attacks, malware, blocks, drops)
+        - Threat-related logs (Anti-Bot, Anti-Virus detections)
+        - Suspicious activity (rejected connections, authentication failures)
+        - VPN security events
+        - DLP violations
+        
+        Args:
+            log_item: Individual log entry dict
+            
+        Returns:
+            True if log should be kept for analysis, False to filter out
+        """
+        # Extract key fields for analysis
+        log_type = log_item.get('type', '').lower()
+        product_family = log_item.get('product_family', '').lower()
+        product = log_item.get('product', '').lower()
+        action = log_item.get('action', '').lower()
+        description = log_item.get('description', '').lower()
+        severity = log_item.get('severity', '').lower()
+        
+        # ALWAYS FILTER OUT: Control and system operational logs
+        irrelevant_patterns = [
+            # Policy/configuration updates
+            'policy was successfully installed',
+            'policy successfully installed',
+            'engine version',
+            'update was successfully installed',
+            'configuration update',
+            'software update',
+            
+            # System operations
+            'reboot', 'restart', 'shutdown',
+            'service started', 'service stopped',
+            'interface up', 'interface down',
+            
+            # Routine status
+            'activated successfully',
+            'deactivated successfully',
+            'synchronization completed',
+            'backup completed',
+            'health check',
+        ]
+        
+        # Check if log matches irrelevant patterns
+        for pattern in irrelevant_patterns:
+            if pattern in description:
+                return False
+        
+        # FILTER OUT: Pure control logs (type=Control) UNLESS they contain security keywords
+        if log_type == 'control':
+            # Keep control logs that have security implications
+            security_control_keywords = ['block', 'drop', 'reject', 'fail', 'attack', 'threat', 'malware', 'breach']
+            if not any(kw in description for kw in security_control_keywords):
+                return False
+        
+        # ALWAYS KEEP: Security-critical log types
+        security_log_types = ['threat', 'attack', 'drop', 'reject', 'block']
+        if any(t in log_type for t in security_log_types):
+            return True
+        
+        # ALWAYS KEEP: Threat product families
+        if product_family in ['threat', 'dlp', 'compliance']:
+            return True
+        
+        # ALWAYS KEEP: Security actions
+        security_actions = ['drop', 'reject', 'block', 'prevent', 'quarantine', 'encrypt']
+        if any(a in action for a in security_actions):
+            return True
+        
+        # ALWAYS KEEP: High severity events
+        if severity in ['high', 'critical', 'medium']:
+            return True
+        
+        # ALWAYS KEEP: Logs with security keywords in description
+        security_keywords = [
+            'attack', 'threat', 'malware', 'virus', 'bot', 'suspicious',
+            'intrusion', 'exploit', 'compromise', 'breach', 'infected',
+            'phishing', 'ransomware', 'blocked', 'dropped', 'rejected',
+            'failed authentication', 'unauthorized', 'violation', 'anomaly'
+        ]
+        if any(kw in description for kw in security_keywords):
+            return True
+        
+        # Keep VPN logs that show security events (not just successful connections)
+        if 'vpn' in product.lower():
+            if any(kw in description for kw in ['fail', 'error', 'reject', 'timeout', 'encryption']):
+                return True
+            # Filter out routine "VPN connection succeeded" logs
+            if 'succeeded' in description or 'established' in description:
+                return False
+        
+        # Default: Keep logs that don't match filter criteria (conservative approach)
+        # This ensures we don't accidentally filter out important unknown log types
+        return True
+    
     def _filter_log_fields(self, data_collected: Dict[str, Any]) -> Dict[str, Any]:
         """Filter log data to remove Check Point metadata and reduce token usage
         
@@ -1957,14 +2061,21 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
                                                             sample_original_fields = 0
                                                             sample_filtered_fields = 0
                                                             
+                                                            filtered_log_count = 0
                                                             for idx, item in enumerate(value):
                                                                 if isinstance(item, dict):
+                                                                    # STEP 1: Check if this log is relevant for security analysis
+                                                                    # Skip entire log if it's noise (control logs, policy updates, etc.)
+                                                                    if field == 'logs' and not self._is_relevant_security_log(item):
+                                                                        filtered_log_count += 1
+                                                                        continue  # Skip this irrelevant log entirely
+                                                                    
                                                                     if sample_original_fields == 0:
                                                                         sample_original_fields = len(item)
                                                                         # DEBUG: Show actual fields in first item
                                                                         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] DEBUG: First item in '{field}' has fields: {list(item.keys())}")
                                                                     
-                                                                    # Smart filtering: Keep fields based on should_keep_field logic
+                                                                    # STEP 2: Smart field filtering: Keep fields based on should_keep_field logic
                                                                     filtered_item = {k: v for k, v in item.items() if should_keep_field(k)}
                                                                     
                                                                     # DEBUG: Show what was filtered out from first item
@@ -1983,7 +2094,9 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
                                                             
                                                             text_data[field] = filtered_items
                                                             total_logs_filtered += len(filtered_items)
-                                                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Filtered '{field}': kept {len(filtered_items)} items, reduced fields from ~{sample_original_fields} to ~{sample_filtered_fields}")
+                                                            if filtered_log_count > 0:
+                                                                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] 🗑️ Filtered out {filtered_log_count} irrelevant logs (control/policy updates)")
+                                                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Filtered '{field}': kept {len(filtered_items)}/{original_count} items, reduced fields from ~{sample_original_fields} to ~{sample_filtered_fields}")
                                             
                                             # Re-serialize filtered data back to JSON string
                                             filtered_content.append({
