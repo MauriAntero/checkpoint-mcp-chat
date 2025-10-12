@@ -78,6 +78,20 @@ class GatewayDirectory:
         """
         return self.gateways.get(gateway_name)
     
+    def get_gateway_name(self, gateway_ip: str) -> Optional[str]:
+        """Get gateway name from IP address (reverse lookup)
+        
+        Args:
+            gateway_ip: IP address of the gateway
+            
+        Returns:
+            Gateway name if found, None otherwise
+        """
+        for name, ip in self.gateways.items():
+            if ip == gateway_ip:
+                return name
+        return None
+    
     def get_all_gateways(self) -> Dict[str, str]:
         """Get all cached gateways
         

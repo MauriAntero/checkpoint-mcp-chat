@@ -12,6 +12,17 @@ from dataclasses import dataclass
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from services.gateway_directory import GatewayDirectory
+
+# Module-level gateway directory instance (loads from disk cache)
+_gateway_directory = None
+
+def _get_gateway_directory():
+    """Get or create gateway directory instance (singleton pattern)"""
+    global _gateway_directory
+    if _gateway_directory is None:
+        _gateway_directory = GatewayDirectory()
+    return _gateway_directory
 
 def _ts():
     """Return timestamp string for debug logging"""
@@ -888,21 +899,28 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                     args['target_gateway'] = match.group(1)
                                     print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from identifier pattern: {args['target_gateway']}")
                         
-                        # Priority 4: Fallback to GATEWAY_HOST environment variable (ONLY if not in discovery mode)
-                        # CRITICAL: In discovery mode, skip tools that need gateway-specific parameters if we only have IP
-                        # This prevents 404 errors during discovery when gateway name isn't available yet
+                        # Priority 4: Fallback to GATEWAY_HOST environment variable
+                        # In discovery mode, try to resolve gateway IP→name from directory before skipping
                         if 'target_gateway' not in args:
                             if 'GATEWAY_HOST' in env_vars:
                                 gateway_host_value = env_vars['GATEWAY_HOST']
                                 # Check if it's an IP address
                                 if is_ip_address(gateway_host_value):
-                                    # IP address - only use in non-discovery mode
-                                    if not discovery_mode:
+                                    # Try to resolve IP to gateway name from directory
+                                    gateway_dir = _get_gateway_directory()
+                                    gateway_name = gateway_dir.get_gateway_name(gateway_host_value)
+                                    
+                                    if gateway_name:
+                                        # Successfully resolved IP→name, use gateway name
+                                        args['target_gateway'] = gateway_name
+                                        print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from IP lookup: {gateway_host_value} → {gateway_name}")
+                                    elif not discovery_mode:
+                                        # Non-discovery mode: use IP directly (some APIs accept IP)
                                         args['target_gateway'] = gateway_host_value
-                                        print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from GATEWAY_HOST env: {args['target_gateway']}")
+                                        print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from GATEWAY_HOST env (IP): {args['target_gateway']}")
                                     else:
-                                        # Discovery mode + IP only = skip this tool to avoid 404
-                                        print(f"[MCP_DEBUG] [{_ts()}] ⚠️ Discovery mode: Skipping tool '{tool.name}' (only IP available, gateway name needed for run-script API)")
+                                        # Discovery mode + IP only + no name resolution = skip this tool
+                                        print(f"[MCP_DEBUG] [{_ts()}] ⚠️ Discovery mode: Skipping tool '{tool.name}' (IP {gateway_host_value} not resolved to gateway name)")
                                         continue  # Skip this tool
                                 else:
                                     # Not an IP - it's a hostname/gateway name, safe to use
@@ -1179,10 +1197,14 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         meaningful_args = {k: v for k, v in a.items() if not k.startswith('_') and v}
                         
                         # Exclude tools with no meaningful filtering parameters
-                        # These return massive amounts of irrelevant data
-                        if not meaningful_args and t.name in ['show_objects', 'show_hosts', 'show_networks', 
-                                                              'show_services', 'show_service_groups']:
-                            print(f"[MCP_DEBUG] [{_ts()}] ⚠️ Excluding '{t.name}' - no filtering params (would return irrelevant data)")
+                        # These return massive amounts of irrelevant data OR require specific parameters
+                        # VPN community singular tools REQUIRE name/uid - exclude them if not provided
+                        vpn_singular_tools = ['show_vpn_community_star', 'show_vpn_community_meshed', 
+                                             'show_vpn_community_remote_access']
+                        if not meaningful_args and (t.name in ['show_objects', 'show_hosts', 'show_networks', 
+                                                              'show_services', 'show_service_groups'] or
+                                                   t.name in vpn_singular_tools):
+                            print(f"[MCP_DEBUG] [{_ts()}] ⚠️ Excluding '{t.name}' - no filtering params (would return irrelevant data or API error)")
                             excluded_count += 1
                             continue
                         
