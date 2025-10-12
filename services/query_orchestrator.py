@@ -1527,11 +1527,12 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             
             # Threat information - CRITICAL for analysis
             'attack', 'attack_info', 'attack_name', 'attack_id', 'severity', 'confidence_level',
-            'protection_name', 'malware_action', 'threat_prevention_action', 'threat_description',
+            'protection_name', 'malware_action', 'malware_type', 'threat_prevention_action', 'threat_description',
             'signature_name', 'cveid', 'cve', 'cvss', 'performance_impact',
             'update_version', 'protection_type', 'category', 'matched_category',
-            'bot_name', 'matched_patterns', 'indicators',  # Anti-Bot specific
+            'bot_name', 'matched_patterns', 'indicators', 'indicator_info',  # Anti-Bot specific
             'packet_capture', 'inline_layer_name', 'protection_layer_name',  # IPS details
+            'threat_type', 'threat_category', 'threat_severity',  # Additional threat classification
             
             # Drop/Reject reasons - CRITICAL for troubleshooting
             'reason', 'message', 'description', 'reject_category', 'reject_reason',
@@ -1759,28 +1760,11 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         # Apply intelligent log field filtering to reduce token usage while preserving valuable security information
         data_collected = self._filter_log_fields(data_collected)
         
-        # Extract discovered resources for better context
-        discovered_resources_summary = {}
-        for server_name, server_data in data_collected.items():
-            if 'discovered_resources' in server_data:
-                discovered_resources_summary[server_name] = server_data['discovered_resources']
+        # Extract discovered resources for investigation capabilities note (don't duplicate in context)
+        has_discovered_resources = any('discovered_resources' in server_data for server_data in data_collected.values())
         
-        # Convert MCP data to JSON (no reduction yet - keep full data)
+        # Convert MCP data to JSON - discovered_resources already included here, no need to duplicate
         data_json = json.dumps(data_collected, indent=2)
-        
-        # Format discovered resources for LLM
-        resources_text = ""
-        if discovered_resources_summary:
-            resources_text = "\n\nDiscovered Resources (Available for Use):\n"
-            for server, resources in discovered_resources_summary.items():
-                resources_text += f"\n{server}:\n"
-                for tool_name, items in resources.items():
-                    resources_text += f"  {tool_name}: {len(items)} items\n"
-                    # Show first 5 items as examples
-                    for item in items[:5]:
-                        resources_text += f"    - {item.get('type', 'unknown')}: {item.get('name', 'N/A')}\n"
-                    if len(items) > 5:
-                        resources_text += f"    ... and {len(items) - 5} more\n"
         
         # Check if there are errors or missing data
         errors = execution_results.get('errors', [])
@@ -1798,22 +1782,50 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         
         context = f"""You are analyzing Check Point security platform data to answer the user's question.
 
-Execution Plan: {plan.get('understanding', 'N/A')}
-
 Data from MCP Servers:
 {data_json}
 
 Servers Queried: {', '.join(servers_queried)}
-Errors: {', '.join(errors) if errors else 'None'}{warnings_text}{resources_text}
+Errors: {', '.join(errors) if errors else 'None'}{warnings_text}
 
 """
         
-        # Simple unified analysis prompt
+        # Build analysis prompt based on query type
         user_query = plan.get('user_query', 'N/A')
+        query_lower = user_query.lower()
+        
+        # Detect if this is a security/threat-focused query
+        is_security_query = any(kw in query_lower for kw in [
+            'suspicious', 'threat', 'attack', 'malicious', 'malware', 'intrusion',
+            'breach', 'incident', 'security', 'ips', 'anti-bot', 'virus'
+        ])
+        
+        # Build appropriate analysis instructions
+        if is_security_query:
+            analysis_focus = """
+PRIORITY ANALYSIS FOCUS:
+1. **Threat Detection**: Analyze logs for IPS detections, malware, attacks, Anti-Bot events
+   - Look for: attack_name, threat_name, malware_type, severity, confidence_level
+   - Identify: IPs involved, attack patterns, threat categories, CVEs
+   
+2. **Security Events**: Review all security blade activity (IPS, Anti-Bot, HTTPS Inspection, DLP)
+   - Check: blade field, protection_name, threat_prevention_action
+   - Analyze: drop reasons, blocked threats, suspicious patterns
+   
+3. **Timeline & Context**: Build incident timeline from log timestamps
+   - Show: when attacks occurred, affected systems, threat progression
+
+4. **Actionable Intelligence**: Provide specific IOCs and recommendations
+   - List: malicious IPs, threat signatures, required actions"""
+        else:
+            analysis_focus = """
+ANALYSIS FOCUS:
+- Answer the user's specific question using the available data
+- Provide relevant context and details
+- Include specific values, timestamps, and identifiers"""
         
         analysis_prompt = f"""User Query: {user_query}
-
-Analyze the data and answer the question.
+{analysis_focus}
 
 FORMATTING REQUIREMENTS:
 - Display object names WITHOUT UUIDs (use human-readable names only)
@@ -1824,7 +1836,7 @@ FORMATTING REQUIREMENTS:
 - Show specific IPs, hostnames, rule numbers, and timestamps
 
 INVESTIGATION CAPABILITIES:
-{'The discovered resources listed above are available for further investigation if needed.' if discovered_resources_summary else 'You can request investigation using available MCP servers and tools if additional data is needed.'}
+{'Discovered resources in the data above are available for further investigation if needed.' if has_discovered_resources else 'You can request investigation using available MCP servers and tools if additional data is needed.'}
 
 Provide a comprehensive analysis based on the available data."""
         
