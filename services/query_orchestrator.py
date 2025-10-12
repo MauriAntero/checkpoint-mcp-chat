@@ -1828,13 +1828,22 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         Returns:
             True if log should be kept for analysis, False to filter out
         """
-        # Extract key fields for analysis (safely handle None values)
-        log_type = (log_item.get('type') or '').lower()
-        product_family = (log_item.get('product_family') or '').lower()
-        product = (log_item.get('product') or '').lower()
-        action = (log_item.get('action') or '').lower()
-        description = (log_item.get('description') or '').lower()
-        severity = (log_item.get('severity') or '').lower()
+        # Extract key fields for analysis (safely handle None/dict/list values)
+        def safe_str(value):
+            """Convert any value to lowercase string, handling None/dict/list"""
+            if value is None:
+                return ''
+            if isinstance(value, str):
+                return value.lower()
+            # Convert dict/list to empty string (unexpected but safe)
+            return ''
+        
+        log_type = safe_str(log_item.get('type'))
+        product_family = safe_str(log_item.get('product_family'))
+        product = safe_str(log_item.get('product'))
+        action = safe_str(log_item.get('action'))
+        description = safe_str(log_item.get('description'))
+        severity = safe_str(log_item.get('severity'))
         
         # ALWAYS FILTER OUT: Control and system operational logs
         irrelevant_patterns = [
