@@ -1810,7 +1810,20 @@ Errors: {', '.join(errors) if errors else 'None'}{warnings_text}{resources_text}
         
         analysis_prompt = f"""User Query: {user_query}
 
-Analyze the data and answer the question."""
+Analyze the data and answer the question.
+
+FORMATTING REQUIREMENTS:
+- Display object names WITHOUT UUIDs (use human-readable names only)
+- Format firewall/NAT rules as markdown tables matching Check Point GUI structure:
+  * Access Control Rules: | No. | Name | Source | Destination | Service | Action | Track |
+  * NAT Rules: | No. | Name | Original Source | Translated Source | Original Dest | Translated Dest | Original Service | Translated Service |
+- Use exact counts from data summaries when available
+- Show specific IPs, hostnames, rule numbers, and timestamps
+
+INVESTIGATION CAPABILITIES:
+{'The discovered resources listed above are available for further investigation if needed.' if discovered_resources_summary else 'You can request investigation using available MCP servers and tools if additional data is needed.'}
+
+Provide a comprehensive analysis based on the available data."""
         
         # Determine which client to use based on model prefix
         if isinstance(final_model, str) and (":" in final_model):
