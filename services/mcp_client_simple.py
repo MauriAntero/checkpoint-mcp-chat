@@ -1529,6 +1529,18 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             # Convert MCP objects to JSON-serializable dictionaries
                             content_serializable = content_dict
                             content_serializable = clean_uuids_from_data(content_serializable)
+                            
+                            # CRITICAL FIX: Re-serialize item['text'] back to JSON string
+                            # Line 1346 replaced JSON strings with Python dicts for parsing,
+                            # but QueryOrchestrator expects JSON strings. Convert back!
+                            if isinstance(content_serializable, list):
+                                for item in content_serializable:
+                                    if isinstance(item, dict) and 'text' in item:
+                                        if isinstance(item['text'], (dict, list)):
+                                            # Re-serialize Python objects back to JSON strings
+                                            item['text'] = json.dumps(item['text'])
+                                            print(f"[MCP_DEBUG] [{_ts()}] 🔄 Re-serialized item['text'] back to JSON string")
+                            
                             print(f"[MCP_DEBUG] [{_ts()}] ✓ Converted result to JSON-serializable format")
                         
                         # Check if result contains CheckPoint API errors
