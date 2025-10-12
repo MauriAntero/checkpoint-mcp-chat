@@ -793,14 +793,15 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             time_frame = "last-30-days"
                         elif any(pattern in search_text for pattern in ['7 day', 'last 7 days', 'last-7-days', 'past 7 days', 'last week', 'past week']):
                             time_frame = "last-7-days"
-                        # MCP server limitation: doesn't support custom date objects, map to nearest values
+                        # MCP server limitation: Only fixed time frames available are: last-hour, last-24-hours, last-7-days, last-30-days
+                        # Variable frames (this-week, this-month) are unreliable (depend on current day of week/month)
+                        # For 2-6 days: must use last-7-days (only fixed option in this range)
                         elif any(pattern in search_text for pattern in ['6 day', 'last 6 days', 'last-6-days', 'past 6 days', 
                                                                         '5 day', 'last 5 days', 'last-5-days', 'past 5 days',
-                                                                        '4 day', 'last 4 days', 'last-4-days', 'past 4 days']):
-                            time_frame = "last-7-days"  # Map 4-6 days → last-7-days (MCP server limitation)
-                        elif any(pattern in search_text for pattern in ['3 day', 'last 3 days', 'last-3-days', 'past 3 days',
+                                                                        '4 day', 'last 4 days', 'last-4-days', 'past 4 days',
+                                                                        '3 day', 'last 3 days', 'last-3-days', 'past 3 days',
                                                                         '2 day', 'last 2 days', 'last-2-days', 'past 2 days', '48 hour', 'last 48 hours']):
-                            time_frame = "this-week"  # Map 2-3 days → this-week (MCP server limitation)
+                            time_frame = "last-7-days"  # Only fixed time frame available (this-week is variable 1-7 days)
                         elif any(pattern in search_text for pattern in ['24 hour', 'last 24 hours', 'last-24-hours', 'past 24 hours']):
                             time_frame = "last-24-hours"
                         elif any(pattern in search_text for pattern in ['last hour', 'past hour', 'last 60 min']):
