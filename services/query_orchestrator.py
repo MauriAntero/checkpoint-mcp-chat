@@ -524,10 +524,24 @@ User Intent:
 
 User Query: "{user_query}"
 
-CRITICAL: In data_to_fetch, use the EXACT tool names listed above for each server.
-- For management-logs: Use "show_logs" (NOT "run_script:fw log..." or CLI commands)
-- For quantum-management: Use tool names like "show_access_rulebase", "show_nat_rulebase", "show_hosts"
-- DO NOT use gateway CLI commands (fw log, cpstat, etc.) - those are for quantum-gw-cli only
+CRITICAL SERVER SELECTION RULES:
+- For THREAT/SECURITY queries (suspicious, attack, threat, malware): Use ONLY "management-logs" server with "show_logs" tool
+- For POLICY queries (rulebase, firewall rules, NAT): Use "quantum-management" server with policy tools
+- Do NOT mix threat and policy servers unless query explicitly asks for both
+
+CRITICAL TOOL NAMING RULES:
+1. ONLY use tool names from the "Tools:" list above for each server
+2. For management-logs: The ONLY valid tool is "show_logs"
+3. For quantum-management: Valid tools are "show_access_rulebase", "show_nat_rulebase", "show_hosts", "show_networks", "show_gateways_and_servers"
+4. NEVER use:
+   - CLI commands like "fw log", "cpstat", "run_script:"
+   - Generic names like "status", "configuration", "logs"
+   - Tools from other servers
+
+EXAMPLES:
+✅ THREAT QUERY: {{"required_servers": ["management-logs"], "data_to_fetch": ["show_logs"]}}
+✅ POLICY QUERY: {{"required_servers": ["quantum-management"], "data_to_fetch": ["show_access_rulebase"]}}
+❌ WRONG: {{"required_servers": ["management-logs", "quantum-management"], "data_to_fetch": ["run_script:fw log", "logs"]}}
 
 Return a JSON execution plan:
 {{

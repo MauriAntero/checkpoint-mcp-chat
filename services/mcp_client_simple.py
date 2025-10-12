@@ -1283,6 +1283,10 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                         print(f"[MCP_DEBUG] [{_ts()}] 📊 Parsing JSON from text (length: {len(text_content)} chars)...")
                                         data = json.loads(text_content)
                                         
+                                        # CRITICAL FIX: Replace the JSON string with parsed object
+                                        # This ensures LLM receives structured data, not double-encoded JSON strings
+                                        item['text'] = data
+                                        
                                         # Handle both dict and list responses
                                         if isinstance(data, dict):
                                             print(f"[MCP_DEBUG] [{_ts()}] 📊 Parsed JSON keys: {list(data.keys())}")
