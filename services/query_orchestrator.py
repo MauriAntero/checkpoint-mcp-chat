@@ -48,7 +48,8 @@ class QueryOrchestrator:
                 "threat policies", "IPS profiles", "anti-bot protection",
                 "threat indicators", "IOC feeds"
             ],
-            data_types=["threat policies", "IPS signatures", "IOC data"]
+            data_types=["threat policies", "IPS signatures", "IOC data"],
+            tools=["show_threat_prevention_profile", "show_ips_profile", "show_anti_bot_profile"]
         ),
         "https-inspection": MCPServerCapability(
             server_type="https-inspection",
@@ -57,7 +58,8 @@ class QueryOrchestrator:
                 "HTTPS inspection policies", "SSL/TLS inspection",
                 "certificate management", "inspection exceptions"
             ],
-            data_types=["HTTPS policies", "certificates", "inspection rules"]
+            data_types=["HTTPS policies", "certificates", "inspection rules"],
+            tools=["show_https_inspection_policy", "show_https_layer", "show_https_rule"]
         ),
         "harmony-sase": MCPServerCapability(
             server_type="harmony-sase",
@@ -487,9 +489,18 @@ Intent Analysis:"""
             print(f"[QueryOrchestrator] Could not load network context for Stage 2: {e}")
             network_context_text = ""
         
-        # Get list of active servers
+        # Get list of available servers (includes both running and on-demand via npx)
+        # Include all servers from MCP_CAPABILITIES that can be executed via npx
         active_server_names = self.mcp_manager.get_active_servers()
-        active_server_types = active_server_names
+        
+        # Add all MCP_CAPABILITIES servers (these can be run on-demand via npx)
+        available_servers = set(active_server_names)
+        available_servers.update(self.MCP_CAPABILITIES.keys())
+        
+        # Use all available servers for planning
+        active_server_types = sorted(list(available_servers))
+        
+        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Available MCP servers for planning: {', '.join(active_server_types)}")
         
         # Extract key information from intent
         task_type = intent.get('task_type', 'general_info')
@@ -544,17 +555,19 @@ CRITICAL SERVER SELECTION RULES - QUERY TYPE CLASSIFICATION:
 CRITICAL TOOL NAMING RULES:
 1. ONLY use tool names from the "Tools:" list above for each server
 2. For management-logs: Use "show_logs" with appropriate filters
-3. For threat-prevention: Use threat detection tools
-4. For https-inspection: Use HTTPS inspection tools
+3. For threat-prevention: Use "show_threat_prevention_profile", "show_ips_profile", "show_anti_bot_profile"
+4. For https-inspection: Use "show_https_inspection_policy", "show_https_layer", "show_https_rule"
 5. For quantum-management: Use "show_access_rulebase", "show_nat_rulebase", "show_hosts", "show_networks"
 6. NEVER use CLI commands like "fw log", "cpstat", or generic names
+7. If exact tool is unknown, use "auto-detect" and let the system discover available tools
 
 EXAMPLES:
-✅ PURE THREAT: {{"required_servers": ["threat-prevention", "https-inspection", "management-logs"], "data_to_fetch": ["threat_tools", "show_logs"]}}
+✅ PURE THREAT: {{"required_servers": ["threat-prevention", "https-inspection", "management-logs"], "data_to_fetch": ["show_ips_profile", "show_https_layer", "show_logs"]}}
 ✅ PURE POLICY: {{"required_servers": ["quantum-management"], "data_to_fetch": ["show_access_rulebase", "show_nat_rulebase"]}}
 ✅ MIXED: {{"required_servers": ["management-logs", "quantum-management"], "data_to_fetch": ["show_logs", "show_access_rulebase"]}}
+✅ AUTO-DETECT: {{"required_servers": ["threat-prevention"], "data_to_fetch": ["auto-detect"]}}
 ❌ WRONG - Threat query using policy tools: {{"required_servers": ["quantum-management"], "data_to_fetch": ["show_access_rulebase"]}}
-❌ WRONG - Policy query using threat tools: {{"required_servers": ["threat-prevention"], "data_to_fetch": ["threat_tools"]}}
+❌ WRONG - Policy query using threat tools: {{"required_servers": ["https-inspection"], "data_to_fetch": ["show_https_layer"]}}
 
 Return a JSON execution plan:
 {{
