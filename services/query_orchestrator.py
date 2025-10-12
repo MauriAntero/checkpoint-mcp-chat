@@ -1489,47 +1489,67 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         Returns:
             Filtered data with only essential security fields
         """
-        # Essential fields - AGGRESSIVELY REDUCED to prevent token overflow
-        # Focus on what LLM actually needs for analysis
-        ESSENTIAL_FIELDS = {
-            # Core connection data (REQUIRED)
-            'time', 'src', 'dst', 'service', 's_port', 'd_port', 'action',
+        # Smart filtering: Keep essential fields + ANY security-related fields
+        # Only filter out truly useless metadata
+        
+        # Always keep these core fields (exact names from Check Point logs)
+        ALWAYS_KEEP = {
+            # Core connection
+            'time', 'src', 'dst', 'service', 's_port', 'action', 'proto',
+            'origin', 'product', 'layer_name', 'rule', 'policy_name',
             
-            # Origin/Product
-            'origin', 'product', 'blade_name',
+            # NAT
+            'xlatesrc', 'xlatedst', 'xlatesport', 'xlatedport',
             
-            # Rule context (for policy analysis)
-            'rule_name', 'layer_name', 'access_rule_number', 'blade',
+            # Identity/Application  
+            'user', 'application',
             
-            # Rulebase objects (for show_access_rulebase, show_nat_rulebase)
-            'rule-number', 'name', 'enabled', 'source', 'destination',
-            'original-source', 'original-destination', 'translated-source', 'translated-destination',
-            
-            # Identity (basic only)
-            'user', 'src_user_name', 'user_group',
-            
-            # Application (basic)
-            'application', 'appi_name', 'application_name',
-            
-            # THREAT DATA - CRITICAL (must keep for security analysis)
-            'attack_name', 'attack_id', 'severity', 'confidence_level',
-            'protection_name', 'malware_type', 'malware_action', 'threat_name',
-            'blade',  # Security blade (IPS, ABOT, URLF, etc.)
-            'bot_name', 'matched_patterns',  # Anti-Bot
-            'cveid', 'cve',  # Vulnerabilities
-            
-            # Drop/Reject reasons (troubleshooting)
-            'reason', 'reject_reason', 'drop_reason',
-            
-            # DNS/Web (for malware detection)
-            'dns_query', 'requested_hostname', 'url', 'uri',
-            
-            # File analysis
-            'file_name', 'file_type', 'verdict', 'file_hash', 'md5', 'sha256',
-            
-            # Object metadata (for name mapping)
-            'name', 'hostname', 'ipv4-address', 'type'
+            # Objects (for show commands)
+            'name', 'type', 'uid', 'rule-number', 'enabled',
+            'source', 'destination', 'track', 'comments',
+            'original-source', 'original-destination', 
+            'translated-source', 'translated-destination'
         }
+        
+        # Keywords that indicate security-relevant fields - keep ANY field containing these
+        SECURITY_KEYWORDS = {
+            'attack', 'threat', 'malware', 'virus', 'bot', 'ips', 
+            'severity', 'protection', 'cve', 'confidence',
+            'dns', 'url', 'file', 'hash', 'verdict', 'scan',
+            'reason', 'reject', 'drop', 'blade',
+            'vpn', 'encryption', 'dlp'
+        }
+        
+        # Fields to ALWAYS remove (truly useless metadata)
+        ALWAYS_REMOVE = {
+            'uid', 'rule_uid', 'layer_uid', 'sequencenum', 'logid',
+            'db_tag', 'id_generated_by_indexer', 'context_num',
+            'orig_log_server', 'orig_log_server_attr', 'marker',
+            '__interface', 'calc_desc', 'id', 'icon', 'color', 'domain',
+            'meta-info', 'available-actions', 'tags'
+        }
+        
+        def should_keep_field(field_name: str) -> bool:
+            """Determine if a field should be kept based on smart rules"""
+            field_lower = field_name.lower()
+            
+            # Always keep core fields
+            if field_name in ALWAYS_KEEP:
+                return True
+            
+            # Always remove useless metadata
+            if field_name in ALWAYS_REMOVE:
+                return False
+            
+            # Keep if contains security keywords
+            if any(keyword in field_lower for keyword in SECURITY_KEYWORDS):
+                return True
+            
+            # Keep if looks like important data (not internal metadata)
+            if not field_name.startswith('_') and not field_name.endswith('_attr'):
+                return True
+            
+            return False
         
         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] _filter_log_fields: Starting log field filtering...")
         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] data_collected has {len(data_collected)} servers: {list(data_collected.keys())}")
@@ -1599,15 +1619,14 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
                                                                         # DEBUG: Show actual fields in first item
                                                                         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] DEBUG: First item in '{field}' has fields: {list(item.keys())}")
                                                                     
-                                                                    # Keep only essential fields
-                                                                    filtered_item = {k: v for k, v in item.items() if k in ESSENTIAL_FIELDS}
+                                                                    # Smart filtering: Keep fields based on should_keep_field logic
+                                                                    filtered_item = {k: v for k, v in item.items() if should_keep_field(k)}
                                                                     
                                                                     # DEBUG: Show what was filtered out from first item
                                                                     if idx == 0 and len(item) > 0:
-                                                                        removed_fields = [k for k in item.keys() if k not in ESSENTIAL_FIELDS]
-                                                                        threat_fields_removed = [k for k in removed_fields if any(kw in k.lower() for kw in ['attack', 'threat', 'malware', 'severity', 'bot', 'ips', 'virus', 'protection'])]
-                                                                        if threat_fields_removed:
-                                                                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ⚠️ WARNING: Removed threat-related fields: {threat_fields_removed}")
+                                                                        removed_fields = [k for k in item.keys() if not should_keep_field(k)]
+                                                                        if removed_fields:
+                                                                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Removed metadata fields: {removed_fields}")
                                                                     
                                                                     if sample_filtered_fields == 0 and filtered_item:
                                                                         sample_filtered_fields = len(filtered_item)
