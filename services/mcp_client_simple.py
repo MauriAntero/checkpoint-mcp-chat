@@ -863,6 +863,24 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         elif any(kw in search_text for kw in ['https inspection', 'ssl inspection', 'tls inspection']):
                             blade_filter = 'blade:"HTTPS Inspection"'
                         
+                        # IP EXTRACTION FOR CONNECTIVITY/TROUBLESHOOTING QUERIES
+                        # Extract IPv4 addresses from query for traffic analysis and connectivity debugging
+                        ip_filter = None
+                        if any(kw in search_text for kw in ['connectivity', 'connection', 'issue', 'problem', 'fail', 'traffic', 'from', 'to']):
+                            # Extract all IPv4 addresses from query
+                            ip_pattern = r'\b(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b'
+                            ips = re.findall(ip_pattern, search_text)
+                            
+                            if ips:
+                                # Build filter: src:IP1 OR dst:IP1 OR src:IP2 OR dst:IP2
+                                ip_conditions = []
+                                for ip in ips:
+                                    ip_conditions.append(f'src:"{ip}"')
+                                    ip_conditions.append(f'dst:"{ip}"')
+                                ip_filter = ' OR '.join(ip_conditions)
+                                print(f"[MCP_DEBUG] [{_ts()}] 🔍 Extracted IPs for connectivity query: {ips}")
+                                print(f"[MCP_DEBUG] [{_ts()}] 🔍 IP filter: {ip_filter}")
+                        
                         # Create new_query dict AFTER max_logs adjustment from blade filters
                         new_query = {
                             "time-frame": time_frame,
@@ -871,13 +889,25 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         if log_type:
                             new_query["type"] = log_type
                         
-                        if blade_filter:
-                            # MCP server expects flat string - it handles CheckPoint API transformation internally
-                            new_query["filter"] = blade_filter
+                        # Combine blade_filter and ip_filter if both exist
+                        final_filter = None
+                        if blade_filter and ip_filter:
+                            # Both filters: combine with AND logic (blade AND (IP conditions))
+                            final_filter = f"({blade_filter}) AND ({ip_filter})"
+                            print(f"[MCP_DEBUG] [{_ts()}] Combined blade + IP filter: {final_filter}")
+                        elif blade_filter:
+                            final_filter = blade_filter
                             print(f"[MCP_DEBUG] [{_ts()}] Added blade filter: {blade_filter}")
+                        elif ip_filter:
+                            final_filter = ip_filter
+                            print(f"[MCP_DEBUG] [{_ts()}] Added IP filter: {ip_filter}")
+                        
+                        if final_filter:
+                            # MCP server expects flat string - it handles CheckPoint API transformation internally
+                            new_query["filter"] = final_filter
                             
                             # Mark VPN queries for special handling (verbose logs)
-                            if 'VPN' in blade_filter or 'IKE' in blade_filter:
+                            if blade_filter and ('VPN' in blade_filter or 'IKE' in blade_filter):
                                 args["_vpn_query"] = True  # Internal flag for pagination control
                         
                         args["new-query"] = new_query
