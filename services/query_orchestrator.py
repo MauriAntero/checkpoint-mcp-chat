@@ -2529,6 +2529,263 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] _filter_log_fields: Complete! Filtered {total_logs_filtered} total log/object items")
         return filtered_data
     
+    def analyze_iterative_troubleshooting(self, plan: Dict[str, Any], execution_results: Dict[str, Any], security_model: Optional[str] = None, max_iterations: int = 4) -> Tuple[str, str]:
+        """Iterative troubleshooting with smart escalation and context summarization
+        
+        Args:
+            plan: The execution plan
+            execution_results: Initial results (logs + rulebase)
+            security_model: Model to use for analysis
+            max_iterations: Maximum troubleshooting iterations (default: 4)
+            
+        Returns:
+            Tuple of (final_analysis, model_used)
+        """
+        print(f"[QueryOrchestrator] [{ datetime.now().strftime('%H:%M:%S.%f')[:-3]}] 🔄 Starting iterative troubleshooting (max {max_iterations} iterations)")
+        
+        user_query = plan.get('user_query', '')
+        iteration_history = []
+        current_data = execution_results.get('data_collected', {})
+        
+        for iteration in range(1, max_iterations + 1):
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] 🔍 Iteration {iteration}/{max_iterations}")
+            
+            # Build context for this iteration
+            if iteration == 1:
+                # First iteration: Full data (logs + rulebase)
+                context_data = current_data
+                iteration_context = "ITERATION 1 - INITIAL ANALYSIS (Logs + Firewall Rulebase)"
+            else:
+                # Subsequent iterations: Summary + new data only
+                context_data = self._build_summarized_context(iteration_history, current_data)
+                iteration_context = f"ITERATION {iteration} - DEEP DIVE ANALYSIS"
+            
+            # Build iterative analysis prompt
+            analysis_prompt = self._build_iterative_prompt(
+                user_query=user_query,
+                iteration=iteration,
+                max_iterations=max_iterations,
+                context_data=context_data,
+                iteration_history=iteration_history
+            )
+            
+            # Get LLM analysis for this iteration
+            client, model_name = self._get_client_for_model(security_model) if security_model else (self.ollama_client, self.ollama_client.security_model)
+            
+            try:
+                response = client.chat(
+                    model=model_name,
+                    messages=[{
+                        "role": "user",
+                        "content": analysis_prompt
+                    }],
+                    temperature=0.1  # Low temperature for deterministic troubleshooting
+                )
+                
+                # Parse structured response
+                analysis_result = self._parse_iterative_response(response)
+                
+                # Store iteration in history
+                iteration_history.append({
+                    "iteration": iteration,
+                    "findings": analysis_result.get("findings", ""),
+                    "data_analyzed": list(context_data.keys()) if isinstance(context_data, dict) else []
+                })
+                
+                # Check if diagnosis is complete
+                if analysis_result.get("root_cause_determined", False):
+                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ✅ Root cause determined in iteration {iteration}")
+                    final_report = self._build_final_troubleshooting_report(iteration_history, analysis_result)
+                    return (final_report, security_model or f"Ollama: {model_name}")
+                
+                # Check if LLM requests more data
+                next_steps = analysis_result.get("next_steps", {})
+                if next_steps.get("action") == "request_data":
+                    data_needed = next_steps.get("data_needed", "")
+                    commands = next_steps.get("specific_commands", [])
+                    
+                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] 📊 LLM requests: {data_needed}")
+                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] 🔧 Commands: {commands}")
+                    
+                    # Collect requested data
+                    new_data = self._collect_additional_data(data_needed, commands, plan)
+                    if new_data:
+                        current_data = new_data  # Replace with new data for next iteration
+                    else:
+                        # No new data available - finalize with current findings
+                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ⚠️ Requested data not available, finalizing with current findings")
+                        final_report = self._build_final_troubleshooting_report(iteration_history, analysis_result)
+                        return (final_report, security_model or f"Ollama: {model_name}")
+                else:
+                    # LLM doesn't need more data - finalize
+                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ✅ Analysis complete, no additional data needed")
+                    final_report = self._build_final_troubleshooting_report(iteration_history, analysis_result)
+                    return (final_report, security_model or f"Ollama: {model_name}")
+                    
+            except Exception as e:
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ❌ Error in iteration {iteration}: {e}")
+                # Fallback to standard analysis
+                return self.analyze_with_model(plan, execution_results, security_model)
+        
+        # Max iterations reached - finalize with current findings
+        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ⚠️ Max iterations ({max_iterations}) reached")
+        final_report = self._build_final_troubleshooting_report(iteration_history, {
+            "findings": "Analysis reached maximum iteration limit",
+            "recommendations": "Consider narrowing the scope or providing more specific criteria"
+        })
+        return (final_report, security_model or f"Ollama: {model_name}")
+    
+    def _build_summarized_context(self, iteration_history: list, new_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Build summarized context for subsequent iterations to avoid truncation"""
+        summary = {
+            "previous_findings_summary": [],
+            "new_data": new_data
+        }
+        
+        for iter_data in iteration_history:
+            summary["previous_findings_summary"].append({
+                "iteration": iter_data["iteration"],
+                "findings": iter_data["findings"][:500],  # Limit to 500 chars
+                "data_sources": iter_data["data_analyzed"]
+            })
+        
+        return summary
+    
+    def _build_iterative_prompt(self, user_query: str, iteration: int, max_iterations: int, context_data: Dict[str, Any], iteration_history: list) -> str:
+        """Build analysis prompt for iterative troubleshooting"""
+        
+        # Build previous findings section
+        previous_findings = ""
+        if iteration_history:
+            previous_findings = "\n\n## PREVIOUS FINDINGS:\n"
+            for iter_data in iteration_history:
+                previous_findings += f"\n**Iteration {iter_data['iteration']}:**\n{iter_data['findings']}\n"
+        
+        prompt = f"""
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║          🔧 ITERATIVE TROUBLESHOOTING - ITERATION {iteration}/{max_iterations} 🔧               ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+USER QUERY: "{user_query}"
+{previous_findings}
+
+## CURRENT DATA AVAILABLE:
+{json.dumps(context_data, indent=2)}
+
+## YOUR TASK:
+Analyze the data and provide a structured response in this EXACT JSON format:
+
+{{
+  "findings": "What you discovered in this iteration (be specific, cite evidence)",
+  "root_cause_determined": true/false,
+  "root_cause": "The definitive root cause if determined, otherwise null",
+  "next_steps": {{
+    "action": "request_data" or "finalize",
+    "data_needed": "routing_info" or "gateway_diagnostics" or "packet_capture" or null,
+    "specific_commands": ["fw tab -t connections", "cpstat fw"] or [],
+    "reason": "Why you need this additional data"
+  }},
+  "recommendations": "Actionable steps to resolve the issue"
+}}
+
+## ESCALATION LOGIC:
+- **Iteration 1**: Analyze logs + firewall rules. If cause is clear (policy drop) → set root_cause_determined=true
+- **Iteration 2+**: If logs show accepted but failing → request routing_info or gateway_diagnostics
+- **Only escalate** if current data is insufficient for diagnosis
+
+## RULES:
+1. Set root_cause_determined=true ONLY when you have definitive evidence
+2. If you need more data, specify EXACTLY what commands to run
+3. If {iteration} == {max_iterations}, you MUST finalize with current findings
+4. Cite specific log entries, rule numbers, or metrics in your findings
+
+RESPOND WITH VALID JSON ONLY (no markdown, no explanations outside JSON):
+"""
+        return prompt
+    
+    def _parse_iterative_response(self, response: str) -> Dict[str, Any]:
+        """Parse LLM's structured JSON response"""
+        try:
+            # Extract JSON from response (handle markdown code blocks)
+            import re
+            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                # Try to find raw JSON
+                json_match = re.search(r'\{.*\}', response, re.DOTALL)
+                json_str = json_match.group(0) if json_match else response
+            
+            return json.loads(json_str)
+        except json.JSONDecodeError as e:
+            print(f"[QueryOrchestrator] Failed to parse iterative response: {e}")
+            # Return safe fallback
+            return {
+                "findings": response[:1000],  # Use first 1000 chars as findings
+                "root_cause_determined": False,
+                "next_steps": {"action": "finalize"}
+            }
+    
+    def _collect_additional_data(self, data_needed: str, commands: list, plan: Dict[str, Any]) -> Dict[str, Any]:
+        """Collect additional data based on LLM's request"""
+        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Collecting additional data: {data_needed}")
+        
+        if not self.gateway_script_executor:
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Gateway script executor not available")
+            return {}
+        
+        # Map data_needed to MCP server queries
+        additional_results = {}
+        
+        if data_needed == "gateway_diagnostics" and commands:
+            # Execute gateway commands
+            run_script_items = [f"run_script:{cmd}" for cmd in commands]
+            plan_copy = plan.copy()
+            plan_copy["data_to_fetch"] = run_script_items
+            
+            # Execute via MCP client
+            exec_results = self.execute_plan(plan_copy, user_query=plan.get("user_query"))
+            additional_results = exec_results.get("data_collected", {})
+        
+        elif data_needed == "routing_info":
+            # Get routing table, interfaces
+            commands = ["netstat -rn", "ifconfig -a", "ip route show"]
+            run_script_items = [f"run_script:{cmd}" for cmd in commands]
+            plan_copy = plan.copy()
+            plan_copy["data_to_fetch"] = run_script_items
+            
+            exec_results = self.execute_plan(plan_copy, user_query=plan.get("user_query"))
+            additional_results = exec_results.get("data_collected", {})
+        
+        return additional_results
+    
+    def _build_final_troubleshooting_report(self, iteration_history: list, final_result: Dict[str, Any]) -> str:
+        """Build comprehensive troubleshooting report from all iterations"""
+        
+        report = "# Troubleshooting Analysis Report\n\n"
+        
+        # Add iteration summary
+        report += "## Analysis Process:\n"
+        for iter_data in iteration_history:
+            report += f"\n### Iteration {iter_data['iteration']}:\n"
+            report += f"**Data Sources**: {', '.join(iter_data['data_analyzed'])}\n\n"
+            report += f"**Findings**: {iter_data['findings']}\n"
+        
+        # Add final diagnosis
+        report += "\n## Final Diagnosis:\n\n"
+        if final_result.get("root_cause_determined"):
+            report += f"**Root Cause**: {final_result.get('root_cause', 'See findings above')}\n\n"
+        else:
+            report += "**Status**: Analysis completed with available data\n\n"
+        
+        report += f"**Findings**: {final_result.get('findings', 'See iteration details above')}\n\n"
+        
+        # Add recommendations
+        if final_result.get("recommendations"):
+            report += f"## Recommendations:\n\n{final_result['recommendations']}\n"
+        
+        return report
+    
     def analyze_with_model(self, plan: Dict[str, Any], execution_results: Dict[str, Any], security_model: Optional[str] = None) -> Tuple[str, str]:
         """Send execution results to the appropriate model for final analysis
         
@@ -3168,7 +3425,14 @@ The AI model failed to analyze your query due to an API issue.
         if self.progress_callback:
             self.progress_callback("🔍 Analyzing results...")
         
-        final_analysis, model_used = self.analyze_with_model(plan, execution_results, security_model)
+        # Check if this is a troubleshooting query - use iterative analysis
+        is_troubleshooting = self._detect_troubleshooting_intent(user_query)
+        
+        if is_troubleshooting:
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Using iterative troubleshooting analysis")
+            final_analysis, model_used = self.analyze_iterative_troubleshooting(plan, execution_results, security_model)
+        else:
+            final_analysis, model_used = self.analyze_with_model(plan, execution_results, security_model)
         
         if self.progress_callback:
             self.progress_callback("✅ Analysis complete", state="complete")
