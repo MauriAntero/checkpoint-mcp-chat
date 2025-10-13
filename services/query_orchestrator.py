@@ -3227,18 +3227,26 @@ RESPOND WITH VALID JSON ONLY (no markdown, no explanations outside JSON):
         timeframe_hours = 24.0
         if self.session_context.get('last_timeframe'):
             timeframe_str = self.session_context.get('last_timeframe', 'last-24-hours')
-            # Parse timeframe string (e.g., "last-7-days", "last-30-days", "6-hours")
-            if 'hour' in timeframe_str:
-                try:
-                    timeframe_hours = float(timeframe_str.split('-')[0].replace('hours', '').replace('hour', '').strip())
-                except:
+            # Parse timeframe string (e.g., "last-7-days", "last-30-days", "last-72-hours", "6-hours")
+            try:
+                import re
+                # Extract numeric value from timeframe string
+                match = re.search(r'(\d+)', timeframe_str)
+                if match:
+                    numeric_value = float(match.group(1))
+                    if 'hour' in timeframe_str:
+                        timeframe_hours = numeric_value
+                    elif 'day' in timeframe_str:
+                        timeframe_hours = numeric_value * 24
+                    else:
+                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ⚠️ Unknown timeframe unit in '{timeframe_str}', defaulting to 24h")
+                        timeframe_hours = 24.0
+                else:
+                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ⚠️ No numeric value in timeframe '{timeframe_str}', defaulting to 24h")
                     timeframe_hours = 24.0
-            elif 'day' in timeframe_str:
-                try:
-                    days = float(timeframe_str.split('-')[1].replace('days', '').replace('day', '').strip())
-                    timeframe_hours = days * 24
-                except:
-                    timeframe_hours = 24.0
+            except Exception as e:
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ⚠️ Failed to parse timeframe '{timeframe_str}': {e}, defaulting to 24h")
+                timeframe_hours = 24.0
         
         # Apply intelligent temporal log sampling to reduce volume while preserving analysis coherence
         data_collected = self._apply_smart_log_sampling(data_collected, timeframe_hours=timeframe_hours)
