@@ -3516,24 +3516,37 @@ TROUBLESHOOTING ROOT CAUSE ANALYSIS REQUIREMENTS:
    ✓ Check NAT translations (source/destination IP/port modifications)
    ✓ Identify connection outcomes and patterns
 
-2. SECURITY POLICY ENFORCEMENT ANALYSIS (FOCUS ON DROP/BLOCK LOGS):
-   ✓ **CRITICAL: Use ONLY the ACCESS RULEBASE (FIREWALL RULES) for analysis**
-     - The data contains both ACCESS RULEBASE and NAT RULEBASE
-     - **ACCESS RULEBASE** = Firewall security rules that Drop/Accept traffic (labeled "ACCESS RULEBASE (FIREWALL RULES)")
-     - **NAT RULEBASE** = Network address translation rules (labeled "NAT RULEBASE") - DO NOT use for firewall analysis
-     - When matching log 'rule' field to rulebase, use ONLY the ACCESS RULEBASE
+2. SECURITY POLICY ENFORCEMENT ANALYSIS - MANDATORY STEP-BY-STEP WORKFLOW:
    
-   ✓ **STEP 1: Filter for action=Drop/Block/Reject logs ONLY - these show the connectivity issue**
-     - Example: If you see logs with action=Drop and rule=1, analyze rule 1 from ACCESS RULEBASE
-     - Example: If you see logs with action=Accept and rule=4, IGNORE these initially (they show working traffic)
+   **🚨 FOLLOW THESE STEPS EXACTLY IN ORDER - DO NOT SKIP ANY STEP 🚨**
    
-   ✓ **STEP 2: From the DROP logs, identify which rule number processed them**
-     - Look at the 'rule' field in logs where action=Drop/Block/Reject
-     - Match LOG 'rule' field NUMBER to ACCESS RULEBASE 'rule-number' (e.g., DROP log shows 'rule: 1' → analyze ACCESS rulebase rule-number: 1)
-     - **DO NOT match to NAT rulebase** - NAT rules don't control Drop/Accept actions
-   ✓ **STEP 3: Verify the action using LOG data, not rulebase data**
-     - Use LOG 'action' field (Drop/Accept/Reject) as the source of truth
-     - Ignore rulebase action field (may show incorrect values like 'Policy Targets' due to MCP server bug)
+   **STEP 1: Extract ONLY the DROP/BLOCK/REJECT logs from the data**
+   - Go through the logs and create a list containing ONLY logs where action=Drop, action=Block, or action=Reject
+   - IGNORE all logs where action=Accept (these show working traffic, not the problem)
+   - Write down how many Drop logs you found
+   
+   **STEP 2: Extract the rule number from those DROP logs**
+   - Look at the 'rule' field in the DROP logs you extracted in Step 1
+   - Write down which rule number(s) appear in the DROP logs
+   - Example: If DROP logs show rule=1, then rule 1 is dropping traffic
+   - Example: If DROP logs show rule=4, then rule 4 is dropping traffic
+   - **ONLY use the rule number from DROP logs, NOT from Accept logs**
+   
+   **STEP 3: Find that rule in the ACCESS RULEBASE (FIREWALL RULES)**
+   - The data contains both ACCESS RULEBASE and NAT RULEBASE
+   - **ACCESS RULEBASE** is labeled "═══ ACCESS RULEBASE (FIREWALL RULES) ═══"
+   - **NAT RULEBASE** is labeled "═══ NAT RULEBASE ═══" - IGNORE this one
+   - Find the rule with the rule-number that matches the DROP log rule number from Step 2
+   - Example: If Step 2 found rule=1 in DROP logs, find rule-number: 1 in ACCESS RULEBASE
+   
+   **STEP 4: Analyze WHY that rule dropped the traffic**
+   - Look at the rule's source, destination, and service fields
+   - Service categories like 'Spyware / Malicious Sites' mean the destination IP is categorized as malicious
+   - Explain: "Destination IP X.X.X.X is blocked because it's categorized as [category] by Check Point"
+   
+   **STEP 5: Verify the action from LOG data**
+   - The ACCESS RULEBASE action field shows "Policy Targets" (MCP server bug)
+   - Use the LOG action field (Drop/Accept/Reject) as the source of truth
    ✓ Which security blade enforced the action? (Firewall, Application Control, IPS, URL Filtering, etc.)
    ✓ WHY was traffic dropped/blocked? Check rule's source, destination, service fields AND service categories
      **IMPORTANT: Service categories like 'Spyware / Malicious Sites' are DESTINATION-based blocking rules**
@@ -3546,20 +3559,29 @@ TROUBLESHOOTING ROOT CAUSE ANALYSIS REQUIREMENTS:
    ✓ Is this expected security enforcement or misconfiguration?
    
    **🚨 CRITICAL OUTPUT REQUIREMENT 🚨**
-   ✓ **Display the DROP rule from ACCESS RULEBASE in your response, not NAT rules**
-     - If DROP logs show rule=1, display rule 1 from **ACCESS RULEBASE (FIREWALL RULES)** section
-     - Do NOT use NAT rulebase - it doesn't control Drop/Accept actions
-     - If ACCEPT logs show rule=4, do NOT display rule 4 (it's not causing the issue)
-   ✓ **Copy the exact DROP rule row from the ACCESS RULEBASE and show it to the user**
-   ✓ **Use the Action from the LOG (Drop), not from the rulebase (Policy Targets)**
-   ✓ Example format when traffic is dropped by rule 1:
-     ```
-     **Matching Firewall Rule (Rule 1 - CAUSED THE DROP):**
-     [Copy the exact table header and rule row from the ACCESS RULEBASE (FIREWALL RULES) section above]
-     
-     Note: Action=Drop taken from log data (rulebase shows incorrect "Policy Targets")
-     ```
-   ✓ **This rule display is MANDATORY for troubleshooting analysis - users need to see the exact DROP rule configuration**
+   ✓ **YOU MUST display the DROP rule from ACCESS RULEBASE in your response**
+   
+   **EXACT STEPS TO FOLLOW:**
+   1. Identify which rule number appears in the DROP logs (from Step 2 above)
+   2. Find that EXACT rule number in the ACCESS RULEBASE (FIREWALL RULES) section
+   3. Copy the table header AND that rule's row from the ACCESS RULEBASE
+   4. Display it in your response
+   
+   **EXAMPLES:**
+   - If DROP logs show rule=1 → Display rule 1 from ACCESS RULEBASE
+   - If DROP logs show rule=2 → Display rule 2 from ACCESS RULEBASE
+   - DO NOT display Accept rules (they're not causing the problem)
+   - DO NOT use NAT rulebase (it doesn't control Drop/Accept)
+   
+   **FORMAT:**
+   ```
+   **Matching Firewall Rule (Rule X - CAUSED THE DROP):**
+   [Copy the exact table header and rule row from ACCESS RULEBASE (FIREWALL RULES) section]
+   
+   Note: Action=Drop from log data (rulebase shows "Policy Targets" due to MCP bug)
+   ```
+   
+   ✓ **This rule display is MANDATORY - without it, the admin cannot see why traffic was blocked**
 
 3. NETWORK-LEVEL ROOT CAUSES (IF POLICY IS NOT THE ISSUE):
    ✓ Routing problems:
@@ -3643,21 +3665,33 @@ TROUBLESHOOTING ROOT CAUSE ANALYSIS REQUIREMENTS:
    ✓ Always cite specific evidence from logs, rulebase, and diagnostics
    ✓ Report the complete diagnosis chain with supporting data
    ✓ If no traffic found: "No traffic found for specified IPs/timeframe"
-   ✓ **🚨 MANDATORY: If traffic dropped/blocked, you MUST display the DROP rule from ACCESS RULEBASE**
-     - First, identify DROP logs: filter for action=Drop/Block/Reject
-     - Then, get the rule number from those DROP logs (e.g., rule=1)
-     - Then, find that rule in the **ACCESS RULEBASE (FIREWALL RULES)** section (NOT NAT rulebase)
-     - Copy the table header AND that rule's row from the ACCESS RULEBASE
-     - Show it in markdown table format so user can see the rule configuration
-     - DO NOT show Accept rules when troubleshooting drops (they're not the problem)
-     - DO NOT use NAT rulebase - it doesn't control security policy
-     - Example when DROP logs show rule=1:
-     ```
-     **Matching Firewall Rule (Rule 1 - CAUSED THE DROP):**
-     [Copy the exact table header and rule row from the ACCESS RULEBASE (FIREWALL RULES) section above]
-     
-     Note: Action=Drop from log data (rulebase may show "Policy Targets" due to MCP server bug)
-     ```
+   ✓ **🚨 MANDATORY: You MUST display the DROP rule from ACCESS RULEBASE in your response 🚨**
+   
+   **STEP-BY-STEP RULE DISPLAY PROCESS:**
+   
+   STEP A: Filter logs for action=Drop/Block/Reject ONLY
+   STEP B: Extract the 'rule' field value from those DROP logs (e.g., if logs show rule: 1, then it's rule 1)
+   STEP C: Go to the ACCESS RULEBASE (FIREWALL RULES) section in the data above
+   STEP D: Find the rule with rule-number matching the value from Step B
+   STEP E: Copy that rule's table header and row
+   STEP F: Display it in your response
+   
+   **CRITICAL RULES:**
+   - Use ONLY the rule number from DROP logs, NOT Accept logs
+   - Use ONLY the ACCESS RULEBASE, NOT NAT rulebase
+   - Display the EXACT rule that appears in DROP logs
+   
+   **EXAMPLE - If DROP logs show rule=1:**
+   ```
+   **Matching Firewall Rule (Rule 1 - CAUSED THE DROP):**
+   | No. | Name | Source | Destination | Service | Action | Track |
+   |-----|------|--------|-------------|---------|--------|-------|
+   | 1 | - | sisaverkko | Any | Spyware / Malicious Sites | Drop | Log |
+   
+   Note: Action=Drop from log data (rulebase shows "Policy Targets" due to MCP bug)
+   ```
+   
+   **Without this rule display, the admin cannot understand why traffic was blocked!**
    ✓ If network-level: Show routing/interface/NAT evidence
    ✓ If gateway-level: Include resource/HA/performance metrics
    ✓ Provide actionable recommendations with specific commands or config changes
