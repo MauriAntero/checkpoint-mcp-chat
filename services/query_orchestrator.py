@@ -3501,11 +3501,28 @@ TROUBLESHOOTING ROOT CAUSE ANALYSIS REQUIREMENTS:
      - Interface statistics (cpstat, ifconfig)
      - Resource monitoring (cpview, top, free)
 
-6. REPORTING REQUIREMENTS:
+6. TEMPORAL ANALYSIS (CRITICAL - CHECK TIMESTAMPS):
+   ✓ **Analyze timestamp patterns to distinguish historical vs current state**
+   ✓ Group logs by time periods: "Earlier today" vs "Currently" vs "Recent activity"
+   ✓ Identify if issues are:
+     - RESOLVED: "Traffic was blocked earlier (timestamp X) but is now working (timestamp Y)"
+     - ONGOING: "Traffic continues to be dropped (first seen at X, last seen at Y)"
+     - INTERMITTENT: "Traffic alternates between Drop and Accept"
+   ✓ **ALWAYS report the current state separately from historical issues**
+   ✓ Example: "Earlier at 10:30 AM traffic was dropped by rule 5, but as of 2:15 PM connections are being accepted"
+
+7. REPORTING REQUIREMENTS:
    ✓ Always cite specific evidence from logs, rulebase, and diagnostics
    ✓ Report the complete diagnosis chain with supporting data
    ✓ If no traffic found: "No traffic found for specified IPs/timeframe"
-   ✓ If traffic dropped: Explain WHERE (layer) and WHY (root cause)
+   ✓ **If traffic dropped: Extract and display the matching firewall rule in table format**
+     Example format:
+     ```
+     **Matching Firewall Rule (caused the drop):**
+     | No. | Name | Source | Destination | Service | Action | Track |
+     |-----|------|--------|-------------|---------|--------|-------|
+     | [rule_number] | [rule_name] | [source] | [destination] | [service] | [action_from_logs] | [track] |
+     ```
    ✓ If network-level: Show routing/interface/NAT evidence
    ✓ If gateway-level: Include resource/HA/performance metrics
    ✓ Provide actionable recommendations with specific commands or config changes
