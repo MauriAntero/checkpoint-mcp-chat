@@ -126,14 +126,20 @@ class NetworkContextService:
                 ['show_networks']
             )
             
-            # Parse network objects
+            # Parse network objects from tool_results
             if networks_result and 'tool_results' in networks_result:
                 for tool_result in networks_result['tool_results']:
                     if 'result' in tool_result and 'content' in tool_result['result']:
                         for item in tool_result['result']['content']:
                             if isinstance(item, dict) and item.get('type') == 'text':
                                 try:
-                                    data = json.loads(item.get('text', '{}'))
+                                    text_data = item.get('text', '{}')
+                                    # Handle both string JSON and already-parsed dict
+                                    if isinstance(text_data, str):
+                                        data = json.loads(text_data)
+                                    else:
+                                        data = text_data
+                                    
                                     if 'objects' in data:
                                         for obj in data['objects']:
                                             name = obj.get('name', '')
@@ -147,8 +153,9 @@ class NetworkContextService:
                                                 # Classify as internal if RFC1918
                                                 if self._is_rfc1918(cidr):
                                                     internal_networks.append(cidr)
-                                except:
-                                    pass
+                                                    print(f"[NetworkContext] Found internal network: {cidr} ({name})")
+                                except Exception as e:
+                                    print(f"[NetworkContext] Error parsing network object: {e}")
             
             # Query 2: Get VPN communities to identify partner networks
             print(f"[NetworkContext] Querying VPN communities...")
@@ -220,20 +227,31 @@ class NetworkContextService:
                     ['show_gateways_and_servers']
                 )
                 
-                # Extract first gateway name
-                if mgmt_result and 'tool_results' in mgmt_result:
-                    for tool_result in mgmt_result['tool_results']:
-                        if 'result' in tool_result and 'content' in tool_result['result']:
-                            for item in tool_result['result']['content']:
-                                if isinstance(item, dict) and item.get('type') == 'text':
-                                    try:
-                                        data = json.loads(item.get('text', '{}'))
-                                        if 'objects' in data and len(data['objects']) > 0:
-                                            gateway_name = data['objects'][0].get('name')
-                                            print(f"[NetworkContext] Discovered gateway: {gateway_name}")
-                                            break
-                                    except:
-                                        pass
+                # Extract first gateway name from discovered_resources (preferred) or tool_results
+                if mgmt_result:
+                    # First try: discovered_resources (contains parsed gateway data)
+                    if 'discovered_resources' in mgmt_result and 'show_gateways_and_servers' in mgmt_result['discovered_resources']:
+                        gateways = mgmt_result['discovered_resources']['show_gateways_and_servers']
+                        for gw in gateways:
+                            if gw.get('type') == 'gateway':
+                                gateway_name = gw.get('name')
+                                print(f"[NetworkContext] Discovered gateway from discovered_resources: {gateway_name}")
+                                break
+                    
+                    # Fallback: Parse from tool_results JSON
+                    if not gateway_name and 'tool_results' in mgmt_result:
+                        for tool_result in mgmt_result['tool_results']:
+                            if 'result' in tool_result and 'content' in tool_result['result']:
+                                for item in tool_result['result']['content']:
+                                    if isinstance(item, dict) and item.get('type') == 'text':
+                                        try:
+                                            data = json.loads(item.get('text', '{}'))
+                                            if 'objects' in data and len(data['objects']) > 0:
+                                                gateway_name = data['objects'][0].get('name')
+                                                print(f"[NetworkContext] Discovered gateway from tool_results: {gateway_name}")
+                                                break
+                                        except:
+                                            pass
             
             # If still no gateway_name, skip routing discovery
             if not gateway_name:
