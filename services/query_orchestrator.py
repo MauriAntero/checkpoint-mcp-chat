@@ -742,7 +742,9 @@ Technical Execution Plan:"""
             # Threat/security keywords
             'threat', 'threats', 'suspicious', 'attack', 'attacks', 'malicious', 'intrusion', 'incident', 'incidents',
             # Traffic/connection keywords (specific data context)
-            'traffic', 'connection', 'connections', 'session', 'sessions', 'flow', 'flows',
+            'traffic', 'connection', 'connections', 'connectivity', 'session', 'sessions', 'flow', 'flows',
+            # Troubleshooting/issue keywords
+            'issue', 'problem', 'fail', 'failure', 'error', 'timeout', 'unable', 'cannot', 'not working',
             # Action keywords (security-related)
             'dropped', 'blocked', 'rejected', 'denied', 'accepted', 'allowed',
             # Security investigation keywords
