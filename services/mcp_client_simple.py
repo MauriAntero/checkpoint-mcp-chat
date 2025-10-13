@@ -830,10 +830,27 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         # CRITICAL: CheckPoint API requires filter nested under filter.search-expression
                         blade_filter = None
                         
+                        # CRITICAL: Troubleshooting queries need ALL enforcement blade logs to identify root cause
+                        # Traffic can be dropped by ANY blade (Firewall, Application Control, URL Filtering, IPS, DLP, Threat Emulation, etc.)
+                        # CHECK TROUBLESHOOTING FIRST before VPN-specific filters to ensure comprehensive blade coverage
+                        if any(kw in search_text for kw in ['troubleshoot', 'troubleshooting', 'connectivity issue', 
+                                                               'connection issue', 'cannot connect', 'connection fail',
+                                                               'investigate', 'root cause', 'why drop', 'why block',
+                                                               'blocked', 'dropping']):
+                            # Include ALL security enforcement blades for comprehensive troubleshooting
+                            # This ensures we capture drops from ANY blade (App Control, URL Filtering, IPS, DLP, Threat Emulation, etc.)
+                            blade_filter = (
+                                'blade:"Firewall" OR blade:"Application Control" OR blade:"URL Filtering" OR '
+                                'blade:"IPS" OR blade:"Threat Prevention" OR blade:"Anti-Bot" OR blade:"Anti-Virus" OR '
+                                'blade:"Identity Awareness" OR blade:"HTTPS Inspection" OR blade:"Content Awareness" OR '
+                                'blade:"DLP" OR blade:"Threat Emulation" OR '
+                                'product_family:"Network" OR product_family:"Access" OR product_family:"Threat"'
+                            )
+                            print(f"[MCP_DEBUG] [{_ts()}] 🔧 TROUBLESHOOTING query detected - applying comprehensive blade filter for ALL enforcement blades (including Application Control, DLP, Threat Emulation)")
                         # VPN connection logs - DISTINGUISH client vs site-to-site
                         # VPN CLIENT connections → appear in regular traffic logs (no blade filter needed)
                         # VPN SITE-TO-SITE → appear in VPN blade logs (needs blade filter)
-                        if 'vpn client' in search_text or 'remote access vpn' in search_text:
+                        elif 'vpn client' in search_text or 'remote access vpn' in search_text:
                             # VPN client traffic appears in regular firewall logs - NO blade filter
                             # Just track connection data normally
                             print(f"[MCP_DEBUG] [{_ts()}] 🔍 VPN CLIENT query detected - using regular traffic logs (no VPN blade filter)")
@@ -862,22 +879,6 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             blade_filter = 'blade:"Content Awareness"'
                         elif any(kw in search_text for kw in ['https inspection', 'ssl inspection', 'tls inspection']):
                             blade_filter = 'blade:"HTTPS Inspection"'
-                        # CRITICAL: Troubleshooting queries need ALL enforcement blade logs to identify root cause
-                        # Traffic can be dropped by ANY blade (Firewall, Application Control, URL Filtering, IPS, DLP, Threat Emulation, etc.)
-                        elif any(kw in search_text for kw in ['troubleshoot', 'troubleshooting', 'connectivity issue', 
-                                                               'connection issue', 'cannot connect', 'connection fail',
-                                                               'investigate', 'root cause', 'why drop', 'why block',
-                                                               'blocked', 'dropping']):
-                            # Include ALL security enforcement blades for comprehensive troubleshooting
-                            # This ensures we capture drops from ANY blade (App Control, URL Filtering, IPS, DLP, Threat Emulation, etc.)
-                            blade_filter = (
-                                'blade:"Firewall" OR blade:"Application Control" OR blade:"URL Filtering" OR '
-                                'blade:"IPS" OR blade:"Threat Prevention" OR blade:"Anti-Bot" OR blade:"Anti-Virus" OR '
-                                'blade:"Identity Awareness" OR blade:"HTTPS Inspection" OR blade:"Content Awareness" OR '
-                                'blade:"DLP" OR blade:"Threat Emulation" OR '
-                                'product_family:"Network" OR product_family:"Access" OR product_family:"Threat"'
-                            )
-                            print(f"[MCP_DEBUG] [{_ts()}] 🔧 TROUBLESHOOTING query detected - applying comprehensive blade filter for ALL enforcement blades (including DLP, Threat Emulation)")
                         
                         # COMPREHENSIVE FILTER EXTRACTION FOR LOG QUERIES
                         # Extract multiple filter types from user query to build precise CheckPoint API filters
@@ -1052,17 +1053,25 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             match = re.search(r'\b(?:on|for|in|from|at)\s+([a-zA-Z0-9][a-zA-Z0-9._-]+)', user_query, re.IGNORECASE)
                             if match:
                                 potential_gateway = match.group(1)
-                                # Exclude common words
-                                if potential_gateway.lower() not in ['the', 'this', 'that', 'my', 'our', 'all', 'each', 'every', 'gateway', 'firewall']:
+                                # Exclude common words AND IP addresses (IPs should not be used as gateway names)
+                                if (potential_gateway.lower() not in ['the', 'this', 'that', 'my', 'our', 'all', 'each', 'every', 'gateway', 'firewall'] 
+                                    and not is_ip_address(potential_gateway)):
                                     args['target_gateway'] = potential_gateway
                                     print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from user query: {args['target_gateway']}")
+                                elif is_ip_address(potential_gateway):
+                                    print(f"[MCP_DEBUG] [{_ts()}] ⚠️ Skipped IP address from query pattern: {potential_gateway} (not a valid gateway name)")
                             
                             # Pattern 2: Direct gateway name mention (cp-gw, gw-01, firewall-dmz, etc.)
                             if 'target_gateway' not in args:
                                 match = re.search(r'\b([a-zA-Z0-9]+[-_][a-zA-Z0-9][a-zA-Z0-9._-]*)', user_query)
                                 if match:
-                                    args['target_gateway'] = match.group(1)
-                                    print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from identifier pattern: {args['target_gateway']}")
+                                    potential_gateway = match.group(1)
+                                    # Validate it's not an IP address
+                                    if not is_ip_address(potential_gateway):
+                                        args['target_gateway'] = potential_gateway
+                                        print(f"[MCP_DEBUG] [{_ts()}] Auto-filled target_gateway from identifier pattern: {args['target_gateway']}")
+                                    else:
+                                        print(f"[MCP_DEBUG] [{_ts()}] ⚠️ Skipped IP address from identifier pattern: {potential_gateway}")
                         
                         # Priority 4: Fallback to GATEWAY_HOST environment variable
                         # In discovery mode, try to resolve gateway IP→name from directory before skipping

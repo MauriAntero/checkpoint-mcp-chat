@@ -2329,6 +2329,10 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             # Identity/Application  
             'user', 'application',
             
+            # Application Control blade fields (CRITICAL for troubleshooting app-level issues)
+            'appi_name', 'app_desc', 'app_id', 'app_sig_name', 'app_category', 
+            'app_properties', 'app_risk', 'matched_category',
+            
             # Objects (for show commands)
             'name', 'type', 'uid', 'rule-number', 'enabled',
             'source', 'destination', 'track', 'comments',
