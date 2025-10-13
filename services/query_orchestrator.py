@@ -2416,24 +2416,39 @@ Errors: {', '.join(errors) if errors else 'None'}{warnings_text}
         
         # Detect query intent to provide appropriate analysis context
         task_type_header = ""
-        # CONSERVATIVE troubleshooting detection - only match explicit connectivity/troubleshooting phrases
-        # Avoid false positives by requiring clear troubleshooting or connectivity context
-        troubleshooting_keywords = [
-            # Explicit troubleshooting action verbs (unambiguous)
+        # Troubleshooting detection using import re for pattern matching
+        import re
+        
+        query_lower = user_query.lower()
+        
+        # Exact phrase matches (high confidence troubleshooting indicators)
+        exact_troubleshooting_phrases = [
             'troubleshoot',
-            # Explicit connectivity failures (must mention connection/connectivity)
             'connectivity issue', 'connectivity problem', 'connectivity fail',
             'connection issue', 'connection problem', 'connection fail',
             'cannot connect', 'unable to connect', 'can\'t connect', 'not connecting',
             'cannot reach', 'unable to reach', 'not reachable',
             'connection refused', 'connection timeout', 'connection reset',
-            # Network/VPN/tunnel specific failures
             'vpn down', 'vpn not working', 'vpn fail', 'vpn issue',
             'tunnel down', 'tunnel not working', 'tunnel fail', 'tunnel issue',
             'network down', 'network not working', 'network fail', 'network issue',
             'link down', 'link not working', 'link fail'
         ]
-        is_troubleshooting = any(kw in user_query.lower() for kw in troubleshooting_keywords)
+        
+        # Pattern-based detection for question-style troubleshooting
+        # Requires BOTH issue indicator (can't/cannot/unable) AND connectivity noun (vpn/tunnel/network/connection)
+        # to avoid false positives like "Why can't we access threat logs?"
+        troubleshooting_patterns = [
+            # "Why can't users connect to VPN?" "Why can't X reach the tunnel?"
+            r'\bwhy\s+(?:can\'t|cannot|unable)\s+.{0,50}?\b(?:connect|reach)\s+(?:to\s+)?(?:vpn|tunnel|network|gateway|server)',
+            # "Users can't connect to VPN" "Unable to reach network"
+            r'\b(?:can\'t|cannot|unable)\s+.{0,30}?\b(?:connect|reach)\s+(?:to\s+)?(?:vpn|tunnel|network|gateway|server)',
+        ]
+        
+        exact_match = any(phrase in query_lower for phrase in exact_troubleshooting_phrases)
+        pattern_match = any(re.search(pattern, query_lower) for pattern in troubleshooting_patterns)
+        
+        is_troubleshooting = exact_match or pattern_match
         
         if is_troubleshooting:
             # CRITICAL: Make troubleshooting intent EXTREMELY EXPLICIT at the very top
