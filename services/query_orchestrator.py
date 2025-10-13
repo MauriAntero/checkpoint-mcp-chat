@@ -592,6 +592,16 @@ TOOL NAMING RULES:
 - For quantum-management: Use "show_access_rulebase", "show_nat_rulebase", "show_hosts", "show_networks"
 - NEVER use CLI commands like "fw log" or "cpstat"
 
+VPN TRAFFIC DISTINCTION (CRITICAL):
+- VPN CLIENT connections → Regular traffic logs (no special blade filter needed) - appears in normal firewall logs
+- VPN SITE-TO-SITE connections → VPN blade logs (requires VPN blade filter) - appears in VPN-specific logs
+- For connectivity troubleshooting: Consider BOTH logs AND gateway diagnostic tools (run_script) when available
+
+CONNECTIVITY TROUBLESHOOTING GUIDANCE:
+- For connection/connectivity issues: Combine management-logs (traffic analysis) with gateway diagnostic tools
+- Gateway diagnostics can reveal routing, interface, or tunnel issues not visible in logs alone
+- Example tools: Check routing tables, interface status, VPN tunnel state, connection tracking
+
 Return a JSON execution plan:
 {{
     "understanding": "{primary_goal}",

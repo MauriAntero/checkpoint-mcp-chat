@@ -804,6 +804,8 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             time_frame = "last-7-days"  # Only fixed time frame available (this-week is variable 1-7 days)
                         elif any(pattern in search_text for pattern in ['24 hour', 'last 24 hours', 'last-24-hours', 'past 24 hours']):
                             time_frame = "last-24-hours"
+                        elif any(pattern in search_text for pattern in ['6 hour', 'last 6 hours', 'last-6-hours', 'past 6 hours']):
+                            time_frame = "last-24-hours"  # Use 24h frame, then filter in post-processing
                         elif any(pattern in search_text for pattern in ['last hour', 'past hour', 'last 60 min']):
                             time_frame = "last-hour"
                         
@@ -824,13 +826,20 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         # CRITICAL: CheckPoint API requires filter nested under filter.search-expression
                         blade_filter = None
                         
-                        # VPN connection logs - filter by service or blade
-                        if any(kw in search_text for kw in ['vpn', 'vpn tunnel', 'vpn connection', 'remote access', 
-                                                             'site-to-site', 'ipsec', 'ikev2', 'ikev1']):
-                            # VPN logs can be filtered by service (VPN) or specific VPN-related attributes
+                        # VPN connection logs - DISTINGUISH client vs site-to-site
+                        # VPN CLIENT connections → appear in regular traffic logs (no blade filter needed)
+                        # VPN SITE-TO-SITE → appear in VPN blade logs (needs blade filter)
+                        if 'vpn client' in search_text or 'remote access vpn' in search_text:
+                            # VPN client traffic appears in regular firewall logs - NO blade filter
+                            # Just track connection data normally
+                            print(f"[MCP_DEBUG] [{_ts()}] 🔍 VPN CLIENT query detected - using regular traffic logs (no VPN blade filter)")
+                        elif any(kw in search_text for kw in ['vpn', 'vpn tunnel', 'vpn connection', 'site-to-site', 
+                                                               'site to site', 's2s vpn', 'ipsec', 'ikev2', 'ikev1']):
+                            # VPN site-to-site logs - filter by VPN blade
                             blade_filter = 'service:"VPN" OR service:"IKE" OR service:"ISAKMP" OR product:"VPN"'
                             # VPN traffic is typically lower volume - reduce max logs to prevent excessive pagination
                             max_logs = 50
+                            print(f"[MCP_DEBUG] [{_ts()}] 🔍 VPN SITE-TO-SITE query detected - applying VPN blade filter")
                         # Threat Prevention umbrella - apply for both specific AND general threat keywords
                         # RESTORED broad keywords: suspicious, attack, malicious, threat - these indicate user wants THREAT DATA
                         elif any(kw in search_text for kw in ['suspicious', 'threat', 'attack', 'malicious', 'malware', 
