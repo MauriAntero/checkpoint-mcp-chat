@@ -844,7 +844,12 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                     else:
                                         print(f"[MCP_DEBUG] [{_ts()}] Multiple access-layers found - need user selection for {tool.name}.{param}")
                                 else:
-                                    print(f"[MCP_DEBUG] [{_ts()}] No access-layers found for {tool.name}.{param}")
+                                    # Discovery failed (likely due to rate limiting) - cannot auto-fill access layer
+                                    # Skip this tool and let the error propagate with clear messaging
+                                    skip_tool = True
+                                    error_msg = "Access layer discovery failed (likely API rate limiting). Cannot retrieve firewall rulebase without access layer name. Please reduce query frequency or specify layer manually."
+                                    print(f"[MCP_DEBUG] [{_ts()}] ⚠️ {error_msg}")
+                                    print(f"[MCP_DEBUG] [{_ts()}] Skipping {tool.name} - missing required access layer")
                             # For other tools, don't auto-fill 'name' to avoid conflicts
                             elif user_parameter_selections and param in user_parameter_selections:
                                 args[param] = user_parameter_selections[param]
