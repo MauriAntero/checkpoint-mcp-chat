@@ -804,8 +804,12 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             time_frame = "last-7-days"  # Only fixed time frame available (this-week is variable 1-7 days)
                         elif any(pattern in search_text for pattern in ['24 hour', 'last 24 hours', 'last-24-hours', 'past 24 hours']):
                             time_frame = "last-24-hours"
+                        elif any(pattern in search_text for pattern in ['12 hour', 'last 12 hours', 'last-12-hours', 'past 12 hours']):
+                            time_frame = "last-24-hours"  # MCP limitation: use 24h frame
+                            args["_short_time_range"] = "12-hours"  # Internal flag for pagination control
                         elif any(pattern in search_text for pattern in ['6 hour', 'last 6 hours', 'last-6-hours', 'past 6 hours']):
-                            time_frame = "last-24-hours"  # Use 24h frame, then filter in post-processing
+                            time_frame = "last-24-hours"  # MCP limitation: use 24h frame
+                            args["_short_time_range"] = "6-hours"  # Internal flag for pagination control
                         elif any(pattern in search_text for pattern in ['last hour', 'past hour', 'last 60 min']):
                             time_frame = "last-hour"
                         
@@ -1326,7 +1330,15 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         # 30 days: 4 pages (~280 logs → ~140 unique → ~50k tokens after field filtering)
                         # 7 days / this-week: 6 pages (~420 logs → ~210 unique → ~70k tokens after field filtering)
                         # 1 day / today: 10 pages (~700 logs → ~350 unique → ~120k tokens)
-                        if time_range_days >= 30:
+                        # 6-12 hours: 4 pages (~280 logs → ~140 unique → ~50k tokens) - reduced for sub-24h queries
+                        
+                        # Check for short time range flag (6-12 hours mapped to 24h frame)
+                        short_time_range = internal_flags.get('_short_time_range')
+                        
+                        if short_time_range:
+                            MAX_PAGES = 4  # Sub-24-hour queries: reduced pagination (6h/12h queries)
+                            print(f"[MCP_DEBUG] [{_ts()}] 📊 Detected short time range ({short_time_range}) - reducing pagination to prevent token overflow")
+                        elif time_range_days >= 30:
                             MAX_PAGES = 4  # Last 30 days: limited pagination
                         elif time_range_days >= 7:
                             MAX_PAGES = 6  # Last 7 days or this-week: 6 pages
