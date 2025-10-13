@@ -2415,24 +2415,84 @@ Errors: {', '.join(errors) if errors else 'None'}{warnings_text}
                 command_legend_text = "\n🔍 DIAGNOSTIC COMMAND REFERENCE:\n" + "\n".join(matched_commands) + "\n"
         
         # Detect query intent to provide appropriate analysis context
-        query_intent_context = ""
-        troubleshooting_keywords = ['troubleshoot', 'connectivity', 'connection', 'issue', 'problem', 'fail', 
-                                   'debug', 'diagnose', 'investigate', 'why', 'not working', 'unable', 'cannot']
+        task_type_header = ""
+        # CONSERVATIVE troubleshooting detection - only match explicit connectivity/troubleshooting phrases
+        # Avoid false positives by requiring clear troubleshooting or connectivity context
+        troubleshooting_keywords = [
+            # Explicit troubleshooting action verbs (unambiguous)
+            'troubleshoot',
+            # Explicit connectivity failures (must mention connection/connectivity)
+            'connectivity issue', 'connectivity problem', 'connectivity fail',
+            'connection issue', 'connection problem', 'connection fail',
+            'cannot connect', 'unable to connect', 'can\'t connect', 'not connecting',
+            'cannot reach', 'unable to reach', 'not reachable',
+            'connection refused', 'connection timeout', 'connection reset',
+            # Network/VPN/tunnel specific failures
+            'vpn down', 'vpn not working', 'vpn fail', 'vpn issue',
+            'tunnel down', 'tunnel not working', 'tunnel fail', 'tunnel issue',
+            'network down', 'network not working', 'network fail', 'network issue',
+            'link down', 'link not working', 'link fail'
+        ]
         is_troubleshooting = any(kw in user_query.lower() for kw in troubleshooting_keywords)
         
         if is_troubleshooting:
-            query_intent_context = """
-QUERY INTENT: This is a CONNECTIVITY/TROUBLESHOOTING query, NOT a threat hunting query.
-- Focus: Analyze traffic patterns, connection success/failure, routing, NAT, rule matching
-- Look for: Drops, blocks, accepts, NAT translations, routing decisions, normal traffic flow
-- DO NOT: Look for threats, attacks, or suspicious patterns unless explicitly requested
-- If no traffic found for specified IPs: Report "No traffic found for the specified IP addresses in the time range"
+            # CRITICAL: Make troubleshooting intent EXTREMELY EXPLICIT at the very top
+            task_type_header = """
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                    🔧 CONNECTIVITY TROUBLESHOOTING TASK 🔧                    ║
+║                         NOT A SECURITY INVESTIGATION                          ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+CRITICAL TASK INSTRUCTIONS:
+• This is a NETWORK CONNECTIVITY TROUBLESHOOTING query
+• You are helping debug connection issues, NOT hunting for threats or attacks
+• Focus ONLY on: Connection success/failure, routing, NAT, firewall rules, traffic flow
+• DO NOT analyze for: Threats, suspicious patterns, attacks, malware, intrusions
+• DO NOT report security findings unless explicitly requested by the user
+
+YOUR ROLE: Network troubleshooting engineer analyzing connection issues
+NOT YOUR ROLE: Security analyst hunting for threats
+
 """
         
-        analysis_prompt = f"""User Query: {user_query}
-{data_source_context}{command_legend_text}
-{query_intent_context}
-CRITICAL INSTRUCTIONS - ANTI-HALLUCINATION RULES:
+        # Add troubleshooting-specific analysis guidance
+        troubleshooting_analysis_rules = ""
+        if is_troubleshooting:
+            troubleshooting_analysis_rules = """
+TROUBLESHOOTING ANALYSIS REQUIREMENTS:
+✓ Analyze traffic flow: Was connection attempted? Accepted? Dropped? Blocked?
+✓ Check NAT translations: Source/destination IP changes
+✓ Identify matching firewall rules: Which rule processed the traffic?
+✓ Report connection outcomes: Success, failure, timeouts, resets
+✓ If no traffic found: State "No traffic found for the specified IP addresses in the time range"
+
+✗ DO NOT look for security threats or suspicious patterns
+✗ DO NOT report attack names, malware, or intrusion attempts
+✗ DO NOT analyze for anomalies unless connectivity-related
+
+"""
+        
+        # Build anti-hallucination rules - CLEAN VERSION for troubleshooting (no security language)
+        if is_troubleshooting:
+            anti_hallucination_rules = f"""CRITICAL INSTRUCTIONS - EVIDENCE-ONLY REPORTING:
+1. **Report Only What Exists in Data**: Only report findings that are explicitly present in the provided data above
+   - Never invent IPs, timestamps, rule numbers, or any other details
+   - If no connectivity issues found, state "No connectivity issues detected in the available logs"
+   - If data is incomplete or missing, acknowledge the limitation
+
+2. **Citation Required**: For any finding, reference the actual data:
+   - Quote specific field values (e.g., "action: Drop", "rule: 5")
+   - Include actual timestamps from the logs
+   - Show real IP addresses from the data
+   - If a field is absent, do not assume its value
+
+3. **Valid Outcomes**: 
+   - No issues found → Report "No connectivity issues detected in the available logs"
+   - Missing data → Report "Unable to analyze [specific aspect] due to missing/truncated data"
+   - Normal traffic → Report "All connections appear normal"{truncation_warning}"""
+        else:
+            # Security-focused anti-hallucination rules (original version)
+            anti_hallucination_rules = f"""CRITICAL INSTRUCTIONS - ANTI-HALLUCINATION RULES:
 1. **Evidence-Only Reporting**: Only report findings that are explicitly present in the provided data above
    - Never invent IPs, timestamps, attack names, or any other details
    - If no threats/issues are found in the data, state "No suspicious activity detected" or "No issues found"
@@ -2447,7 +2507,11 @@ CRITICAL INSTRUCTIONS - ANTI-HALLUCINATION RULES:
 3. **Valid Outcomes**: 
    - Security query with no threats → Report "No suspicious activity detected in the available logs"
    - Missing data → Report "Unable to analyze [specific aspect] due to missing/truncated data"
-   - Clean logs → Report "All activity appears normal"{truncation_warning}
+   - Clean logs → Report "All activity appears normal"{truncation_warning}"""
+        
+        analysis_prompt = f"""{task_type_header}User Query: {user_query}
+{data_source_context}{command_legend_text}{troubleshooting_analysis_rules}
+{anti_hallucination_rules}
 
 FORMATTING REQUIREMENTS:
 - Display object names WITHOUT UUIDs (use human-readable names only)
