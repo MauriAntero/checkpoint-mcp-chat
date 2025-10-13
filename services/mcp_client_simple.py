@@ -873,10 +873,11 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             
                             if ips:
                                 # Build filter: src:IP1 OR dst:IP1 OR src:IP2 OR dst:IP2
+                                # NOTE: CheckPoint API doesn't need quotes around IPs (only for multi-word values)
                                 ip_conditions = []
                                 for ip in ips:
-                                    ip_conditions.append(f'src:"{ip}"')
-                                    ip_conditions.append(f'dst:"{ip}"')
+                                    ip_conditions.append(f'src:{ip}')
+                                    ip_conditions.append(f'dst:{ip}')
                                 ip_filter = ' OR '.join(ip_conditions)
                                 print(f"[MCP_DEBUG] [{_ts()}] 🔍 Extracted IPs for connectivity query: {ips}")
                                 print(f"[MCP_DEBUG] [{_ts()}] 🔍 IP filter: {ip_filter}")

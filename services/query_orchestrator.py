@@ -2276,8 +2276,23 @@ Errors: {', '.join(errors) if errors else 'None'}{warnings_text}
         if warnings and any("truncation" in w.lower() or "truncated" in w.lower() for w in warnings):
             truncation_warning = "\n⚠️ IMPORTANT: Some data was truncated to fit the model. If evidence is missing, report that limitation instead of making assumptions."
         
+        # Detect query intent to provide appropriate analysis context
+        query_intent_context = ""
+        troubleshooting_keywords = ['troubleshoot', 'connectivity', 'connection', 'issue', 'problem', 'fail', 
+                                   'debug', 'diagnose', 'investigate', 'why', 'not working', 'unable', 'cannot']
+        is_troubleshooting = any(kw in user_query.lower() for kw in troubleshooting_keywords)
+        
+        if is_troubleshooting:
+            query_intent_context = """
+QUERY INTENT: This is a CONNECTIVITY/TROUBLESHOOTING query, NOT a threat hunting query.
+- Focus: Analyze traffic patterns, connection success/failure, routing, NAT, rule matching
+- Look for: Drops, blocks, accepts, NAT translations, routing decisions, normal traffic flow
+- DO NOT: Look for threats, attacks, or suspicious patterns unless explicitly requested
+- If no traffic found for specified IPs: Report "No traffic found for the specified IP addresses in the time range"
+"""
+        
         analysis_prompt = f"""User Query: {user_query}
-
+{query_intent_context}
 CRITICAL INSTRUCTIONS - ANTI-HALLUCINATION RULES:
 1. **Evidence-Only Reporting**: Only report findings that are explicitly present in the provided data above
    - Never invent IPs, timestamps, attack names, or any other details
