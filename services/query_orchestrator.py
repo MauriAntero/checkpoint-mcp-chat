@@ -2102,9 +2102,19 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             destination = rule.get('destination', [])
             dest_str = ', '.join(destination) if isinstance(destination, list) else str(destination) if destination else 'Any'
             
-            # Format service
+            # Format service with deduplication (MCP server sometimes returns duplicates)
             service = rule.get('service', [])
-            service_str = ', '.join(service) if isinstance(service, list) else str(service) if service else 'Any'
+            if isinstance(service, list):
+                # Deduplicate while preserving order
+                seen = set()
+                unique_services = []
+                for svc in service:
+                    if svc not in seen:
+                        seen.add(svc)
+                        unique_services.append(svc)
+                service_str = ', '.join(unique_services)
+            else:
+                service_str = str(service) if service else 'Any'
             
             # Get action
             action = rule.get('action', {})
@@ -2129,6 +2139,7 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             output.append(f"| {rule_num} | {name} | {source_str} | {dest_str} | {service_str} | {action_str} | {track_str} |")
         
         output.append(f"\n**Total Rules: {len(rules)}**")
+        output.append(f"\n**NOTE**: Rulebase action field may be inaccurate due to MCP server limitations. **Always rely on LOG 'action' field for actual enforcement actions (Drop/Accept/Reject)**.")
         
         return '\n'.join(output)
     
@@ -3160,12 +3171,16 @@ TROUBLESHOOTING ROOT CAUSE ANALYSIS REQUIREMENTS:
    ✓ Identify connection outcomes and patterns
 
 2. SECURITY POLICY ENFORCEMENT ANALYSIS:
-   ✓ Which firewall rule processed the traffic? (match log 'rule' field to rulebase)
-   ✓ What action did the rule take? (Accept, Drop, Reject)
+   ✓ Which firewall rule processed the traffic? **CRITICAL: Match LOG 'rule' field NUMBER to RULEBASE 'rule-number' (e.g., log shows 'rule: 1' → find rulebase rule-number: 1)**
+   ✓ What action did the rule take? **CRITICAL: Use LOG 'action' field (Drop/Accept/Reject), NOT rulebase action field (may show incorrect values like 'Policy Targets' due to MCP server bug)**
    ✓ Which security blade enforced the action? (Firewall, Application Control, IPS, URL Filtering, etc.)
+   ✓ WHY was traffic dropped/blocked? Check rule's source, destination, service fields AND service categories
+     **IMPORTANT: Service categories like 'Spyware / Malicious Sites' are DESTINATION-based blocking rules**
+     **If rule service = 'Spyware / Malicious Sites' AND traffic dropped → Destination IP is categorized as malicious/spyware**
+     **Explain this clearly: "Destination IP X.X.X.X is blocked because it's categorized as [category] by Check Point Threat Intelligence"**
    ✓ WHY was traffic dropped by policy?
      - Rule configuration (source, destination, service, action)
-     - Security blade enforcement (IPS signature, App Control policy, URL category)
+     - Security blade enforcement (IPS signature, App Control policy, URL category, IP reputation)
      - Threat prevention profiles
    ✓ Is this expected security enforcement or misconfiguration?
 
