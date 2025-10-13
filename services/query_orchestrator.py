@@ -2110,6 +2110,8 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             action = rule.get('action', {})
             if isinstance(action, dict):
                 action_str = action.get('name', action.get('type', '-'))
+            elif isinstance(action, str):
+                action_str = action
             else:
                 action_str = str(action) if action else '-'
             
@@ -2120,11 +2122,8 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             else:
                 track_str = str(track) if track else '-'
             
-            # Truncate long values to keep table readable
-            max_cell_len = 30
-            source_str = (source_str[:max_cell_len-3] + '...') if len(source_str) > max_cell_len else source_str
-            dest_str = (dest_str[:max_cell_len-3] + '...') if len(dest_str) > max_cell_len else dest_str
-            service_str = (service_str[:max_cell_len-3] + '...') if len(service_str) > max_cell_len else service_str
+            # DO NOT truncate - send complete data to LLM (user requirement)
+            # LLM needs full service names and object names for accurate analysis
             
             # Add row
             output.append(f"| {rule_num} | {name} | {source_str} | {dest_str} | {service_str} | {action_str} | {track_str} |")
