@@ -208,34 +208,49 @@ ANALYSIS STRATEGY: Start with cpview -p or cpstat os -f all for holistic view, t
                 "CONNECTIVITY_TROUBLESHOOTING",
                 ["management-logs", "quantum-management"],
                 ["threat-prevention", "https-inspection"],
-                """This is a CONNECTIVITY/TROUBLESHOOTING query - investigating connection issues and root causes.
+                """This is a CONNECTIVITY/TROUBLESHOOTING query - full stack diagnosis from application to gateway.
 REQUIRED servers: 
   • management-logs (PRIMARY: traffic logs show connection attempts, drops, accepts)
-  • quantum-management (REQUIRED: rulebase shows WHICH rule processed traffic and WHY it was dropped/accepted)
+  • quantum-management (REQUIRED: rulebase shows WHICH rule processed traffic and WHY)
+  • quantum-gw-cli (OPTIONAL: gateway diagnostics for network/appliance-level issues)
 
-FORBIDDEN servers: threat-prevention, https-inspection (threat profiles not needed for basic connectivity troubleshooting)
+FORBIDDEN servers: threat-prevention, https-inspection (not needed for connectivity troubleshooting)
 
-CRITICAL TROUBLESHOOTING DATA REQUIREMENTS:
-1. LOGS: Retrieve traffic logs for the specified IPs/timeframe using management-logs
-   - Look for connections, drops, accepts, NAT translations
-   - Include all relevant security blade logs (Firewall, IPS, Application Control, URL Filtering, etc.)
+TROUBLESHOOTING SCOPE - FULL STACK ANALYSIS:
+1. TRAFFIC LOGS: Get logs from ALL security blades (Firewall, App Control, IPS, URL Filtering, etc.)
+   - Connection attempts, drops, accepts, NAT translations
+   - All enforcement blade logs (not just Firewall)
 
-2. RULEBASE: Retrieve matching firewall rules using quantum-management
-   - Use show_access_rulebase with show_raw=true to get complete rule objects
-   - Include both Access Control and NAT rules
-   - MUST provide package and layer parameters (discovered from show_packages, show_access_layers)
+2. SECURITY POLICY: Retrieve firewall rulebase to correlate with log events
+   - Use show_access_rulebase with show_raw=true for complete rule objects
+   - Include Access Control and NAT rules
+   - Match log 'rule' field to actual rule configurations
 
-3. ROOT CAUSE ANALYSIS: Match log entries to firewall rules
-   - Identify which rule number processed the traffic (from log 'rule' field)
-   - Retrieve that specific rule's configuration to understand WHY it dropped/accepted
-   - Analyze NAT translations if IPs were modified
-   - Report the complete enforcement chain: log → rule → action → reason
+3. NETWORK-LEVEL DIAGNOSIS (if policy not the issue):
+   - Routing problems (asymmetric routing, missing routes, conflicts)
+   - Interface issues (down, VLAN, MTU, duplex mismatches)
+   - NAT/topology issues (pool exhaustion, anti-spoofing)
+   - Network connectivity (ARP, MAC, physical)
+
+4. GATEWAY-LEVEL DIAGNOSIS (escalate if needed):
+   - Resource issues (connection table full, memory/CPU exhaustion)
+   - HA/cluster problems (ClusterXL state, split-brain)
+   - Performance bottlenecks (packet drops, F2F violations, saturation)
+   - Software bugs or service failures
+   - Use gateway CLI tools: fw tab, fw ctl zdebug, tcpdump, cpstat, cpview
+
+ESCALATION PATH:
+  1. Check logs for drops/blocks (obvious issues)
+  2. Correlate with firewall rules and blade enforcement
+  3. If accepted but failing → routing/NAT/topology
+  4. If intermittent → gateway resources/HA/performance
+  5. If unexplained → run gateway diagnostics
 
 DATA RETRIEVAL PATTERN:
-  Step 1: Get traffic logs matching the IPs/timeframe
-  Step 2: Identify rule numbers from logs (look at 'rule' field)
-  Step 3: Get rulebase with show_raw=true to see actual rule configurations
-  Step 4: Correlate logs with rules to determine root cause"""
+  Step 1: Get traffic logs from ALL blades matching IPs/timeframe
+  Step 2: Get rulebase with show_raw=true
+  Step 3: Correlate logs→rules to identify enforcement chain
+  Step 4: If needed, use gateway CLI for network/appliance diagnostics"""
             )
         elif intent_task_type in ["security_investigation", "threat_assessment"]:
             return (
@@ -2722,40 +2737,83 @@ TASK: Determine why connections failed and what security controls enforced the a
             troubleshooting_analysis_rules = """
 TROUBLESHOOTING ROOT CAUSE ANALYSIS REQUIREMENTS:
 
-1. TRAFFIC FLOW ANALYSIS:
+1. TRAFFIC FLOW ANALYSIS (START HERE - OBVIOUS CHECKS):
    ✓ Was connection attempted? Identify source/destination IPs, ports, protocol
-   ✓ What happened to the traffic? (Accepted, Dropped, Blocked, Rejected)
+   ✓ What happened to the traffic? (Accepted, Dropped, Blocked, Rejected, Timeout, Reset)
    ✓ Check NAT translations (source/destination IP/port modifications)
-   ✓ Identify connection outcomes (success, failure, timeout, reset)
+   ✓ Identify connection outcomes and patterns
 
-2. SECURITY POLICY ENFORCEMENT ANALYSIS (CRITICAL FOR ROOT CAUSE):
+2. SECURITY POLICY ENFORCEMENT ANALYSIS:
    ✓ Which firewall rule processed the traffic? (match log 'rule' field to rulebase)
    ✓ What action did the rule take? (Accept, Drop, Reject)
    ✓ Which security blade enforced the action? (Firewall, Application Control, IPS, URL Filtering, etc.)
-   ✓ WHY was traffic dropped? Analyze:
+   ✓ WHY was traffic dropped by policy?
      - Rule configuration (source, destination, service, action)
      - Security blade enforcement (IPS signature, App Control policy, URL category)
-     - Threat prevention profiles (if applicable to understanding the drop)
+     - Threat prevention profiles
    ✓ Is this expected security enforcement or misconfiguration?
 
-3. ROOT CAUSE DETERMINATION:
-   ✓ Correlate log entries with firewall rules (log rule number → rulebase rule object)
-   ✓ Identify the specific enforcement mechanism (rule action, blade policy, security profile)
-   ✓ Report the complete enforcement chain: Traffic → Rule → Blade → Action → Reason
-   ✓ Distinguish between:
-     - Legitimate security enforcement (expected drops by policy)
-     - Misconfiguration (unintended blocks)
-     - Missing rules (traffic dropped by implicit cleanup rule)
+3. NETWORK-LEVEL ROOT CAUSES (IF POLICY IS NOT THE ISSUE):
+   ✓ Routing problems:
+     - Asymmetric routing (packets arriving on wrong interface)
+     - Missing or incorrect routes
+     - Route conflicts or loops
+   ✓ Interface issues:
+     - Interface down/degraded
+     - VLAN misconfigurations
+     - MTU mismatches causing fragmentation
+     - Duplex/speed mismatches
+   ✓ NAT/topology issues:
+     - NAT pool exhaustion
+     - Overlapping NAT configurations
+     - Incorrect topology/anti-spoofing settings
+   ✓ Network connectivity:
+     - ARP failures
+     - MAC address issues
+     - Physical connectivity problems
 
-4. REPORTING REQUIREMENTS:
-   ✓ Always cite specific evidence from logs and rulebase
-   ✓ Report rule numbers, blade names, and enforcement reasons
+4. GATEWAY/APPLIANCE LEVEL ROOT CAUSES (ESCALATE HERE IF NEEDED):
+   ✓ Gateway resource issues:
+     - Connection table full
+     - Memory/CPU exhaustion
+     - Kernel memory allocation failures
+   ✓ Gateway configuration problems:
+     - ClusterXL/HA state issues (split-brain, failover problems)
+     - SecureXL/CoreXL offload issues
+     - VPN domain/topology misconfigurations
+   ✓ Software/firmware issues:
+     - Known bugs in current version (sk articles)
+     - Corrupted security policy
+     - Service/daemon failures
+   ✓ Performance bottlenecks:
+     - Packet drops due to overload
+     - F2F (fail-to-forward) violations
+     - Interface saturation
+
+5. TROUBLESHOOTING ESCALATION PATH:
+   Step 1: Check logs for obvious drops/blocks (START HERE)
+   Step 2: Correlate with firewall rules and blade enforcement
+   Step 3: If accepted but not working → Check routing, NAT, topology
+   Step 4: If intermittent → Check gateway resources, HA state, performance
+   Step 5: If persistent and unexplained → Run gateway diagnostics:
+     - Connection table analysis (fw tab -t connections)
+     - Kernel debug (fw ctl zdebug + drop)
+     - Packet captures (tcpdump on gateway)
+     - Interface statistics (cpstat, ifconfig)
+     - Resource monitoring (cpview, top, free)
+
+6. REPORTING REQUIREMENTS:
+   ✓ Always cite specific evidence from logs, rulebase, and diagnostics
+   ✓ Report the complete diagnosis chain with supporting data
    ✓ If no traffic found: "No traffic found for specified IPs/timeframe"
-   ✓ If traffic dropped: Explain WHICH rule and WHY (include rule configuration)
-   ✓ Provide actionable recommendations for resolution
+   ✓ If traffic dropped: Explain WHERE (layer) and WHY (root cause)
+   ✓ If network-level: Show routing/interface/NAT evidence
+   ✓ If gateway-level: Include resource/HA/performance metrics
+   ✓ Provide actionable recommendations with specific commands or config changes
 
-FOCUS: Root cause diagnosis through policy analysis, NOT general threat hunting
-AVOID: Speculating about attacks without evidence, general security assessments
+TROUBLESHOOTING SCOPE: Full stack analysis from application → policy → network → gateway
+ESCALATION: Start simple (logs/rules), escalate to complex (network/gateway) only when needed
+AVOID: Speculating without evidence, jumping to conclusions before checking basics
 
 """
         
