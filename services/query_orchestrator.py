@@ -2062,7 +2062,7 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         return formatted_data
     
     def _format_rulebase_as_markdown(self, rulebase_data: Dict[str, Any]) -> str:
-        """Format firewall rulebase as human-readable markdown table.
+        """Format firewall rulebase as human-readable markdown table with dynamic headers.
         
         Args:
             rulebase_data: Dictionary containing rulebase data with rules
@@ -2089,62 +2089,107 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         if not rules:
             return json.dumps(rulebase_data, indent=2)  # No rules, return original
         
-        # Build markdown table header
-        output.append("| No. | Name | Source | Destination | Service | Action | Track |")
-        output.append("|-----|------|--------|-------------|---------|--------|-------|")
+        # Determine available fields from actual rule data
+        # Priority fields in preferred order
+        priority_fields = ['rule-number', 'name', 'source', 'destination', 'service', 'action', 'track']
+        available_fields = []
+        
+        # Collect all unique fields from all rules
+        all_fields = set()
+        for rule in rules:
+            if isinstance(rule, dict):
+                all_fields.update(rule.keys())
+        
+        # Add priority fields that exist in data
+        for field in priority_fields:
+            if field in all_fields:
+                available_fields.append(field)
+        
+        # Map fields to display headers
+        header_map = {
+            'rule-number': 'No.',
+            'name': 'Name',
+            'source': 'Source',
+            'destination': 'Destination',
+            'service': 'Service',
+            'action': 'Action',
+            'track': 'Track',
+            'enabled': 'Enabled',
+            'comments': 'Comments'
+        }
+        
+        # Build markdown table header dynamically
+        headers = [header_map.get(field, field.replace('-', ' ').title()) for field in available_fields]
+        output.append("| " + " | ".join(headers) + " |")
+        output.append("|" + "|".join(["-----" for _ in headers]) + "|")
         
         # Format each rule
         for rule in rules:
             if not isinstance(rule, dict):
                 continue
             
-            # Extract rule fields with safe defaults
-            rule_num = rule.get('rule-number', rule.get('uid', '?'))
-            name = rule.get('name', '-')
-            
-            # Format source (can be list or single item)
-            source = rule.get('source', [])
-            source_str = ', '.join(source) if isinstance(source, list) else str(source) if source else 'Any'
-            
-            # Format destination
-            destination = rule.get('destination', [])
-            dest_str = ', '.join(destination) if isinstance(destination, list) else str(destination) if destination else 'Any'
-            
-            # Format service with deduplication (MCP server sometimes returns duplicates)
-            service = rule.get('service', [])
-            if isinstance(service, list):
-                # Deduplicate while preserving order
-                seen = set()
-                unique_services = []
-                for svc in service:
-                    if svc not in seen:
-                        seen.add(svc)
-                        unique_services.append(svc)
-                service_str = ', '.join(unique_services)
-            else:
-                service_str = str(service) if service else 'Any'
-            
-            # Get action
-            action = rule.get('action', {})
-            if isinstance(action, dict):
-                action_str = action.get('name', action.get('type', '-'))
-            elif isinstance(action, str):
-                action_str = action
-            else:
-                action_str = str(action) if action else '-'
-            
-            # Get track
-            track = rule.get('track', {})
-            if isinstance(track, dict):
-                track_str = track.get('type', '-')
-            else:
-                track_str = str(track) if track else '-'
+            # Build row dynamically based on available_fields
+            row_values = []
+            for field in available_fields:
+                value = rule.get(field)
+                
+                # Format based on field type
+                if field == 'rule-number':
+                    formatted = str(value) if value is not None else rule.get('uid', '?')
+                
+                elif field in ['source', 'destination']:
+                    if isinstance(value, list):
+                        formatted = ', '.join(value) if value else 'Any'
+                    else:
+                        formatted = str(value) if value else 'Any'
+                
+                elif field == 'service':
+                    # Deduplicate services (MCP server sometimes returns duplicates)
+                    if isinstance(value, list):
+                        seen = set()
+                        unique_services = []
+                        for svc in value:
+                            if svc not in seen:
+                                seen.add(svc)
+                                unique_services.append(svc)
+                        formatted = ', '.join(unique_services) if unique_services else 'Any'
+                    else:
+                        formatted = str(value) if value else 'Any'
+                
+                elif field == 'action':
+                    if isinstance(value, dict):
+                        formatted = value.get('name', value.get('type', '-'))
+                    elif isinstance(value, str):
+                        formatted = value
+                    else:
+                        formatted = str(value) if value else '-'
+                
+                elif field == 'track':
+                    if isinstance(value, dict):
+                        formatted = value.get('type', '-')
+                    else:
+                        formatted = str(value) if value else '-'
+                
+                elif field == 'name':
+                    formatted = str(value) if value else '-'
+                
+                elif field == 'enabled':
+                    formatted = 'Yes' if value else 'No'
+                
+                else:
+                    # Generic formatting for other fields
+                    if isinstance(value, (list, dict)):
+                        formatted = str(value)
+                    else:
+                        formatted = str(value) if value is not None else '-'
+                
+                row_values.append(formatted)
             
             # DO NOT truncate - send complete data to LLM (user requirement)
             # LLM needs full service names and object names for accurate analysis
             
             # Add row
-            output.append(f"| {rule_num} | {name} | {source_str} | {dest_str} | {service_str} | {action_str} | {track_str} |")
+            output.append("| " + " | ".join(row_values) + " |")
         
         output.append(f"\n**Total Rules: {len(rules)}**")
         output.append(f"\n**NOTE**: Rulebase action field may be inaccurate due to MCP server limitations. **Always rely on LOG 'action' field for actual enforcement actions (Drop/Accept/Reject)**.")
@@ -3486,9 +3531,7 @@ TROUBLESHOOTING ROOT CAUSE ANALYSIS REQUIREMENTS:
    ✓ Example format when traffic is dropped by rule 1:
      ```
      **Matching Firewall Rule (Rule 1 - CAUSED THE DROP):**
-     | No. | Name | Source | Destination | Service | Action | Track |
-     |-----|------|--------|-------------|---------|--------|-------|
-     | 1 | - | sisaverkko | Any | Spyware / Malicious Sites | Drop | Log |
+     [Copy the exact table header and rule row from the rulebase data above]
      
      Note: Action=Drop taken from log data (rulebase shows incorrect "Policy Targets")
      ```
@@ -3543,21 +3586,34 @@ TROUBLESHOOTING ROOT CAUSE ANALYSIS REQUIREMENTS:
      - Interface statistics (cpstat, ifconfig)
      - Resource monitoring (cpview, top, free)
 
-6. TEMPORAL ANALYSIS (CRITICAL - CHECK TIMESTAMPS AND RULES):
-   ✓ **MANDATORY: Group logs by BOTH rule number AND timestamp to identify state changes**
-   ✓ **Check which rule was hitting WHEN**:
-     - Example: "Earlier (12:30-12:40) → rule 1 (Drop)" vs "Later (12:45-13:00) → rule 4 (Accept)"
-   ✓ **Identify temporal patterns**:
-     - RESOLVED: "Traffic WAS blocked by rule X (timestamps) → NOW accepted by rule Y (timestamps)" 
-     - ONGOING: "Traffic CONTINUES to be dropped by rule X (first seen at A, last seen at B)"
-     - INTERMITTENT: "Traffic alternates between rule X (Drop) and rule Y (Accept)"
-   ✓ **CRITICAL: Different rules = different states**:
-     - If you see drops from rule 1 at 12:30 AND accepts from rule 4 at 12:45 → Issue was RESOLVED
-     - The rule change indicates a fix or policy update
-   ✓ **ALWAYS report current state vs historical state**:
-     - "PAST STATE (12:30): Rule 1 dropped traffic to X.X.X.X (malicious category)"
-     - "CURRENT STATE (12:45): Rule 4 now accepts same traffic (explicit allow rule)"
-     - "CONCLUSION: Issue was resolved between 12:30-12:45"
+6. TEMPORAL ANALYSIS (CRITICAL - CHECK TIMESTAMPS TO DETERMINE IF ISSUE IS RESOLVED):
+   ✓ **STEP 1: Compare timestamps of Drop vs Accept logs**:
+     - Find the LAST/MOST RECENT timestamp in Drop logs
+     - Find the LAST/MOST RECENT timestamp in Accept logs
+     - If most recent Accept timestamp > most recent Drop timestamp → Issue is RESOLVED
+   
+   ✓ **STEP 2: Identify the current state (what's happening NOW)**:
+     - **RESOLVED**: Most recent logs are Accepts → "Traffic is NOW working (as of <timestamp>)"
+       Example: Drop logs end at 10:33, Accept logs continue until 12:43 → Traffic restored at 10:33+
+     - **ONGOING**: Most recent logs are Drops → "Traffic is STILL being dropped (as of <timestamp>)"
+     - **INTERMITTENT**: Recent logs show both → "Traffic is unstable, alternating between working and failing"
+   
+   ✓ **STEP 3: Explain what changed over time**:
+     - Group logs by rule number AND action AND time period
+     - Example: "Earlier (00:05-10:33) → rule 1 dropped all traffic (27 drops)" 
+               "Later (10:33-12:43) → rule 4 accepts traffic (29 accepts)"
+     - **CRITICAL: If different rules at different times → State changed → Issue likely RESOLVED**
+   
+   ✓ **STEP 4: Report findings with clear past vs present distinction**:
+     - "**PAST STATE** (00:05-10:33): Rule 1 dropped traffic to X.X.X.X - destination categorized as malicious"
+     - "**CURRENT STATE** (10:33-12:43): Rule 4 now accepts same traffic - explicit allow rule matched"
+     - "**CONCLUSION**: ✅ **Issue was RESOLVED** - traffic was blocked earlier but is **FULLY WORKING NOW** (last successful connection at 12:43)"
+   
+   ✓ **STEP 5: If issue is resolved, explain what likely fixed it**:
+     - Policy change/update between timeframes
+     - Destination IP reputation change
+     - Firewall rule modification
+     - Network topology change
 
 7. REPORTING REQUIREMENTS:
    ✓ Always cite specific evidence from logs, rulebase, and diagnostics
@@ -3566,15 +3622,13 @@ TROUBLESHOOTING ROOT CAUSE ANALYSIS REQUIREMENTS:
    ✓ **🚨 MANDATORY: If traffic dropped/blocked, you MUST display the DROP rule table in your response**
      - First, identify DROP logs: filter for action=Drop/Block/Reject
      - Then, get the rule number from those DROP logs (e.g., rule=1)
-     - Then, copy that rule's row from the rulebase data provided above
+     - Then, copy the table header AND that rule's row from the rulebase data provided above
      - Show it in markdown table format so user can see the rule configuration
      - DO NOT show Accept rules when troubleshooting drops (they're not the problem)
      - Example when DROP logs show rule=1:
      ```
      **Matching Firewall Rule (Rule 1 - CAUSED THE DROP):**
-     | No. | Name | Source | Destination | Service | Action | Track |
-     |-----|------|--------|-------------|---------|--------|-------|
-     | 1 | - | sisaverkko | Any | Spyware / Malicious Sites | Drop | Log |
+     [Copy the exact table header and rule row from the rulebase data above]
      
      Note: Action=Drop from log data (rulebase may show "Policy Targets" due to MCP server bug)
      ```
