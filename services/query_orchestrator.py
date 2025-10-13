@@ -1988,6 +1988,151 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             return content[:max_chars] + "..."
         return content
     
+    def _format_firewall_rules_for_llm(self, data_collected: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert firewall rulebase data from double-escaped JSON to human-readable markdown tables.
+        
+        This preprocesses firewall rules so the LLM receives clean, structured data instead of 
+        having to mentally parse escaped JSON strings.
+        
+        Args:
+            data_collected: Raw MCP server data with escaped JSON in 'text' fields
+            
+        Returns:
+            Formatted data with firewall rules as markdown tables
+        """
+        formatted_data = {}
+        
+        for server_name, server_data in data_collected.items():
+            if not isinstance(server_data, dict):
+                formatted_data[server_name] = server_data
+                continue
+            
+            formatted_server_data = server_data.copy()
+            formatted_tool_results = []
+            
+            # Process tool_results
+            tool_results = server_data.get('tool_results', [])
+            for tool_result in tool_results:
+                if not isinstance(tool_result, dict):
+                    formatted_tool_results.append(tool_result)
+                    continue
+                
+                formatted_tool_result = tool_result.copy()
+                
+                # Check if this tool has firewall rulebase data
+                if 'result' in tool_result and isinstance(tool_result['result'], dict):
+                    result = tool_result['result']
+                    if 'content' in result and isinstance(result['content'], list):
+                        formatted_content = []
+                        
+                        for item in result['content']:
+                            if isinstance(item, dict) and item.get('type') == 'text':
+                                text = item.get('text', '')
+                                
+                                # Try to parse as JSON to detect firewall rulebase
+                                try:
+                                    data_obj = json.loads(text) if isinstance(text, str) else text
+                                    
+                                    # Check if this is firewall rulebase data
+                                    if isinstance(data_obj, dict) and 'rulebase' in data_obj:
+                                        # Format the rulebase as markdown table
+                                        formatted_text = self._format_rulebase_as_markdown(data_obj)
+                                        formatted_content.append({
+                                            'type': 'text',
+                                            'text': formatted_text
+                                        })
+                                    else:
+                                        # Not a rulebase, keep original
+                                        formatted_content.append(item)
+                                except (json.JSONDecodeError, TypeError):
+                                    # Not JSON or parsing failed, keep original
+                                    formatted_content.append(item)
+                            else:
+                                formatted_content.append(item)
+                        
+                        formatted_result = result.copy()
+                        formatted_result['content'] = formatted_content
+                        formatted_tool_result['result'] = formatted_result
+                
+                formatted_tool_results.append(formatted_tool_result)
+            
+            formatted_server_data['tool_results'] = formatted_tool_results
+            formatted_data[server_name] = formatted_server_data
+        
+        return formatted_data
+    
+    def _format_rulebase_as_markdown(self, rulebase_data: Dict[str, Any]) -> str:
+        """Format firewall rulebase as human-readable markdown table.
+        
+        Args:
+            rulebase_data: Dictionary containing rulebase data with rules
+            
+        Returns:
+            Markdown formatted string with rule table
+        """
+        output = []
+        
+        # Add policy package name if available
+        if 'name' in rulebase_data:
+            output.append(f"**Policy Package: {rulebase_data['name']}**\n")
+        
+        # Extract rules
+        rules = rulebase_data.get('rulebase', [])
+        if not rules:
+            return json.dumps(rulebase_data, indent=2)  # No rules, return original
+        
+        # Build markdown table header
+        output.append("| No. | Name | Source | Destination | Service | Action | Track |")
+        output.append("|-----|------|--------|-------------|---------|--------|-------|")
+        
+        # Format each rule
+        for rule in rules:
+            if not isinstance(rule, dict):
+                continue
+            
+            # Extract rule fields with safe defaults
+            rule_num = rule.get('rule-number', rule.get('uid', '?'))
+            name = rule.get('name', '-')
+            
+            # Format source (can be list or single item)
+            source = rule.get('source', [])
+            source_str = ', '.join(source) if isinstance(source, list) else str(source) if source else 'Any'
+            
+            # Format destination
+            destination = rule.get('destination', [])
+            dest_str = ', '.join(destination) if isinstance(destination, list) else str(destination) if destination else 'Any'
+            
+            # Format service
+            service = rule.get('service', [])
+            service_str = ', '.join(service) if isinstance(service, list) else str(service) if service else 'Any'
+            
+            # Get action
+            action = rule.get('action', {})
+            if isinstance(action, dict):
+                action_str = action.get('name', action.get('type', '-'))
+            else:
+                action_str = str(action) if action else '-'
+            
+            # Get track
+            track = rule.get('track', {})
+            if isinstance(track, dict):
+                track_str = track.get('type', '-')
+            else:
+                track_str = str(track) if track else '-'
+            
+            # Truncate long values to keep table readable
+            max_cell_len = 30
+            source_str = (source_str[:max_cell_len-3] + '...') if len(source_str) > max_cell_len else source_str
+            dest_str = (dest_str[:max_cell_len-3] + '...') if len(dest_str) > max_cell_len else dest_str
+            service_str = (service_str[:max_cell_len-3] + '...') if len(service_str) > max_cell_len else service_str
+            
+            # Add row
+            output.append(f"| {rule_num} | {name} | {source_str} | {dest_str} | {service_str} | {action_str} | {track_str} |")
+        
+        output.append(f"\n**Total Rules: {len(rules)}**")
+        
+        return '\n'.join(output)
+    
     def _remove_duplicate_data(self, data_collected: Dict[str, Any]) -> Dict[str, Any]:
         """Remove duplicate logs and objects across MCP servers
         
@@ -2861,8 +3006,12 @@ RESPOND WITH VALID JSON ONLY (no markdown, no explanations outside JSON):
         # Extract discovered resources for investigation capabilities note (don't duplicate in context)
         has_discovered_resources = any('discovered_resources' in server_data for server_data in data_collected.values())
         
-        # Convert MCP data to JSON - discovered_resources already included here, no need to duplicate
-        data_json = json.dumps(data_collected, indent=2)
+        # PREPROCESS FIREWALL RULES: Convert double-escaped JSON to human-readable markdown tables
+        # This makes it much easier for the LLM to analyze specific rules
+        data_collected_formatted = self._format_firewall_rules_for_llm(data_collected)
+        
+        # Convert MCP data to JSON - firewall rules now formatted as readable markdown
+        data_json = json.dumps(data_collected_formatted, indent=2)
         
         # DEBUG: Log data size before building context
         print(f"[DEBUG] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Data JSON size: {len(data_json):,} chars (~{len(data_json)//4:,} tokens)")
