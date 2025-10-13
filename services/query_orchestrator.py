@@ -2079,15 +2079,30 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         print(f"[DEBUG] [{ts}] rulebase_data keys: {list(rulebase_data.keys()) if isinstance(rulebase_data, dict) else 'NOT A DICT'}")
         print(f"[DEBUG] [{ts}] rulebase array length: {len(rulebase_data.get('rulebase', [])) if isinstance(rulebase_data, dict) else 'N/A'}")
         
+        # Extract rules first to determine type
+        rules = rulebase_data.get('rulebase', [])
+        if not rules:
+            return json.dumps(rulebase_data, indent=2)  # No rules, return original
+        
+        # Determine rulebase type from first rule
+        rulebase_type = "UNKNOWN"
+        if rules and isinstance(rules[0], dict):
+            rule_type = rules[0].get('type', '')
+            if rule_type == 'access-rule':
+                rulebase_type = "ACCESS RULEBASE (FIREWALL RULES)"
+            elif rule_type == 'nat-rule':
+                rulebase_type = "NAT RULEBASE"
+            else:
+                rulebase_type = f"RULEBASE ({rule_type})"
+        
+        # Add clear header with rulebase type
+        output.append(f"**═══ {rulebase_type} ═══**")
+        
         # Add policy package name if available
         if 'name' in rulebase_data:
             output.append(f"**Policy Package: {rulebase_data['name']}**\n")
         
-        # Extract rules
-        rules = rulebase_data.get('rulebase', [])
-        print(f"[DEBUG] [{ts}] Extracted {len(rules)} rules for formatting")
-        if not rules:
-            return json.dumps(rulebase_data, indent=2)  # No rules, return original
+        print(f"[DEBUG] [{ts}] Formatting {len(rules)} rules as {rulebase_type}")
         
         # Determine available fields from actual rule data
         # Priority fields in preferred order
@@ -3502,12 +3517,20 @@ TROUBLESHOOTING ROOT CAUSE ANALYSIS REQUIREMENTS:
    ✓ Identify connection outcomes and patterns
 
 2. SECURITY POLICY ENFORCEMENT ANALYSIS (FOCUS ON DROP/BLOCK LOGS):
+   ✓ **CRITICAL: Use ONLY the ACCESS RULEBASE (FIREWALL RULES) for analysis**
+     - The data contains both ACCESS RULEBASE and NAT RULEBASE
+     - **ACCESS RULEBASE** = Firewall security rules that Drop/Accept traffic (labeled "ACCESS RULEBASE (FIREWALL RULES)")
+     - **NAT RULEBASE** = Network address translation rules (labeled "NAT RULEBASE") - DO NOT use for firewall analysis
+     - When matching log 'rule' field to rulebase, use ONLY the ACCESS RULEBASE
+   
    ✓ **STEP 1: Filter for action=Drop/Block/Reject logs ONLY - these show the connectivity issue**
-     - Example: If you see logs with action=Drop and rule=1, analyze rule 1
+     - Example: If you see logs with action=Drop and rule=1, analyze rule 1 from ACCESS RULEBASE
      - Example: If you see logs with action=Accept and rule=4, IGNORE these initially (they show working traffic)
+   
    ✓ **STEP 2: From the DROP logs, identify which rule number processed them**
      - Look at the 'rule' field in logs where action=Drop/Block/Reject
-     - Match LOG 'rule' field NUMBER to RULEBASE 'rule-number' (e.g., DROP log shows 'rule: 1' → analyze rulebase rule-number: 1)
+     - Match LOG 'rule' field NUMBER to ACCESS RULEBASE 'rule-number' (e.g., DROP log shows 'rule: 1' → analyze ACCESS rulebase rule-number: 1)
+     - **DO NOT match to NAT rulebase** - NAT rules don't control Drop/Accept actions
    ✓ **STEP 3: Verify the action using LOG data, not rulebase data**
      - Use LOG 'action' field (Drop/Accept/Reject) as the source of truth
      - Ignore rulebase action field (may show incorrect values like 'Policy Targets' due to MCP server bug)
@@ -3523,15 +3546,16 @@ TROUBLESHOOTING ROOT CAUSE ANALYSIS REQUIREMENTS:
    ✓ Is this expected security enforcement or misconfiguration?
    
    **🚨 CRITICAL OUTPUT REQUIREMENT 🚨**
-   ✓ **Display the DROP rule in your response, not the Accept rule**
-     - If DROP logs show rule=1, display rule 1 from rulebase
+   ✓ **Display the DROP rule from ACCESS RULEBASE in your response, not NAT rules**
+     - If DROP logs show rule=1, display rule 1 from **ACCESS RULEBASE (FIREWALL RULES)** section
+     - Do NOT use NAT rulebase - it doesn't control Drop/Accept actions
      - If ACCEPT logs show rule=4, do NOT display rule 4 (it's not causing the issue)
-   ✓ **Copy the exact DROP rule row from the rulebase data and show it to the user**
+   ✓ **Copy the exact DROP rule row from the ACCESS RULEBASE and show it to the user**
    ✓ **Use the Action from the LOG (Drop), not from the rulebase (Policy Targets)**
    ✓ Example format when traffic is dropped by rule 1:
      ```
      **Matching Firewall Rule (Rule 1 - CAUSED THE DROP):**
-     [Copy the exact table header and rule row from the rulebase data above]
+     [Copy the exact table header and rule row from the ACCESS RULEBASE (FIREWALL RULES) section above]
      
      Note: Action=Drop taken from log data (rulebase shows incorrect "Policy Targets")
      ```
@@ -3619,16 +3643,18 @@ TROUBLESHOOTING ROOT CAUSE ANALYSIS REQUIREMENTS:
    ✓ Always cite specific evidence from logs, rulebase, and diagnostics
    ✓ Report the complete diagnosis chain with supporting data
    ✓ If no traffic found: "No traffic found for specified IPs/timeframe"
-   ✓ **🚨 MANDATORY: If traffic dropped/blocked, you MUST display the DROP rule table in your response**
+   ✓ **🚨 MANDATORY: If traffic dropped/blocked, you MUST display the DROP rule from ACCESS RULEBASE**
      - First, identify DROP logs: filter for action=Drop/Block/Reject
      - Then, get the rule number from those DROP logs (e.g., rule=1)
-     - Then, copy the table header AND that rule's row from the rulebase data provided above
+     - Then, find that rule in the **ACCESS RULEBASE (FIREWALL RULES)** section (NOT NAT rulebase)
+     - Copy the table header AND that rule's row from the ACCESS RULEBASE
      - Show it in markdown table format so user can see the rule configuration
      - DO NOT show Accept rules when troubleshooting drops (they're not the problem)
+     - DO NOT use NAT rulebase - it doesn't control security policy
      - Example when DROP logs show rule=1:
      ```
      **Matching Firewall Rule (Rule 1 - CAUSED THE DROP):**
-     [Copy the exact table header and rule row from the rulebase data above]
+     [Copy the exact table header and rule row from the ACCESS RULEBASE (FIREWALL RULES) section above]
      
      Note: Action=Drop from log data (rulebase may show "Policy Targets" due to MCP server bug)
      ```
@@ -3693,9 +3719,16 @@ DATA SOURCES AVAILABLE:
 • Errors: {', '.join(errors) if errors else 'None'}
 {warnings_text}
 
-NOTE: The firewall rulebase data below has been pre-formatted as markdown tables for 
-easy analysis. Each rule shows: Rule Number, Name, Source, Destination, Service, 
-Action, and Track settings.
+NOTE: The rulebase data below has been pre-formatted as markdown tables for easy analysis.
+
+**IMPORTANT - RULEBASE TYPES:**
+• **ACCESS RULEBASE (FIREWALL RULES)** - Security policy rules that control Drop/Accept traffic
+  → Use THIS rulebase when analyzing firewall drops/blocks from logs
+  → Rule numbers in logs refer to ACCESS RULEBASE rule numbers
+
+• **NAT RULEBASE** - Network address translation rules only
+  → DO NOT use for firewall policy analysis
+  → NAT rules don't control Drop/Accept actions
 """
         
         # Build structured response template
