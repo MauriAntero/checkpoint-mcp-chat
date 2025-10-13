@@ -2449,6 +2449,245 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         # Accept logs are kept to understand traffic patterns and destinations
         return True
     
+    def _apply_smart_log_sampling(self, data_collected: Dict[str, Any], timeframe_hours: float = 24) -> Dict[str, Any]:
+        """Apply intelligent temporal sampling to reduce log volume while preserving analysis coherence
+        
+        Strategy:
+        - Short timeframes (<48h): First 15 + Last 15 logs per action type (30 total per action)
+        - Long timeframes (≥48h): Stratified temporal sampling across time buckets
+          * 2-10 days: 1 bucket per day, 3 samples per bucket per action
+          * 11-30 days: 1 bucket per 2 days, 3 samples per bucket per action  
+          * 31+ days: 1 bucket per week, 3 samples per bucket per action
+        
+        Always includes first and last log to show trend direction.
+        
+        Args:
+            data_collected: Raw data from MCP servers
+            timeframe_hours: Query timeframe in hours (used for stratification logic)
+            
+        Returns:
+            Sampled data with metadata about sampling applied
+        """
+        from datetime import datetime as dt
+        from collections import defaultdict
+        
+        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] _apply_smart_log_sampling: Starting with timeframe={timeframe_hours}h...")
+        
+        sampled_data = {}
+        total_original_logs = 0
+        total_sampled_logs = 0
+        
+        for server_name, server_data in data_collected.items():
+            if not isinstance(server_data, dict):
+                sampled_data[server_name] = server_data
+                continue
+            
+            sampled_server_data = server_data.copy()
+            
+            # Process tool_results for log data
+            if 'tool_results' in server_data and isinstance(server_data['tool_results'], list):
+                sampled_tool_results = []
+                
+                for tool_result in server_data['tool_results']:
+                    if not isinstance(tool_result, dict):
+                        sampled_tool_results.append(tool_result)
+                        continue
+                    
+                    sampled_tool_result = tool_result.copy()
+                    
+                    # Check if this tool has log data
+                    if 'result' in tool_result and isinstance(tool_result['result'], dict):
+                        result = tool_result['result']
+                        
+                        if 'content' in result and isinstance(result['content'], list):
+                            sampled_content = []
+                            
+                            for item in result['content']:
+                                if isinstance(item, dict) and item.get('type') == 'text':
+                                    text = item.get('text', '')
+                                    
+                                    # Try to parse as JSON to detect log data
+                                    try:
+                                        data_obj = json.loads(text) if isinstance(text, str) else text
+                                        
+                                        # Check if this is log data (has 'logs' array)
+                                        if isinstance(data_obj, dict) and 'logs' in data_obj and isinstance(data_obj['logs'], list):
+                                            logs = data_obj['logs']
+                                            original_count = len(logs)
+                                            total_original_logs += original_count
+                                            
+                                            if original_count == 0:
+                                                sampled_content.append(item)
+                                                continue
+                                            
+                                            # Apply sampling based on timeframe
+                                            if timeframe_hours < 48:
+                                                # Short timeframe: First 15 + Last 15 per action type
+                                                sampled_logs, sampling_meta = self._sample_logs_short_timeframe(logs)
+                                            else:
+                                                # Long timeframe: Stratified temporal sampling
+                                                sampled_logs, sampling_meta = self._sample_logs_long_timeframe(logs, timeframe_hours)
+                                            
+                                            total_sampled_logs += len(sampled_logs)
+                                            
+                                            # Update data object with sampled logs
+                                            data_obj['logs'] = sampled_logs
+                                            data_obj['_sampling_applied'] = sampling_meta
+                                            
+                                            # Convert back to text
+                                            sampled_content.append({
+                                                'type': 'text',
+                                                'text': data_obj
+                                            })
+                                            
+                                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Sampled {original_count} logs → {len(sampled_logs)} ({sampling_meta['strategy']})")
+                                        else:
+                                            # Not log data, keep as-is
+                                            sampled_content.append(item)
+                                    except (json.JSONDecodeError, TypeError):
+                                        # Not JSON or parsing failed, keep original
+                                        sampled_content.append(item)
+                                else:
+                                    sampled_content.append(item)
+                            
+                            # Update result with sampled content
+                            sampled_result = result.copy()
+                            sampled_result['content'] = sampled_content
+                            sampled_tool_result['result'] = sampled_result
+                        else:
+                            # No content array, keep result as-is
+                            pass
+                    else:
+                        # No result dict, keep tool_result as-is
+                        pass
+                
+                    sampled_tool_results.append(sampled_tool_result)
+                sampled_server_data['tool_results'] = sampled_tool_results
+            
+            sampled_data[server_name] = sampled_server_data
+        
+        if total_original_logs > 0:
+            reduction_pct = ((total_original_logs - total_sampled_logs) / total_original_logs * 100)
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Smart sampling complete: {total_original_logs} → {total_sampled_logs} logs ({reduction_pct:.1f}% reduction)")
+        
+        return sampled_data
+    
+    def _sample_logs_short_timeframe(self, logs: list) -> tuple[list, dict]:
+        """Sample logs for short timeframes (<48h): First 15 + Last 15 per action type"""
+        from collections import defaultdict
+        
+        # Group by action type
+        logs_by_action = defaultdict(list)
+        for log in logs:
+            action = log.get('action', 'Unknown')
+            logs_by_action[action].append(log)
+        
+        sampled_logs = []
+        action_samples = {}
+        
+        for action, action_logs in logs_by_action.items():
+            count = len(action_logs)
+            
+            if count <= 30:
+                # If 30 or fewer, keep all
+                sampled_logs.extend(action_logs)
+                action_samples[action] = {'original': count, 'sampled': count, 'method': 'all'}
+            else:
+                # Take first 15 and last 15
+                sampled = action_logs[:15] + action_logs[-15:]
+                sampled_logs.extend(sampled)
+                action_samples[action] = {'original': count, 'sampled': 30, 'method': 'first_15_last_15'}
+        
+        metadata = {
+            'strategy': 'short_timeframe',
+            'total_original': len(logs),
+            'total_sampled': len(sampled_logs),
+            'action_breakdown': action_samples
+        }
+        
+        return sampled_logs, metadata
+    
+    def _sample_logs_long_timeframe(self, logs: list, timeframe_hours: float) -> tuple[list, dict]:
+        """Sample logs for long timeframes (≥48h): Stratified temporal sampling across time buckets"""
+        from datetime import datetime as dt, timedelta
+        from collections import defaultdict
+        
+        # Determine bucket size based on timeframe
+        timeframe_days = timeframe_hours / 24
+        
+        if timeframe_days <= 10:
+            bucket_hours = 24  # 1 bucket per day
+            samples_per_bucket = 3
+        elif timeframe_days <= 30:
+            bucket_hours = 48  # 1 bucket per 2 days
+            samples_per_bucket = 3
+        else:
+            bucket_hours = 168  # 1 bucket per week
+            samples_per_bucket = 3
+        
+        # Parse timestamps and group by action + time bucket
+        logs_by_action_bucket = defaultdict(lambda: defaultdict(list))
+        
+        for log in logs:
+            action = log.get('action', 'Unknown')
+            
+            # Parse timestamp (Check Point format: "2025-10-13T11:59:31Z")
+            time_str = log.get('time', '')
+            try:
+                log_time = dt.fromisoformat(time_str.replace('Z', '+00:00'))
+                # Create bucket key (floor to bucket_hours)
+                bucket_key = int(log_time.timestamp() // (bucket_hours * 3600))
+                logs_by_action_bucket[action][bucket_key].append(log)
+            except:
+                # If timestamp parsing fails, put in bucket 0
+                logs_by_action_bucket[action][0].append(log)
+        
+        sampled_logs = []
+        action_samples = {}
+        
+        for action, buckets in logs_by_action_bucket.items():
+            action_total = sum(len(bucket_logs) for bucket_logs in buckets.values())
+            action_sampled = []
+            
+            # Sample from each bucket
+            for bucket_key in sorted(buckets.keys()):
+                bucket_logs = buckets[bucket_key]
+                bucket_count = len(bucket_logs)
+                
+                if bucket_count <= samples_per_bucket:
+                    # If bucket has few logs, take all
+                    action_sampled.extend(bucket_logs)
+                else:
+                    # Evenly sample across bucket
+                    indices = [int(i * bucket_count / samples_per_bucket) for i in range(samples_per_bucket)]
+                    action_sampled.extend([bucket_logs[i] for i in indices])
+            
+            # Always include first and last log of this action
+            all_action_logs = [log for bucket_logs in buckets.values() for log in bucket_logs]
+            if all_action_logs and all_action_logs[0] not in action_sampled:
+                action_sampled.insert(0, all_action_logs[0])
+            if all_action_logs and all_action_logs[-1] not in action_sampled:
+                action_sampled.append(all_action_logs[-1])
+            
+            sampled_logs.extend(action_sampled)
+            action_samples[action] = {
+                'original': action_total,
+                'sampled': len(action_sampled),
+                'buckets': len(buckets),
+                'method': f'stratified_{int(bucket_hours)}h_buckets'
+            }
+        
+        metadata = {
+            'strategy': 'long_timeframe_stratified',
+            'total_original': len(logs),
+            'total_sampled': len(sampled_logs),
+            'bucket_size_hours': bucket_hours,
+            'samples_per_bucket': samples_per_bucket,
+            'action_breakdown': action_samples
+        }
+        
+        return sampled_logs, metadata
+    
     def _filter_log_fields(self, data_collected: Dict[str, Any]) -> Dict[str, Any]:
         """Filter log data to remove Check Point metadata and reduce token usage
         
@@ -2712,6 +2951,7 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         user_query = plan.get('user_query', '')
         iteration_history = []
         current_data = execution_results.get('data_collected', {})
+        model_name = self.ollama_client.security_model  # Default model name for fallback
         
         for iteration in range(1, max_iterations + 1):
             print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] 🔍 Iteration {iteration}/{max_iterations}")
@@ -2982,6 +3222,26 @@ RESPOND WITH VALID JSON ONLY (no markdown, no explanations outside JSON):
         
         # Build context from execution results - filter log fields to reduce tokens
         data_collected = execution_results.get('data_collected', {})
+        
+        # Extract timeframe from session context or default to 24h
+        timeframe_hours = 24.0
+        if self.session_context.get('last_timeframe'):
+            timeframe_str = self.session_context.get('last_timeframe', 'last-24-hours')
+            # Parse timeframe string (e.g., "last-7-days", "last-30-days", "6-hours")
+            if 'hour' in timeframe_str:
+                try:
+                    timeframe_hours = float(timeframe_str.split('-')[0].replace('hours', '').replace('hour', '').strip())
+                except:
+                    timeframe_hours = 24.0
+            elif 'day' in timeframe_str:
+                try:
+                    days = float(timeframe_str.split('-')[1].replace('days', '').replace('day', '').strip())
+                    timeframe_hours = days * 24
+                except:
+                    timeframe_hours = 24.0
+        
+        # Apply intelligent temporal log sampling to reduce volume while preserving analysis coherence
+        data_collected = self._apply_smart_log_sampling(data_collected, timeframe_hours=timeframe_hours)
         
         # Apply intelligent log field filtering to reduce token usage while preserving valuable security information
         data_collected = self._filter_log_fields(data_collected)
