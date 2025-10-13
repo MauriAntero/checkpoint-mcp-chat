@@ -24,6 +24,10 @@ def _get_gateway_directory():
         _gateway_directory = GatewayDirectory()
     return _gateway_directory
 
+# Module-level cache for discovered resources (access layers, packages, etc.)
+# Keyed by MCP server package name to avoid cross-contamination
+_discovered_resources_cache = {}
+
 def _ts():
     """Return timestamp string for debug logging"""
     return datetime.now().strftime("%H:%M:%S.%f")[:-3]
@@ -638,6 +642,15 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             if resources:
                                 discovered_resources[tool.name] = resources
                                 print(f"[MCP_DEBUG] [{_ts()}] ✓ Discovered {len(resources)} resources from {tool.name}")
+                                
+                                # Cache access layers globally for reuse across queries (survives rate limiting)
+                                if 'access' in tool.name.lower() and 'layer' in tool.name.lower():
+                                    global _discovered_resources_cache
+                                    # Use unique server identifier to avoid cross-contamination
+                                    server_id = env_vars.get('S1C_URL') or env_vars.get('MANAGEMENT_HOST') or 'unknown'
+                                    cache_key = f"{server_id}:{package_name}:access_layers"
+                                    _discovered_resources_cache[cache_key] = resources
+                                    print(f"[MCP_DEBUG] [{_ts()}] 💾 Cached {len(resources)} access layers for server '{server_id}'")
                         except Exception as e:
                             print(f"[MCP_DEBUG] [{_ts()}] Discovery tool {tool.name} failed: {e}")
                     
@@ -844,12 +857,29 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                     else:
                                         print(f"[MCP_DEBUG] [{_ts()}] Multiple access-layers found - need user selection for {tool.name}.{param}")
                                 else:
-                                    # Discovery failed (likely due to rate limiting) - cannot auto-fill access layer
-                                    # Skip this tool and let the error propagate with clear messaging
-                                    skip_tool = True
-                                    error_msg = "Access layer discovery failed (likely API rate limiting). Cannot retrieve firewall rulebase without access layer name. Please reduce query frequency or specify layer manually."
-                                    print(f"[MCP_DEBUG] [{_ts()}] ⚠️ {error_msg}")
-                                    print(f"[MCP_DEBUG] [{_ts()}] Skipping {tool.name} - missing required access layer")
+                                    # No access layers discovered - check cache from previous successful queries
+                                    global _discovered_resources_cache
+                                    # Use same unique server identifier to avoid cross-contamination
+                                    server_id = env_vars.get('S1C_URL') or env_vars.get('MANAGEMENT_HOST') or 'unknown'
+                                    cache_key = f"{server_id}:{package_name}:access_layers"
+                                    cached_layers = _discovered_resources_cache.get(cache_key, [])
+                                    
+                                    if cached_layers and len(cached_layers) == 1:
+                                        # Use cached access layer ONLY when exactly 1 exists (preserve ambiguity handling)
+                                        args[param] = cached_layers[0].get('name')
+                                        has_name_identifier = True
+                                        print(f"[MCP_DEBUG] [{_ts()}] 💾 Using CACHED access-layer '{args[param]}' for {tool.name}.{param} (current discovery failed)")
+                                    elif cached_layers and len(cached_layers) > 1:
+                                        # Multiple cached layers - require user selection (preserve ambiguity handling)
+                                        skip_tool = True
+                                        print(f"[MCP_DEBUG] [{_ts()}] Multiple CACHED access-layers found ({len(cached_layers)}) - need user selection for {tool.name}.{param}")
+                                        print(f"[MCP_DEBUG] [{_ts()}] Skipping {tool.name} - ambiguous access layer")
+                                    else:
+                                        # No cache available - skip tool with clear error
+                                        skip_tool = True
+                                        error_msg = "Access layer discovery failed (likely API rate limiting) and no cached layers available. Cannot retrieve firewall rulebase without access layer name."
+                                        print(f"[MCP_DEBUG] [{_ts()}] ⚠️ {error_msg}")
+                                        print(f"[MCP_DEBUG] [{_ts()}] Skipping {tool.name} - missing required access layer")
                             # For other tools, don't auto-fill 'name' to avoid conflicts
                             elif user_parameter_selections and param in user_parameter_selections:
                                 args[param] = user_parameter_selections[param]
