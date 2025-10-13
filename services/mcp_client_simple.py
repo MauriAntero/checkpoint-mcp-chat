@@ -262,6 +262,85 @@ def clean_uuids_from_data(obj: Any) -> Any:
     else:
         return obj
 
+def extract_uuid_mappings(obj: Any, mappings: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    """Extract UUID->name mappings from objects-dictionary BEFORE cleaning
+    
+    Recursively searches for objects-dictionary arrays and extracts 
+    UUID fragment -> name mappings for later resolution.
+    
+    Args:
+        obj: Raw data structure (before clean_uuids_from_data)
+        mappings: Accumulator dict for mappings
+        
+    Returns:
+        Dict mapping UUID fragments (first 8 chars) to object names
+    """
+    if mappings is None:
+        mappings = {}
+    
+    if isinstance(obj, dict):
+        # Found objects-dictionary - extract mappings
+        if 'objects-dictionary' in obj:
+            objects_dict = obj.get('objects-dictionary', [])
+            if isinstance(objects_dict, list):
+                for item in objects_dict:
+                    if isinstance(item, dict) and 'uid' in item and 'name' in item:
+                        uid = item['uid']
+                        name = item['name']
+                        # Extract first 8 chars of UUID as fragment
+                        if isinstance(uid, str) and len(uid) >= 8:
+                            uuid_fragment = uid[:8]
+                            mappings[uuid_fragment] = name
+        
+        # Recursively search all dict values
+        for value in obj.values():
+            extract_uuid_mappings(value, mappings)
+    
+    elif isinstance(obj, list):
+        for item in obj:
+            extract_uuid_mappings(item, mappings)
+    
+    return mappings
+
+def resolve_uuid_references(obj: Any, uuid_mapping: Dict[str, str]) -> Any:
+    """Resolve UUID references to actual object names using extracted mappings
+    
+    Converts UUID strings like '<uuid-4ca1fc95>' to actual names like 'Any'
+    using the pre-extracted UUID->name mappings.
+    
+    Args:
+        obj: Data structure with UUID references (after clean_uuids_from_data)
+        uuid_mapping: Dict mapping UUID fragments to names
+        
+    Returns:
+        Data with UUID references resolved to names
+    """
+    if isinstance(obj, dict):
+        resolved = {}
+        for key, value in obj.items():
+            resolved[key] = resolve_uuid_references(value, uuid_mapping)
+        return resolved
+    
+    elif isinstance(obj, str):
+        # Check if this is a UUID reference like '<uuid-4ca1fc95>'
+        uuid_ref_pattern = r'<uuid-([0-9a-f]{8})>'
+        match = re.match(uuid_ref_pattern, obj, flags=re.IGNORECASE)
+        if match:
+            uuid_fragment = match.group(1).lower()
+            # Try to find matching name in mapping
+            resolved_name = uuid_mapping.get(uuid_fragment)
+            if resolved_name:
+                return resolved_name
+            # If no mapping found, keep the UUID reference
+            return obj
+        return obj
+    
+    elif isinstance(obj, list):
+        return [resolve_uuid_references(item, uuid_mapping) for item in obj]
+    
+    else:
+        return obj
+
 def convert_to_dict(obj: Any) -> Any:
     """Convert MCP objects to JSON-serializable dictionaries
     
@@ -546,8 +625,16 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             # Extract resource identifiers FIRST (needs uid/name structure intact)
                             resources = extract_resource_identifiers(tool.name, content_serializable)
                             
-                            # Clean UUIDs AFTER extraction (for display purposes)
+                            # Extract UUID mappings BEFORE cleaning
+                            uuid_mappings = extract_uuid_mappings(content_serializable)
+                            
+                            # Clean UUIDs AFTER extraction
                             content_serializable = clean_uuids_from_data(content_serializable)
+                            
+                            # Resolve UUID references using extracted mappings
+                            if uuid_mappings:
+                                content_serializable = resolve_uuid_references(content_serializable, uuid_mappings)
+                            
                             if resources:
                                 discovered_resources[tool.name] = resources
                                 print(f"[MCP_DEBUG] [{_ts()}] ✓ Discovered {len(resources)} resources from {tool.name}")
@@ -566,8 +653,16 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             # Extract policy packages FIRST (needs uid/name structure intact)
                             resources = extract_resource_identifiers('show_packages', content_serializable)
                             
-                            # Clean UUIDs AFTER extraction (for display purposes)
+                            # Extract UUID mappings BEFORE cleaning
+                            uuid_mappings = extract_uuid_mappings(content_serializable)
+                            
+                            # Clean UUIDs AFTER extraction
                             content_serializable = clean_uuids_from_data(content_serializable)
+                            
+                            # Resolve UUID references using extracted mappings
+                            if uuid_mappings:
+                                content_serializable = resolve_uuid_references(content_serializable, uuid_mappings)
+                            
                             if resources:
                                 discovered_resources['show_packages'] = resources
                                 print(f"[MCP_DEBUG] [{_ts()}] ✓ Discovered {len(resources)} policy packages from show_objects(type='package')")
@@ -1689,7 +1784,12 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                 "type": "text",
                                 "text": json.dumps(aggregated_response, indent=2)
                             }]
+                            # Extract UUID mappings BEFORE cleaning
+                            uuid_mappings = extract_uuid_mappings(aggregated_response)
                             content_serializable = clean_uuids_from_data(content_serializable)
+                            # Resolve UUID references using extracted mappings
+                            if uuid_mappings:
+                                content_serializable = resolve_uuid_references(content_serializable, uuid_mappings)
                         
                         # OFFSET-BASED PAGINATION (objects, gateways, etc.)
                         elif offset_total and offset_to and data_field and offset_total > offset_to:
@@ -1753,7 +1853,12 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                 "type": "text",
                                 "text": json.dumps(aggregated_response, indent=2)
                             }]
+                            # Extract UUID mappings BEFORE cleaning
+                            uuid_mappings = extract_uuid_mappings(aggregated_response)
                             content_serializable = clean_uuids_from_data(content_serializable)
+                            # Resolve UUID references using extracted mappings
+                            if uuid_mappings:
+                                content_serializable = resolve_uuid_references(content_serializable, uuid_mappings)
                             
                         else:
                             # No pagination needed or detected - use original response
@@ -1766,7 +1871,12 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             
                             # Convert MCP objects to JSON-serializable dictionaries
                             content_serializable = content_dict
+                            # Extract UUID mappings BEFORE cleaning
+                            uuid_mappings = extract_uuid_mappings(content_serializable)
                             content_serializable = clean_uuids_from_data(content_serializable)
+                            # Resolve UUID references using extracted mappings
+                            if uuid_mappings:
+                                content_serializable = resolve_uuid_references(content_serializable, uuid_mappings)
                             
                             # CRITICAL FIX: Re-serialize item['text'] back to JSON string
                             # Line 1346 replaced JSON strings with Python dicts for parsing,
