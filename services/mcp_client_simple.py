@@ -863,24 +863,113 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         elif any(kw in search_text for kw in ['https inspection', 'ssl inspection', 'tls inspection']):
                             blade_filter = 'blade:"HTTPS Inspection"'
                         
-                        # IP EXTRACTION FOR CONNECTIVITY/TROUBLESHOOTING QUERIES
-                        # Extract IPv4 addresses from query for traffic analysis and connectivity debugging
-                        ip_filter = None
-                        if any(kw in search_text for kw in ['connectivity', 'connection', 'issue', 'problem', 'fail', 'traffic', 'from', 'to']):
-                            # Extract all IPv4 addresses from query
+                        # COMPREHENSIVE FILTER EXTRACTION FOR LOG QUERIES
+                        # Extract multiple filter types from user query to build precise CheckPoint API filters
+                        additional_filters = []
+                        
+                        # 1. IP ADDRESS EXTRACTION (connectivity/troubleshooting)
+                        if any(kw in search_text for kw in ['connectivity', 'connection', 'issue', 'problem', 'fail', 'traffic', 'from', 'to', 'between']):
                             ip_pattern = r'\b(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b'
                             ips = re.findall(ip_pattern, search_text)
-                            
                             if ips:
-                                # Build filter: src:IP1 OR dst:IP1 OR src:IP2 OR dst:IP2
-                                # NOTE: CheckPoint API doesn't need quotes around IPs (only for multi-word values)
                                 ip_conditions = []
                                 for ip in ips:
                                     ip_conditions.append(f'src:{ip}')
                                     ip_conditions.append(f'dst:{ip}')
                                 ip_filter = ' OR '.join(ip_conditions)
-                                print(f"[MCP_DEBUG] [{_ts()}] 🔍 Extracted IPs for connectivity query: {ips}")
-                                print(f"[MCP_DEBUG] [{_ts()}] 🔍 IP filter: {ip_filter}")
+                                additional_filters.append(f"({ip_filter})")
+                                print(f"[MCP_DEBUG] [{_ts()}] 🔍 Extracted IPs: {ips}")
+                        
+                        # 2. ACTION FILTER EXTRACTION (compliance/audit)
+                        # Use word boundaries to avoid false matches (e.g., "not allowed" shouldn't match "allowed")
+                        # Check for negations (not blocked, not allowed, etc.) and invert action
+                        action_detected = None
+                        
+                        # Negative patterns (not blocked → accept, not allowed → drop)
+                        negative_block_pattern = r'\b(?:not|never|no)\s+(?:blocked|dropped|denied|rejected)\b'
+                        negative_accept_pattern = r'\b(?:not|never|no)\s+(?:accepted|allowed|permitted)\b'
+                        
+                        if re.search(negative_block_pattern, search_text, re.IGNORECASE):
+                            action_detected = 'accept'  # "not blocked" means accepted
+                            print(f"[MCP_DEBUG] [{_ts()}] 🔍 Extracted action (negation): 'not blocked' → action:accept")
+                        elif re.search(negative_accept_pattern, search_text, re.IGNORECASE):
+                            action_detected = 'drop'  # "not allowed" means blocked
+                            print(f"[MCP_DEBUG] [{_ts()}] 🔍 Extracted action (negation): 'not allowed' → action:drop")
+                        else:
+                            # Positive patterns with word boundaries
+                            block_pattern = r'\b(?:blocked|dropped|denied|rejected|deny|reject|drop)\b'
+                            accept_pattern = r'\b(?:accepted|allowed|permitted|permit|allow|accept)\b'
+                            
+                            if re.search(block_pattern, search_text, re.IGNORECASE):
+                                action_detected = 'drop'
+                                print(f"[MCP_DEBUG] [{_ts()}] 🔍 Extracted action: blocked/dropped → action:drop")
+                            elif re.search(accept_pattern, search_text, re.IGNORECASE):
+                                action_detected = 'accept'
+                                print(f"[MCP_DEBUG] [{_ts()}] 🔍 Extracted action: accepted/allowed → action:accept")
+                        
+                        if action_detected:
+                            additional_filters.append(f"action:{action_detected}")
+                        
+                        # 3. RULE NUMBER EXTRACTION
+                        rule_pattern = r'\b(?:rule|by rule)\s+(\d+)\b'
+                        rule_match = re.search(rule_pattern, search_text, re.IGNORECASE)
+                        if rule_match:
+                            rule_num = rule_match.group(1)
+                            additional_filters.append(f"rule:{rule_num}")
+                            print(f"[MCP_DEBUG] [{_ts()}] 🔍 Extracted rule number: {rule_num}")
+                        
+                        # 4. DOMAIN/URL EXTRACTION (application troubleshooting)
+                        # First try full URLs with protocol
+                        url_pattern_with_protocol = r'https?://[^\s<>"{}|\\^`\[\]]+'
+                        url_match = re.search(url_pattern_with_protocol, search_text, re.IGNORECASE)
+                        if url_match:
+                            domain = url_match.group(0).replace('http://', '').replace('https://', '').split('/')[0]
+                            additional_filters.append(f"(dst:{domain} OR url:{domain})")
+                            print(f"[MCP_DEBUG] [{_ts()}] 🔍 Extracted domain from URL: {domain}")
+                        else:
+                            # Try domain patterns without protocol (exclude IPs we already captured)
+                            domain_pattern = r'\b(?:www\.)?([a-zA-Z0-9](?:[-a-zA-Z0-9]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[-a-zA-Z0-9]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,})\b'
+                            domain_matches = re.findall(domain_pattern, search_text, re.IGNORECASE)
+                            # Filter out domains that are actually IPs or common words
+                            valid_domains = [d for d in domain_matches if '.' in d and not re.match(r'^\d+\.\d+\.\d+\.\d+$', d)]
+                            if valid_domains:
+                                domain = valid_domains[0]  # Use first domain found
+                                additional_filters.append(f"(dst:{domain} OR url:{domain})")
+                                print(f"[MCP_DEBUG] [{_ts()}] 🔍 Extracted domain: {domain}")
+                        
+                        # 5. USERNAME EXTRACTION (user activity tracking)
+                        user_pattern = r'\b(?:user|username|account)\s+([a-zA-Z0-9._-]+)\b'
+                        user_match = re.search(user_pattern, search_text, re.IGNORECASE)
+                        if user_match:
+                            username = user_match.group(1)
+                            additional_filters.append(f"(user:{username} OR orig_user:{username} OR identity_user:{username})")
+                            print(f"[MCP_DEBUG] [{_ts()}] 🔍 Extracted username: {username}")
+                        
+                        # 6. SERVICE/PORT EXTRACTION
+                        # Named services
+                        service_keywords = {
+                            'ssh': 'ssh', 'http': 'http', 'https': 'https', 'ftp': 'ftp', 'smtp': 'smtp', 
+                            'dns': 'dns', 'telnet': 'telnet', 'rdp': 'ms-wbt-server', 'smb': 'microsoft-ds'
+                        }
+                        for keyword, service in service_keywords.items():
+                            if f' {keyword} ' in f' {search_text} ' or f' {keyword},' in search_text or search_text.endswith(keyword):
+                                additional_filters.append(f"service:{service}")
+                                print(f"[MCP_DEBUG] [{_ts()}] 🔍 Extracted service: {keyword} → service:{service}")
+                                break
+                        
+                        # Port numbers
+                        port_pattern = r'\b(?:port|on port)\s+(\d+)\b'
+                        port_match = re.search(port_pattern, search_text, re.IGNORECASE)
+                        if port_match:
+                            port = port_match.group(1)
+                            additional_filters.append(f"service:{port}")
+                            print(f"[MCP_DEBUG] [{_ts()}] 🔍 Extracted port: {port}")
+                        
+                        # Combine all additional filters
+                        combined_additional_filter = None
+                        if additional_filters:
+                            combined_additional_filter = ' AND '.join(additional_filters)
+                            print(f"[MCP_DEBUG] [{_ts()}] 🔍 Combined additional filters: {combined_additional_filter}")
                         
                         # Create new_query dict AFTER max_logs adjustment from blade filters
                         new_query = {
@@ -890,18 +979,18 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         if log_type:
                             new_query["type"] = log_type
                         
-                        # Combine blade_filter and ip_filter if both exist
+                        # Combine blade_filter and additional_filters
                         final_filter = None
-                        if blade_filter and ip_filter:
-                            # Both filters: combine with AND logic (blade AND (IP conditions))
-                            final_filter = f"({blade_filter}) AND ({ip_filter})"
-                            print(f"[MCP_DEBUG] [{_ts()}] Combined blade + IP filter: {final_filter}")
+                        if blade_filter and combined_additional_filter:
+                            # Both filters: combine with AND logic (blade AND (additional conditions))
+                            final_filter = f"({blade_filter}) AND ({combined_additional_filter})"
+                            print(f"[MCP_DEBUG] [{_ts()}] ✅ Combined blade + additional filters: {final_filter}")
                         elif blade_filter:
                             final_filter = blade_filter
-                            print(f"[MCP_DEBUG] [{_ts()}] Added blade filter: {blade_filter}")
-                        elif ip_filter:
-                            final_filter = ip_filter
-                            print(f"[MCP_DEBUG] [{_ts()}] Added IP filter: {ip_filter}")
+                            print(f"[MCP_DEBUG] [{_ts()}] ✅ Using blade filter: {blade_filter}")
+                        elif combined_additional_filter:
+                            final_filter = combined_additional_filter
+                            print(f"[MCP_DEBUG] [{_ts()}] ✅ Using additional filters: {combined_additional_filter}")
                         
                         if final_filter:
                             # MCP server expects flat string - it handles CheckPoint API transformation internally

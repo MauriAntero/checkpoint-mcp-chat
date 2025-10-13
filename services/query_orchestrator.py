@@ -539,8 +539,33 @@ Intent Analysis:"""
         is_threat_query = any(keyword in query_lower for keyword in threat_keywords)
         is_policy_query = any(keyword in query_lower for keyword in policy_keywords)
         
+        # Performance/Capacity keywords (gateway metrics, not logs)
+        performance_keywords = [
+            'cpu', 'memory', 'ram', 'disk space', 'load', 'performance', 
+            'concurrent connections', 'session count', 'sessions', 'connections count',
+            'resource usage', 'utilization', 'capacity', 'processes', 'top processes',
+            'bandwidth usage', 'throughput', 'latency', 'response time'
+        ]
+        is_performance_query = any(keyword in query_lower for keyword in performance_keywords)
+        
         # Build allowed servers list based on query type
-        if is_threat_query and not is_policy_query:
+        if is_performance_query:
+            # Performance queries need gateway CLI tools, not logs
+            query_type = "PERFORMANCE/CAPACITY ANALYSIS"
+            allowed_servers = ["quantum-gw-cli", "quantum-management", "quantum-gaia"]
+            forbidden_servers = ["management-logs"]
+            instructions = """This is a PERFORMANCE/CAPACITY query requiring gateway metrics.
+REQUIRED servers: quantum-gw-cli (for cpstat, fw ctl pstat, top, df, free commands)
+OPTIONAL servers: quantum-management (for gateway discovery), quantum-gaia (for system commands)
+FORBIDDEN servers: management-logs (logs don't contain performance metrics)
+
+IMPORTANT: Suggest specific diagnostic commands like:
+- cpstat (gateway statistics)
+- fw ctl pstat (connection table stats)
+- top (CPU/memory usage)
+- df -h (disk space)
+- free -m (memory usage)"""
+        elif is_threat_query and not is_policy_query:
             query_type = "PURE_THREAT"
             allowed_servers = ["management-logs"]  # ONLY logs for actual threat data
             forbidden_servers = ["quantum-management", "threat-prevention", "https-inspection"]
