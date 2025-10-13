@@ -2072,12 +2072,20 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         """
         output = []
         
+        # DEBUG: Log what we receive
+        from datetime import datetime
+        ts = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+        print(f"[DEBUG] [{ts}] _format_rulebase_as_markdown called")
+        print(f"[DEBUG] [{ts}] rulebase_data keys: {list(rulebase_data.keys()) if isinstance(rulebase_data, dict) else 'NOT A DICT'}")
+        print(f"[DEBUG] [{ts}] rulebase array length: {len(rulebase_data.get('rulebase', [])) if isinstance(rulebase_data, dict) else 'N/A'}")
+        
         # Add policy package name if available
         if 'name' in rulebase_data:
             output.append(f"**Policy Package: {rulebase_data['name']}**\n")
         
         # Extract rules
         rules = rulebase_data.get('rulebase', [])
+        print(f"[DEBUG] [{ts}] Extracted {len(rules)} rules for formatting")
         if not rules:
             return json.dumps(rulebase_data, indent=2)  # No rules, return original
         
