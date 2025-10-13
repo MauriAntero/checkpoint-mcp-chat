@@ -545,6 +545,8 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
     Returns:
         Dict containing tools and their results
     """
+    global _discovered_resources_cache
+    
     try:
         print(f"\n[MCP_DEBUG] ========== Starting MCP Query ==========")
         print(f"[MCP_DEBUG] [{_ts()}] Package: {package_name}")
@@ -645,7 +647,6 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                 
                                 # Cache access layers globally for reuse across queries (survives rate limiting)
                                 if 'access' in tool.name.lower() and 'layer' in tool.name.lower():
-                                    global _discovered_resources_cache
                                     # Use unique server identifier to avoid cross-contamination
                                     server_id = env_vars.get('S1C_URL') or env_vars.get('MANAGEMENT_HOST') or 'unknown'
                                     cache_key = f"{server_id}:{package_name}:access_layers"
@@ -858,7 +859,6 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                         print(f"[MCP_DEBUG] [{_ts()}] Multiple access-layers found - need user selection for {tool.name}.{param}")
                                 else:
                                     # No access layers discovered - check cache from previous successful queries
-                                    global _discovered_resources_cache
                                     # Use same unique server identifier to avoid cross-contamination
                                     server_id = env_vars.get('S1C_URL') or env_vars.get('MANAGEMENT_HOST') or 'unknown'
                                     cache_key = f"{server_id}:{package_name}:access_layers"
