@@ -3466,6 +3466,18 @@ TROUBLESHOOTING ROOT CAUSE ANALYSIS REQUIREMENTS:
      - Security blade enforcement (IPS signature, App Control policy, URL category, IP reputation)
      - Threat prevention profiles
    ✓ Is this expected security enforcement or misconfiguration?
+   
+   **🚨 CRITICAL OUTPUT REQUIREMENT 🚨**
+   ✓ **ALWAYS display the matching firewall rule(s) in your response using the markdown table format**
+   ✓ **Copy the exact rule row from the rulebase data and show it to the user**
+   ✓ Example format when traffic is dropped by rule 1:
+     ```
+     **Matching Firewall Rule (Rule 1):**
+     | No. | Name | Source | Destination | Service | Action | Track |
+     |-----|------|--------|-------------|---------|--------|-------|
+     | 1 | - | sisaverkko | Any | Spyware / Malicious Sites | Drop | Log |
+     ```
+   ✓ **This rule display is MANDATORY for troubleshooting analysis - users need to see the exact rule configuration**
 
 3. NETWORK-LEVEL ROOT CAUSES (IF POLICY IS NOT THE ISSUE):
    ✓ Routing problems:
@@ -3536,13 +3548,15 @@ TROUBLESHOOTING ROOT CAUSE ANALYSIS REQUIREMENTS:
    ✓ Always cite specific evidence from logs, rulebase, and diagnostics
    ✓ Report the complete diagnosis chain with supporting data
    ✓ If no traffic found: "No traffic found for specified IPs/timeframe"
-   ✓ **If traffic dropped: Extract and display the matching firewall rule in table format**
-     Example format:
+   ✓ **🚨 MANDATORY: If traffic dropped/blocked, you MUST display the matching firewall rule table in your response**
+     - Copy the EXACT rule row from the rulebase data provided above
+     - Show it in markdown table format so user can see the rule configuration
+     - Example:
      ```
-     **Matching Firewall Rule (caused the drop):**
+     **Matching Firewall Rule (Rule 1 - caused the drop):**
      | No. | Name | Source | Destination | Service | Action | Track |
      |-----|------|--------|-------------|---------|--------|-------|
-     | [rule_number] | [rule_name] | [source] | [destination] | [service] | [action_from_logs] | [track] |
+     | 1 | - | sisaverkko | Any | Spyware / Malicious Sites | Drop | Log |
      ```
    ✓ If network-level: Show routing/interface/NAT evidence
    ✓ If gateway-level: Include resource/HA/performance metrics
