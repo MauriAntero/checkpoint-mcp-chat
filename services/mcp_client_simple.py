@@ -1731,9 +1731,9 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                             offset_from = None
                                             offset_to = None
                                         
-                                        # Detect data field: logs, objects, or other array fields (only for dict responses)
+                                        # Detect data field: logs, objects, rulebase, or other array fields (only for dict responses)
                                         if isinstance(data, dict):
-                                            for field in ['logs', 'objects', 'gateways', 'servers', 'hosts', 'networks', 'services']:
+                                            for field in ['logs', 'objects', 'rulebase', 'gateways', 'servers', 'hosts', 'networks', 'services']:
                                                 if field in data and isinstance(data[field], list):
                                                     data_field = field
                                                     first_page_data = data[field]
