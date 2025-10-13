@@ -196,20 +196,33 @@ def clean_uuids_from_data(obj: Any) -> Any:
     
     if isinstance(obj, dict):
         # CRITICAL DATA FIELDS that must be preserved (rulebase, logs, objects, etc.)
-        # If dict contains ANY of these, we MUST keep the full structure
-        critical_fields = {'rulebase', 'objects-dictionary', 'logs', 'objects', 
-                          'gateways', 'servers', 'nat-rulebase', 'access-rulebase'}
+        # Container fields - if present, preserve the entire dict structure
+        container_fields = {
+            'rulebase', 'objects-dictionary', 'logs', 'objects', 
+            'gateways', 'servers', 'nat-rulebase', 'access-rulebase'
+        }
         
         # CheckPoint object structure: if dict has both 'uid' and 'name', collapse to name
-        # BUT ONLY if it doesn't contain critical data fields (like rulebase)
+        # BUT ONLY if it doesn't contain critical data
         if 'uid' in obj and 'name' in obj:
-            # Check if this dict has critical data fields - if so, keep the full structure
-            if any(field in obj for field in critical_fields):
-                # This is a complex object (like rulebase response) - preserve all fields
-                # Just recursively clean the values to remove nested UUIDs
+            # Check 1: Container fields (rulebase, logs, etc.) - always preserve
+            if any(field in obj for field in container_fields):
+                # This is a complex container object - preserve all fields
+                return {key: clean_uuids_from_data(value) for key, value in obj.items()}
+            
+            # Check 2: Firewall/NAT rule detection - preserve if it has rule-specific field combinations
+            # Access Control Rule: has source + destination + (service or services)
+            is_access_rule = ('source' in obj and 'destination' in obj and 
+                            ('service' in obj or 'services' in obj))
+            # NAT Rule: has original-source/destination or translated-source/destination
+            is_nat_rule = (('original-source' in obj or 'original-destination' in obj) or
+                          ('translated-source' in obj or 'translated-destination' in obj))
+            
+            if is_access_rule or is_nat_rule:
+                # This is a firewall or NAT rule - preserve ALL fields (source, dest, service, action, etc.)
                 return {key: clean_uuids_from_data(value) for key, value in obj.items()}
             else:
-                # Simple object with only uid/name (and maybe a few metadata fields) - collapse to name
+                # Simple object with only uid/name (host, network, service object) - collapse to name
                 # Return just the name string, discarding the uid
                 return obj['name']
         
