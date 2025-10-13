@@ -2139,8 +2139,7 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             output.append(f"| {rule_num} | {name} | {source_str} | {dest_str} | {service_str} | {action_str} | {track_str} |")
         
         output.append(f"\n**Total Rules: {len(rules)}**")
-        output.append(f"\n**NOTE 1**: Rulebase action field may be inaccurate due to MCP server limitations. **Always rely on LOG 'action' field for actual enforcement actions (Drop/Accept/Reject)**.")
-        output.append(f"\n**NOTE 2**: Check Point automatically adds implicit/cleanup rules (typically last rule) that are NOT shown in this rulebase. If logs reference a rule number NOT in this table, it's an implicit cleanup rule (usually drops traffic that doesn't match explicit rules).")
+        output.append(f"\n**NOTE**: Rulebase action field may be inaccurate due to MCP server limitations. **Always rely on LOG 'action' field for actual enforcement actions (Drop/Accept/Reject)**.")
         
         return '\n'.join(output)
     
@@ -3441,7 +3440,6 @@ TROUBLESHOOTING ROOT CAUSE ANALYSIS REQUIREMENTS:
 
 2. SECURITY POLICY ENFORCEMENT ANALYSIS:
    ✓ Which firewall rule processed the traffic? **CRITICAL: Match LOG 'rule' field NUMBER to RULEBASE 'rule-number' (e.g., log shows 'rule: 1' → find rulebase rule-number: 1)**
-   ✓ **IMPLICIT RULES**: If log shows a rule number NOT in the rulebase table (e.g., log shows rule 4 but table only has rules 1-3), it's Check Point's implicit cleanup rule (auto-added, not in API responses). These typically DROP traffic that doesn't match explicit rules.
    ✓ What action did the rule take? **CRITICAL: Use LOG 'action' field (Drop/Accept/Reject), NOT rulebase action field (may show incorrect values like 'Policy Targets' due to MCP server bug)**
    ✓ Which security blade enforced the action? (Firewall, Application Control, IPS, URL Filtering, etc.)
    ✓ WHY was traffic dropped/blocked? Check rule's source, destination, service fields AND service categories
@@ -3503,15 +3501,21 @@ TROUBLESHOOTING ROOT CAUSE ANALYSIS REQUIREMENTS:
      - Interface statistics (cpstat, ifconfig)
      - Resource monitoring (cpview, top, free)
 
-6. TEMPORAL ANALYSIS (CRITICAL - CHECK TIMESTAMPS):
-   ✓ **Analyze timestamp patterns to distinguish historical vs current state**
-   ✓ Group logs by time periods: "Earlier today" vs "Currently" vs "Recent activity"
-   ✓ Identify if issues are:
-     - RESOLVED: "Traffic was blocked earlier (timestamp X) but is now working (timestamp Y)"
-     - ONGOING: "Traffic continues to be dropped (first seen at X, last seen at Y)"
-     - INTERMITTENT: "Traffic alternates between Drop and Accept"
-   ✓ **ALWAYS report the current state separately from historical issues**
-   ✓ Example: "Earlier at 10:30 AM traffic was dropped by rule 5, but as of 2:15 PM connections are being accepted"
+6. TEMPORAL ANALYSIS (CRITICAL - CHECK TIMESTAMPS AND RULES):
+   ✓ **MANDATORY: Group logs by BOTH rule number AND timestamp to identify state changes**
+   ✓ **Check which rule was hitting WHEN**:
+     - Example: "Earlier (12:30-12:40) → rule 1 (Drop)" vs "Later (12:45-13:00) → rule 4 (Accept)"
+   ✓ **Identify temporal patterns**:
+     - RESOLVED: "Traffic WAS blocked by rule X (timestamps) → NOW accepted by rule Y (timestamps)" 
+     - ONGOING: "Traffic CONTINUES to be dropped by rule X (first seen at A, last seen at B)"
+     - INTERMITTENT: "Traffic alternates between rule X (Drop) and rule Y (Accept)"
+   ✓ **CRITICAL: Different rules = different states**:
+     - If you see drops from rule 1 at 12:30 AND accepts from rule 4 at 12:45 → Issue was RESOLVED
+     - The rule change indicates a fix or policy update
+   ✓ **ALWAYS report current state vs historical state**:
+     - "PAST STATE (12:30): Rule 1 dropped traffic to X.X.X.X (malicious category)"
+     - "CURRENT STATE (12:45): Rule 4 now accepts same traffic (explicit allow rule)"
+     - "CONCLUSION: Issue was resolved between 12:30-12:45"
 
 7. REPORTING REQUIREMENTS:
    ✓ Always cite specific evidence from logs, rulebase, and diagnostics
