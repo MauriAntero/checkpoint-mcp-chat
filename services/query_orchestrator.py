@@ -2203,12 +2203,19 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
                                         if isinstance(value, list) and len(value) > 0:
                                             first_item = value[0]
                                             if isinstance(first_item, dict):
+                                                # CRITICAL: Check if it's a firewall rule FIRST (before checking logs)
+                                                # Rulebases should NOT be deduplicated (each rule is unique even if action/source match)
+                                                is_rulebase = (key == 'rulebase' or 'rule-number' in first_item)
+                                                
                                                 # Check if it's a log
                                                 has_time = any(k in first_item for k in ['time', 'timestamp'])
                                                 has_action = any(k in first_item for k in ['action', 'severity', 'blade'])
                                                 
                                                 unique_items = []
-                                                if has_time and has_action:
+                                                if is_rulebase:
+                                                    # Rulebases: Keep all rules as-is (no deduplication)
+                                                    unique_items = value
+                                                elif has_time and has_action:
                                                     # It's a log - deduplicate
                                                     for log in value:
                                                         log_hash = f"{log.get('time')}_{log.get('src')}_{log.get('dst')}_{log.get('action')}"
