@@ -195,10 +195,23 @@ def clean_uuids_from_data(obj: Any) -> Any:
     uuid_with_name_pattern = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\s*\(\s*([^)]+)\s*\)'
     
     if isinstance(obj, dict):
-        # CheckPoint object structure: if dict has both 'uid' and 'name', return just the name
+        # CRITICAL DATA FIELDS that must be preserved (rulebase, logs, objects, etc.)
+        # If dict contains ANY of these, we MUST keep the full structure
+        critical_fields = {'rulebase', 'objects-dictionary', 'logs', 'objects', 
+                          'gateways', 'servers', 'nat-rulebase', 'access-rulebase'}
+        
+        # CheckPoint object structure: if dict has both 'uid' and 'name', collapse to name
+        # BUT ONLY if it doesn't contain critical data fields (like rulebase)
         if 'uid' in obj and 'name' in obj:
-            # Return just the name string, discarding the uid
-            return obj['name']
+            # Check if this dict has critical data fields - if so, keep the full structure
+            if any(field in obj for field in critical_fields):
+                # This is a complex object (like rulebase response) - preserve all fields
+                # Just recursively clean the values to remove nested UUIDs
+                return {key: clean_uuids_from_data(value) for key, value in obj.items()}
+            else:
+                # Simple object with only uid/name (and maybe a few metadata fields) - collapse to name
+                # Return just the name string, discarding the uid
+                return obj['name']
         
         # If dict has 'uid' but no 'name', try to use uid as fallback (but clean it)
         elif 'uid' in obj and 'name' not in obj:
