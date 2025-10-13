@@ -3449,13 +3449,23 @@ TROUBLESHOOTING ROOT CAUSE ANALYSIS REQUIREMENTS:
 
 1. TRAFFIC FLOW ANALYSIS (START HERE - OBVIOUS CHECKS):
    ✓ Was connection attempted? Identify source/destination IPs, ports, protocol
+   ✓ **CRITICAL: Filter logs by action - Focus on Drop/Block/Reject actions FIRST for connectivity issues**
+     - Ignore Accept logs initially - they show working traffic, not the problem
+     - Only analyze Accept logs if no drops found, or for temporal comparison
    ✓ What happened to the traffic? (Accepted, Dropped, Blocked, Rejected, Timeout, Reset)
    ✓ Check NAT translations (source/destination IP/port modifications)
    ✓ Identify connection outcomes and patterns
 
-2. SECURITY POLICY ENFORCEMENT ANALYSIS:
-   ✓ Which firewall rule processed the traffic? **CRITICAL: Match LOG 'rule' field NUMBER to RULEBASE 'rule-number' (e.g., log shows 'rule: 1' → find rulebase rule-number: 1)**
-   ✓ What action did the rule take? **CRITICAL: Use LOG 'action' field (Drop/Accept/Reject), NOT rulebase action field (may show incorrect values like 'Policy Targets' due to MCP server bug)**
+2. SECURITY POLICY ENFORCEMENT ANALYSIS (FOCUS ON DROP/BLOCK LOGS):
+   ✓ **STEP 1: Filter for action=Drop/Block/Reject logs ONLY - these show the connectivity issue**
+     - Example: If you see logs with action=Drop and rule=1, analyze rule 1
+     - Example: If you see logs with action=Accept and rule=4, IGNORE these initially (they show working traffic)
+   ✓ **STEP 2: From the DROP logs, identify which rule number processed them**
+     - Look at the 'rule' field in logs where action=Drop/Block/Reject
+     - Match LOG 'rule' field NUMBER to RULEBASE 'rule-number' (e.g., DROP log shows 'rule: 1' → analyze rulebase rule-number: 1)
+   ✓ **STEP 3: Verify the action using LOG data, not rulebase data**
+     - Use LOG 'action' field (Drop/Accept/Reject) as the source of truth
+     - Ignore rulebase action field (may show incorrect values like 'Policy Targets' due to MCP server bug)
    ✓ Which security blade enforced the action? (Firewall, Application Control, IPS, URL Filtering, etc.)
    ✓ WHY was traffic dropped/blocked? Check rule's source, destination, service fields AND service categories
      **IMPORTANT: Service categories like 'Spyware / Malicious Sites' are DESTINATION-based blocking rules**
@@ -3468,16 +3478,21 @@ TROUBLESHOOTING ROOT CAUSE ANALYSIS REQUIREMENTS:
    ✓ Is this expected security enforcement or misconfiguration?
    
    **🚨 CRITICAL OUTPUT REQUIREMENT 🚨**
-   ✓ **ALWAYS display the matching firewall rule(s) in your response using the markdown table format**
-   ✓ **Copy the exact rule row from the rulebase data and show it to the user**
+   ✓ **Display the DROP rule in your response, not the Accept rule**
+     - If DROP logs show rule=1, display rule 1 from rulebase
+     - If ACCEPT logs show rule=4, do NOT display rule 4 (it's not causing the issue)
+   ✓ **Copy the exact DROP rule row from the rulebase data and show it to the user**
+   ✓ **Use the Action from the LOG (Drop), not from the rulebase (Policy Targets)**
    ✓ Example format when traffic is dropped by rule 1:
      ```
-     **Matching Firewall Rule (Rule 1):**
+     **Matching Firewall Rule (Rule 1 - CAUSED THE DROP):**
      | No. | Name | Source | Destination | Service | Action | Track |
      |-----|------|--------|-------------|---------|--------|-------|
      | 1 | - | sisaverkko | Any | Spyware / Malicious Sites | Drop | Log |
+     
+     Note: Action=Drop taken from log data (rulebase shows incorrect "Policy Targets")
      ```
-   ✓ **This rule display is MANDATORY for troubleshooting analysis - users need to see the exact rule configuration**
+   ✓ **This rule display is MANDATORY for troubleshooting analysis - users need to see the exact DROP rule configuration**
 
 3. NETWORK-LEVEL ROOT CAUSES (IF POLICY IS NOT THE ISSUE):
    ✓ Routing problems:
@@ -3548,15 +3563,20 @@ TROUBLESHOOTING ROOT CAUSE ANALYSIS REQUIREMENTS:
    ✓ Always cite specific evidence from logs, rulebase, and diagnostics
    ✓ Report the complete diagnosis chain with supporting data
    ✓ If no traffic found: "No traffic found for specified IPs/timeframe"
-   ✓ **🚨 MANDATORY: If traffic dropped/blocked, you MUST display the matching firewall rule table in your response**
-     - Copy the EXACT rule row from the rulebase data provided above
+   ✓ **🚨 MANDATORY: If traffic dropped/blocked, you MUST display the DROP rule table in your response**
+     - First, identify DROP logs: filter for action=Drop/Block/Reject
+     - Then, get the rule number from those DROP logs (e.g., rule=1)
+     - Then, copy that rule's row from the rulebase data provided above
      - Show it in markdown table format so user can see the rule configuration
-     - Example:
+     - DO NOT show Accept rules when troubleshooting drops (they're not the problem)
+     - Example when DROP logs show rule=1:
      ```
-     **Matching Firewall Rule (Rule 1 - caused the drop):**
+     **Matching Firewall Rule (Rule 1 - CAUSED THE DROP):**
      | No. | Name | Source | Destination | Service | Action | Track |
      |-----|------|--------|-------------|---------|--------|-------|
      | 1 | - | sisaverkko | Any | Spyware / Malicious Sites | Drop | Log |
+     
+     Note: Action=Drop from log data (rulebase may show "Policy Targets" due to MCP server bug)
      ```
    ✓ If network-level: Show routing/interface/NAT evidence
    ✓ If gateway-level: Include resource/HA/performance metrics
