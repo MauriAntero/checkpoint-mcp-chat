@@ -1657,6 +1657,7 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         first_page_data = []
                         all_data = []
                         page_count = 1
+                        original_wrapper = None  # Store original response structure for pagination
                         
                         # INTELLIGENT PAGINATION: Adjust max pages based on time range and query type
                         # Broad time ranges (7 days) need fewer pages to prevent token overflow
@@ -1737,6 +1738,8 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                                 if field in data and isinstance(data[field], list):
                                                     data_field = field
                                                     first_page_data = data[field]
+                                                    # Store original wrapper for pagination (preserve uid, name, objects-dictionary, etc.)
+                                                    original_wrapper = {k: v for k, v in data.items() if k != field}
                                                     print(f"[MCP_DEBUG] [{_ts()}] 📄 Page 1: Retrieved {len(first_page_data)} {field}")
                                                     print(f"[MCP_DEBUG] [{_ts()}] 📄 First response has query-id: {query_id is not None}, total: {offset_total}, from: {offset_from}, to: {offset_to}")
                                                     
@@ -1806,11 +1809,11 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             total_items = len(all_data)
                             print(f"[MCP_DEBUG] [{_ts()}] 📄 ✓ Pagination complete: {total_items} total {data_field} across {page_count} pages")
                             
-                            aggregated_response = {
-                                data_field: all_data,
-                                "total": total_items,
-                                "pages_fetched": page_count
-                            }
+                            # Preserve original wrapper structure (uid, name, objects-dictionary, etc.) and merge with paginated data
+                            aggregated_response = original_wrapper.copy() if original_wrapper else {}
+                            aggregated_response[data_field] = all_data
+                            aggregated_response["total"] = total_items
+                            aggregated_response["pages_fetched"] = page_count
                             if query_id and page_count >= MAX_PAGES:
                                 aggregated_response["note"] = f"Reached maximum page limit ({MAX_PAGES}). More {data_field} may be available."
                             
@@ -1874,12 +1877,12 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             total_items = len(all_data)
                             print(f"[MCP_DEBUG] [{_ts()}] 📄 ✓ Offset pagination complete: {total_items} total {data_field} across {page_count} pages")
                             
-                            aggregated_response = {
-                                data_field: all_data,
-                                "total": total_items,
-                                "pages_fetched": page_count,
-                                "expected_total": offset_total
-                            }
+                            # Preserve original wrapper structure (uid, name, objects-dictionary, etc.) and merge with paginated data
+                            aggregated_response = original_wrapper.copy() if original_wrapper else {}
+                            aggregated_response[data_field] = all_data
+                            aggregated_response["total"] = total_items
+                            aggregated_response["pages_fetched"] = page_count
+                            aggregated_response["expected_total"] = offset_total
                             if current_offset < offset_total and page_count >= MAX_PAGES:
                                 aggregated_response["note"] = f"Reached maximum page limit ({MAX_PAGES}). More {data_field} may be available (expected {offset_total} total)."
                             
