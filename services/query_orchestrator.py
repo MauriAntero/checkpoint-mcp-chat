@@ -206,14 +206,36 @@ ANALYSIS STRATEGY: Start with cpview -p or cpstat os -f all for holistic view, t
         if intent_task_type == "troubleshooting":
             return (
                 "CONNECTIVITY_TROUBLESHOOTING",
-                ["management-logs"],
-                ["quantum-management", "threat-prevention", "https-inspection"],
-                """This is a CONNECTIVITY/TROUBLESHOOTING query - investigating connection issues.
-REQUIRED servers: management-logs ONLY (traffic logs show what's happening)
-FORBIDDEN servers: quantum-management, threat-prevention, https-inspection (policy data is irrelevant for troubleshooting)
+                ["management-logs", "quantum-management"],
+                ["threat-prevention", "https-inspection"],
+                """This is a CONNECTIVITY/TROUBLESHOOTING query - investigating connection issues and root causes.
+REQUIRED servers: 
+  • management-logs (PRIMARY: traffic logs show connection attempts, drops, accepts)
+  • quantum-management (REQUIRED: rulebase shows WHICH rule processed traffic and WHY it was dropped/accepted)
 
-CRITICAL: User wants to see TRAFFIC DATA for specific connections, NOT policy configuration.
-Focus ONLY on retrieving logs that show connection attempts, blocks, accepts, NAT, routing."""
+FORBIDDEN servers: threat-prevention, https-inspection (threat profiles not needed for basic connectivity troubleshooting)
+
+CRITICAL TROUBLESHOOTING DATA REQUIREMENTS:
+1. LOGS: Retrieve traffic logs for the specified IPs/timeframe using management-logs
+   - Look for connections, drops, accepts, NAT translations
+   - Include all relevant security blade logs (Firewall, IPS, Application Control, URL Filtering, etc.)
+
+2. RULEBASE: Retrieve matching firewall rules using quantum-management
+   - Use show_access_rulebase with show_raw=true to get complete rule objects
+   - Include both Access Control and NAT rules
+   - MUST provide package and layer parameters (discovered from show_packages, show_access_layers)
+
+3. ROOT CAUSE ANALYSIS: Match log entries to firewall rules
+   - Identify which rule number processed the traffic (from log 'rule' field)
+   - Retrieve that specific rule's configuration to understand WHY it dropped/accepted
+   - Analyze NAT translations if IPs were modified
+   - Report the complete enforcement chain: log → rule → action → reason
+
+DATA RETRIEVAL PATTERN:
+  Step 1: Get traffic logs matching the IPs/timeframe
+  Step 2: Identify rule numbers from logs (look at 'rule' field)
+  Step 3: Get rulebase with show_raw=true to see actual rule configurations
+  Step 4: Correlate logs with rules to determine root cause"""
             )
         elif intent_task_type in ["security_investigation", "threat_assessment"]:
             return (
@@ -2680,19 +2702,17 @@ Errors: {', '.join(errors) if errors else 'None'}{warnings_text}
             # CRITICAL: Make troubleshooting intent EXTREMELY EXPLICIT at the very top
             task_type_header = """
 ╔═══════════════════════════════════════════════════════════════════════════════╗
-║                    🔧 CONNECTIVITY TROUBLESHOOTING TASK 🔧                    ║
-║                         NOT A SECURITY INVESTIGATION                          ║
+║                  🔧 CONNECTIVITY TROUBLESHOOTING & ROOT CAUSE ANALYSIS 🔧      ║
 ╚═══════════════════════════════════════════════════════════════════════════════╝
 
-CRITICAL TASK INSTRUCTIONS:
-• This is a NETWORK CONNECTIVITY TROUBLESHOOTING query
-• You are helping debug connection issues, NOT hunting for threats or attacks
-• Focus ONLY on: Connection success/failure, routing, NAT, firewall rules, traffic flow
-• DO NOT analyze for: Threats, suspicious patterns, attacks, malware, intrusions
-• DO NOT report security findings unless explicitly requested by the user
+TASK OBJECTIVE:
+• Diagnose network connectivity issues and identify the root cause
+• Analyze security policy enforcement to understand WHY traffic was dropped/blocked
+• Correlate logs with firewall rulebase to determine the enforcement chain
+• Focus on connectivity resolution, not general threat hunting
 
-YOUR ROLE: Network troubleshooting engineer analyzing connection issues
-NOT YOUR ROLE: Security analyst hunting for threats
+YOUR ROLE: Network troubleshooting engineer with security policy expertise
+TASK: Determine why connections failed and what security controls enforced the action
 
 """
         
@@ -2700,16 +2720,42 @@ NOT YOUR ROLE: Security analyst hunting for threats
         troubleshooting_analysis_rules = ""
         if is_troubleshooting:
             troubleshooting_analysis_rules = """
-TROUBLESHOOTING ANALYSIS REQUIREMENTS:
-✓ Analyze traffic flow: Was connection attempted? Accepted? Dropped? Blocked?
-✓ Check NAT translations: Source/destination IP changes
-✓ Identify matching firewall rules: Which rule processed the traffic?
-✓ Report connection outcomes: Success, failure, timeouts, resets
-✓ If no traffic found: State "No traffic found for the specified IP addresses in the time range"
+TROUBLESHOOTING ROOT CAUSE ANALYSIS REQUIREMENTS:
 
-✗ DO NOT look for security threats or suspicious patterns
-✗ DO NOT report attack names, malware, or intrusion attempts
-✗ DO NOT analyze for anomalies unless connectivity-related
+1. TRAFFIC FLOW ANALYSIS:
+   ✓ Was connection attempted? Identify source/destination IPs, ports, protocol
+   ✓ What happened to the traffic? (Accepted, Dropped, Blocked, Rejected)
+   ✓ Check NAT translations (source/destination IP/port modifications)
+   ✓ Identify connection outcomes (success, failure, timeout, reset)
+
+2. SECURITY POLICY ENFORCEMENT ANALYSIS (CRITICAL FOR ROOT CAUSE):
+   ✓ Which firewall rule processed the traffic? (match log 'rule' field to rulebase)
+   ✓ What action did the rule take? (Accept, Drop, Reject)
+   ✓ Which security blade enforced the action? (Firewall, Application Control, IPS, URL Filtering, etc.)
+   ✓ WHY was traffic dropped? Analyze:
+     - Rule configuration (source, destination, service, action)
+     - Security blade enforcement (IPS signature, App Control policy, URL category)
+     - Threat prevention profiles (if applicable to understanding the drop)
+   ✓ Is this expected security enforcement or misconfiguration?
+
+3. ROOT CAUSE DETERMINATION:
+   ✓ Correlate log entries with firewall rules (log rule number → rulebase rule object)
+   ✓ Identify the specific enforcement mechanism (rule action, blade policy, security profile)
+   ✓ Report the complete enforcement chain: Traffic → Rule → Blade → Action → Reason
+   ✓ Distinguish between:
+     - Legitimate security enforcement (expected drops by policy)
+     - Misconfiguration (unintended blocks)
+     - Missing rules (traffic dropped by implicit cleanup rule)
+
+4. REPORTING REQUIREMENTS:
+   ✓ Always cite specific evidence from logs and rulebase
+   ✓ Report rule numbers, blade names, and enforcement reasons
+   ✓ If no traffic found: "No traffic found for specified IPs/timeframe"
+   ✓ If traffic dropped: Explain WHICH rule and WHY (include rule configuration)
+   ✓ Provide actionable recommendations for resolution
+
+FOCUS: Root cause diagnosis through policy analysis, NOT general threat hunting
+AVOID: Speculating about attacks without evidence, general security assessments
 
 """
         

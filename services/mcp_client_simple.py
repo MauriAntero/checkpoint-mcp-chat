@@ -862,6 +862,22 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             blade_filter = 'blade:"Content Awareness"'
                         elif any(kw in search_text for kw in ['https inspection', 'ssl inspection', 'tls inspection']):
                             blade_filter = 'blade:"HTTPS Inspection"'
+                        # CRITICAL: Troubleshooting queries need ALL enforcement blade logs to identify root cause
+                        # Traffic can be dropped by ANY blade (Firewall, Application Control, URL Filtering, IPS, DLP, Threat Emulation, etc.)
+                        elif any(kw in search_text for kw in ['troubleshoot', 'troubleshooting', 'connectivity issue', 
+                                                               'connection issue', 'cannot connect', 'connection fail',
+                                                               'investigate', 'root cause', 'why drop', 'why block',
+                                                               'blocked', 'dropping']):
+                            # Include ALL security enforcement blades for comprehensive troubleshooting
+                            # This ensures we capture drops from ANY blade (App Control, URL Filtering, IPS, DLP, Threat Emulation, etc.)
+                            blade_filter = (
+                                'blade:"Firewall" OR blade:"Application Control" OR blade:"URL Filtering" OR '
+                                'blade:"IPS" OR blade:"Threat Prevention" OR blade:"Anti-Bot" OR blade:"Anti-Virus" OR '
+                                'blade:"Identity Awareness" OR blade:"HTTPS Inspection" OR blade:"Content Awareness" OR '
+                                'blade:"DLP" OR blade:"Threat Emulation" OR '
+                                'product_family:"Network" OR product_family:"Access" OR product_family:"Threat"'
+                            )
+                            print(f"[MCP_DEBUG] [{_ts()}] 🔧 TROUBLESHOOTING query detected - applying comprehensive blade filter for ALL enforcement blades (including DLP, Threat Emulation)")
                         
                         # COMPREHENSIVE FILTER EXTRACTION FOR LOG QUERIES
                         # Extract multiple filter types from user query to build precise CheckPoint API filters
