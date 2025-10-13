@@ -913,13 +913,40 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             ip_pattern = r'\b(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b'
                             ips = re.findall(ip_pattern, search_text)
                             if ips:
-                                ip_conditions = []
-                                for ip in ips:
-                                    ip_conditions.append(f'src:{ip}')
-                                    ip_conditions.append(f'dst:{ip}')
-                                ip_filter = ' OR '.join(ip_conditions)
-                                additional_filters.append(f"({ip_filter})")
-                                print(f"[MCP_DEBUG] [{_ts()}] 🔍 Extracted IPs: {ips}")
+                                ip_filter = None
+                                
+                                # DIRECTIONAL DETECTION: Check for "from X to Y" patterns
+                                # Pattern 1: "from <IP1> to <IP2>" (explicit direction)
+                                from_to_pattern = r'\bfrom\s+(\d+\.\d+\.\d+\.\d+)\s+to\s+(\d+\.\d+\.\d+\.\d+)\b'
+                                from_to_match = re.search(from_to_pattern, search_text, re.IGNORECASE)
+                                
+                                # Pattern 2: "between <IP1> and <IP2>" (bidirectional)
+                                between_pattern = r'\bbetween\s+(\d+\.\d+\.\d+\.\d+)\s+and\s+(\d+\.\d+\.\d+\.\d+)\b'
+                                between_match = re.search(between_pattern, search_text, re.IGNORECASE)
+                                
+                                if from_to_match:
+                                    src_ip = from_to_match.group(1)
+                                    dst_ip = from_to_match.group(2)
+                                    # Directional: from X to Y means src=X AND dst=Y
+                                    ip_filter = f"(src:{src_ip} AND dst:{dst_ip})"
+                                    print(f"[MCP_DEBUG] [{_ts()}] 🔍 Directional query detected: from {src_ip} to {dst_ip} → (src:{src_ip} AND dst:{dst_ip})")
+                                elif between_match:
+                                    ip1 = between_match.group(1)
+                                    ip2 = between_match.group(2)
+                                    # Bidirectional: between X and Y means (src=X AND dst=Y) OR (src=Y AND dst=X)
+                                    ip_filter = f"((src:{ip1} AND dst:{ip2}) OR (src:{ip2} AND dst:{ip1}))"
+                                    print(f"[MCP_DEBUG] [{_ts()}] 🔍 Bidirectional query detected: between {ip1} and {ip2}")
+                                else:
+                                    # No directional keywords - use OR logic (any IP involvement)
+                                    ip_conditions = []
+                                    for ip in ips:
+                                        ip_conditions.append(f'src:{ip}')
+                                        ip_conditions.append(f'dst:{ip}')
+                                    ip_filter = ' OR '.join(ip_conditions)
+                                    print(f"[MCP_DEBUG] [{_ts()}] 🔍 Extracted IPs (no direction): {ips}")
+                                
+                                if ip_filter:
+                                    additional_filters.append(f"({ip_filter})")
                         
                         # 2. ACTION FILTER EXTRACTION (compliance/audit)
                         # Use word boundaries to avoid false matches (e.g., "not allowed" shouldn't match "allowed")
