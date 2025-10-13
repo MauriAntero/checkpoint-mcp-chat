@@ -536,8 +536,25 @@ Intent Analysis:"""
             'configuration', 'settings', 'layer', 'show profile', 'assess policy'
         ]
         
+        # Connectivity/Troubleshooting keywords - STRICT to avoid false matches
+        # Require explicit troubleshooting action verbs or connectivity-specific failure phrases
+        troubleshooting_keywords = [
+            'troubleshoot', 'connectivity issue', 'connectivity problem',
+            'cannot connect', 'unable to connect', 'can\'t connect',
+            'connection refused', 'connection timeout', 'connection fail',
+            'unreachable', 'not reachable'
+        ]
+        
         is_threat_query = any(keyword in query_lower for keyword in threat_keywords)
         is_policy_query = any(keyword in query_lower for keyword in policy_keywords)
+        
+        # Troubleshooting detection: STRICT - only if explicit troubleshooting AND NOT policy/threat
+        # Removed generic "connection issue" to prevent "debug connection issue" false matches
+        is_troubleshooting = (
+            any(keyword in query_lower for keyword in troubleshooting_keywords) and 
+            not is_policy_query and 
+            not is_threat_query
+        )
         
         # Performance/Capacity keywords (gateway metrics, not logs)
         performance_keywords = [
@@ -565,6 +582,17 @@ IMPORTANT: Suggest specific diagnostic commands like:
 - top (CPU/memory usage)
 - df -h (disk space)
 - free -m (memory usage)"""
+        elif is_troubleshooting:
+            # Connectivity/troubleshooting queries need ONLY logs, not policy
+            query_type = "CONNECTIVITY_TROUBLESHOOTING"
+            allowed_servers = ["management-logs"]
+            forbidden_servers = ["quantum-management", "threat-prevention", "https-inspection"]
+            instructions = """This is a CONNECTIVITY/TROUBLESHOOTING query - investigating connection issues.
+REQUIRED servers: management-logs ONLY (traffic logs show what's happening)
+FORBIDDEN servers: quantum-management, threat-prevention, https-inspection (policy data is irrelevant for troubleshooting)
+
+CRITICAL: User wants to see TRAFFIC DATA for specific connections, NOT policy configuration.
+Focus ONLY on retrieving logs that show connection attempts, blocks, accepts, NAT, routing."""
         elif is_threat_query and not is_policy_query:
             query_type = "PURE_THREAT"
             allowed_servers = ["management-logs"]  # ONLY logs for actual threat data
@@ -610,12 +638,13 @@ MANDATORY SERVER SELECTION:
 You MUST select ONLY from allowed servers: {', '.join(allowed_servers)}
 You MUST NOT select forbidden servers: {', '.join(forbidden_servers) if forbidden_servers else 'None'}
 
-TOOL NAMING RULES:
-- For management-logs: Use "show_logs"
-- For threat-prevention: Tools will auto-detect (IPS, Anti-Bot, Anti-Virus, Zero Phishing profiles)
-- For https-inspection: Tools will auto-detect (HTTPS inspection policies and rules)
-- For quantum-management: Use "show_access_rulebase", "show_nat_rulebase", "show_hosts", "show_networks"
-- NEVER use CLI commands like "fw log" or "cpstat"
+CRITICAL TOOL NAMING RULES - NO EXCEPTIONS:
+1. Use ONLY exact tool names from the "Tools:" lists in the capabilities above
+2. NEVER create descriptive tool names like "show_logs:traffic_analysis" or "run_script:fw stat"
+3. NEVER add colons, descriptions, or parameters to tool names
+4. Valid examples: "show_logs", "show_access_rulebase", "show_nat_rulebase"
+5. Invalid examples: "show_logs:anything", "traffic_analysis", "fw stat", "run_script"
+6. If a tool doesn't exist in the Tools list, DO NOT use it
 
 VPN TRAFFIC DISTINCTION (CRITICAL):
 - VPN CLIENT connections → Regular traffic logs (no special blade filter needed) - appears in normal firewall logs
