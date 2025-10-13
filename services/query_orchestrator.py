@@ -3271,22 +3271,82 @@ AVOID: Speculating without evidence, jumping to conclusions before checking basi
    - Missing data → Report "Unable to analyze [specific aspect] due to missing/truncated data"
    - Clean logs → Report "All activity appears normal"{truncation_warning}"""
         
-        analysis_prompt = f"""{task_type_header}User Query: {user_query}
+        # Build contextual preamble with key information
+        servers_summary = ', '.join(servers_queried) if servers_queried else 'None'
+        contextual_preamble = f"""
+════════════════════════════════════════════════════════════════════════════════
+                            ANALYSIS CONTEXT
+════════════════════════════════════════════════════════════════════════════════
+
+USER QUESTION: {user_query}
+
+DATA SOURCES AVAILABLE:
+• MCP Servers Queried: {servers_summary}
+• Errors: {', '.join(errors) if errors else 'None'}
+{warnings_text}
+
+NOTE: The firewall rulebase data below has been pre-formatted as markdown tables for 
+easy analysis. Each rule shows: Rule Number, Name, Source, Destination, Service, 
+Action, and Track settings.
+"""
+        
+        # Build structured response template
+        structured_response_template = """
+════════════════════════════════════════════════════════════════════════════════
+                         REQUIRED RESPONSE FORMAT
+════════════════════════════════════════════════════════════════════════════════
+
+You MUST structure your response using the following sections:
+
+## 1. EXECUTIVE SUMMARY
+Provide a 2-3 sentence summary of the key finding.
+
+## 2. SPECIFIC FINDINGS
+For EACH relevant finding, you MUST provide:
+• **Rule Number**: The exact rule-number from the firewall rulebase
+• **Rule Name**: The name of the rule
+• **Action**: What the rule does (Accept, Drop, Reject, etc.)
+• **Matched Services/Applications**: Specific services or applications affected
+• **Evidence**: Quote the exact log entries or rule configuration
+• **Impact**: How this affects the user's question
+
+Example format:
+**Finding 1: Rule 5 blocks Skype traffic**
+- Rule Number: 5
+- Rule Name: Block_Social_Media
+- Action: Drop
+- Matched Services: Skype for Business, Microsoft Teams
+- Evidence: Log entry shows "action: Drop, rule: 5, service: Skype for Business"
+- Impact: This explains why users cannot access Skype
+
+## 3. ROOT CAUSE ANALYSIS
+Explain WHY the issue occurred based on the specific rules/logs/diagnostics.
+Reference actual configuration values from the data.
+
+## 4. RECOMMENDATIONS
+Provide actionable steps with specific details:
+• Exact rule numbers to modify
+• Specific configuration changes needed
+• Commands to run (if applicable)
+"""
+        
+        analysis_prompt = f"""{task_type_header}{contextual_preamble}
 {data_source_context}{command_legend_text}{troubleshooting_analysis_rules}
 {anti_hallucination_rules}
 
-FORMATTING REQUIREMENTS:
-- Display object names WITHOUT UUIDs (use human-readable names only)
-- Format firewall/NAT rules as markdown tables matching Check Point GUI structure:
-  * Access Control Rules: | No. | Name | Source | Destination | Service | Action | Track |
-  * NAT Rules: | No. | Name | Original Source | Translated Source | Original Dest | Translated Dest | Original Service | Translated Service |
-- Use exact counts from data summaries when available
-- Show specific values from the actual data (IPs, hostnames, rule numbers, timestamps)
+{structured_response_template}
+
+CRITICAL REQUIREMENTS:
+✓ You MUST reference specific rule numbers, actions, and services in your findings
+✓ You MUST quote actual evidence from the logs/rulebase data
+✓ You MUST use the structured format above - generic responses will be rejected
+✓ If no issues found, state clearly: "No issues detected in the available data"
+✓ Display object names WITHOUT UUIDs (use human-readable names only)
 
 INVESTIGATION CAPABILITIES:
 {'Discovered resources in the data above are available for further investigation if needed.' if has_discovered_resources else 'You can request investigation using available MCP servers and tools if additional data is needed.'}
 
-Analyze the provided data and answer the user's question based solely on what is present in the data."""
+Now analyze the data above and provide your structured response following the REQUIRED RESPONSE FORMAT."""
         
         # Determine which client to use based on model prefix
         if isinstance(final_model, str) and (":" in final_model):
