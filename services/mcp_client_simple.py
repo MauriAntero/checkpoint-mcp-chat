@@ -287,9 +287,9 @@ def extract_uuid_mappings(obj: Any, mappings: Optional[Dict[str, str]] = None) -
                     if isinstance(item, dict) and 'uid' in item and 'name' in item:
                         uid = item['uid']
                         name = item['name']
-                        # Extract first 8 chars of UUID as fragment
+                        # Extract first 8 chars of UUID as fragment (normalize to lowercase)
                         if isinstance(uid, str) and len(uid) >= 8:
-                            uuid_fragment = uid[:8]
+                            uuid_fragment = uid[:8].lower()  # Normalize to lowercase for consistent lookups
                             mappings[uuid_fragment] = name
         
         # Recursively search all dict values

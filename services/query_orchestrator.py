@@ -3213,36 +3213,30 @@ Analyze the provided data and answer the user's question based solely on what is
         if truncation_needed:
             print(f"[WARNING] Data exceeds model capacity: {estimated_tokens:,} > {max_input_tokens:,} tokens")
             
-            # Calculate truncation percentage
-            data_loss_pct = int(((estimated_tokens - max_input_tokens) / estimated_tokens) * 100)
+            # Calculate excess percentage
+            excess_pct = int(((estimated_tokens - max_input_tokens) / max_input_tokens) * 100)
             
-            # Prepare user warning (same for all query types)
+            # Prepare user warning - inform but DON'T truncate (user requirement: send data as-is)
             user_warning = f"""
-⚠️ **DATA TRUNCATION NOTICE** ⚠️
+⚠️ **LARGE DATA WARNING** ⚠️
 
-Your query returned **{estimated_tokens:,} tokens** of data, which exceeds the model's capacity of **{max_input_tokens:,} tokens**.
+Your query returned **{estimated_tokens:,} tokens** of data, which exceeds the model's recommended capacity of **{max_input_tokens:,} tokens** by {excess_pct}%.
 
-**Approximately {data_loss_pct}% of the data will be excluded to fit the model.**
+**The data will be sent as-is to the LLM.** The model may:
+- Process it successfully (some models handle overflow gracefully)
+- Truncate from the beginning automatically (keeping recent logs)
+- Return an error requiring you to narrow the query
 
-The AI will analyze the available data (most recent logs and critical information are prioritized).
-
-**To analyze ALL data, please:**
+**To reduce data size, please:**
 - Narrow your time range (e.g., "last 24 hours" instead of "last week")
 - Filter by specific gateway, IP, or criteria
-- Break your analysis into smaller time windows
 - Query specific threat types or security blades
+- Break analysis into smaller time windows
 
 ---
 """
             
-            # Truncate context to fit model (prioritize recent data = end of logs)
-            max_chars = max_input_tokens * 4
-            if len(context) > max_chars:
-                keep_start = int(max_chars * 0.3)  # Keep less from start
-                keep_end = int(max_chars * 0.7)    # Keep more from end (recent logs)
-                truncation_msg = f"\n\n... [Older logs truncated - showing most recent {data_loss_pct}% of data] ...\n\n"
-                context = context[:keep_start] + truncation_msg + context[-keep_end:]
-                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Context truncated from ~{estimated_tokens:,} to ~{len(context) // 4:,} tokens (prioritized recent data)")
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Large data warning prepared - sending data as-is per user requirement (no truncation)")
         
         # Generate final analysis with low temperature for precise formatting
         # max_tokens is auto-calculated based on model's context window for OpenRouter
