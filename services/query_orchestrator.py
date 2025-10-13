@@ -444,6 +444,13 @@ ALLOWED servers: All servers available"""
             'all', 'any', 'some', 'every', 'each'
         }
         
+        # CRITICAL: Pre-detect and skip IP patterns to avoid extracting IP fragments as gateway names
+        # Pattern matches "from 192.168.1.15" or "on 10.0.0.1" etc. (case-insensitive)
+        ip_context_pattern = r'\b(?:from|on|at|to|via)\s+(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b'
+        if re.search(ip_context_pattern, user_query, re.IGNORECASE):
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ⚠️ Skipped gateway extraction - query contains IP addresses in context positions (IPs are traffic filters, not gateway names)")
+            return None
+        
         # Gateway name patterns (ordered by specificity - most specific first)
         patterns = [
             r'\b([a-zA-Z0-9_-]+?-(?:gw|fw|gateway|firewall))\b',   # "main-gw", "edge-fw" (specific suffixes)

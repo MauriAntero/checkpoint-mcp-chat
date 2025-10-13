@@ -830,15 +830,21 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         # CRITICAL: CheckPoint API requires filter nested under filter.search-expression
                         blade_filter = None
                         
-                        # CRITICAL: Troubleshooting queries need ALL enforcement blade logs to identify root cause
-                        # Traffic can be dropped by ANY blade (Firewall, Application Control, URL Filtering, IPS, DLP, Threat Emulation, etc.)
-                        # CHECK TROUBLESHOOTING FIRST before VPN-specific filters to ensure comprehensive blade coverage
-                        if any(kw in search_text for kw in ['troubleshoot', 'troubleshooting', 'connectivity issue', 
-                                                               'connection issue', 'cannot connect', 'connection fail',
-                                                               'investigate', 'root cause', 'why drop', 'why block',
-                                                               'blocked', 'dropping']):
-                            # Include ALL security enforcement blades for comprehensive troubleshooting
-                            # This ensures we capture drops from ANY blade (App Control, URL Filtering, IPS, DLP, Threat Emulation, etc.)
+                        # CRITICAL STRATEGY: When user provides specific query filters (IPs, ports, domains, etc.), 
+                        # they are investigating/troubleshooting and need ALL possible blade logs for comprehensive analysis.
+                        # Only apply blade-specific filters when NO query filters are present (general queries).
+                        
+                        # Check if user provided specific query filters (IPs, ports, domains)
+                        ip_pattern = r'\b(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b'
+                        has_ip_filter = bool(re.search(ip_pattern, search_text))
+                        has_port_filter = bool(re.search(r'\bport\s+(\d+)\b', search_text, re.IGNORECASE))
+                        has_domain_filter = bool(re.search(r'\b(?:domain|url|website)[:=\s]+([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\b', search_text, re.IGNORECASE))
+                        has_app_filter = bool(re.search(r'\bapplication[:=\s]+([a-zA-Z0-9_-]+)\b', search_text, re.IGNORECASE))
+                        
+                        has_query_filters = has_ip_filter or has_port_filter or has_domain_filter or has_app_filter
+                        
+                        # If user provided specific filters → Get ALL blade logs for comprehensive analysis
+                        if has_query_filters:
                             blade_filter = (
                                 'blade:"Firewall" OR blade:"Application Control" OR blade:"URL Filtering" OR '
                                 'blade:"IPS" OR blade:"Threat Prevention" OR blade:"Anti-Bot" OR blade:"Anti-Virus" OR '
@@ -846,7 +852,12 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                 'blade:"DLP" OR blade:"Threat Emulation" OR '
                                 'product_family:"Network" OR product_family:"Access" OR product_family:"Threat"'
                             )
-                            print(f"[MCP_DEBUG] [{_ts()}] 🔧 TROUBLESHOOTING query detected - applying comprehensive blade filter for ALL enforcement blades (including Application Control, DLP, Threat Emulation)")
+                            filter_types = []
+                            if has_ip_filter: filter_types.append("IP")
+                            if has_port_filter: filter_types.append("port")
+                            if has_domain_filter: filter_types.append("domain")
+                            if has_app_filter: filter_types.append("application")
+                            print(f"[MCP_DEBUG] [{_ts()}] 🔍 Query filters detected ({', '.join(filter_types)}) - applying comprehensive blade filter for ALL enforcement blades")
                         # VPN connection logs - DISTINGUISH client vs site-to-site
                         # VPN CLIENT connections → appear in regular traffic logs (no blade filter needed)
                         # VPN SITE-TO-SITE → appear in VPN blade logs (needs blade filter)
