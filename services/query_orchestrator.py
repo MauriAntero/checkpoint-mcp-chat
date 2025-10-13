@@ -144,8 +144,250 @@ class QueryOrchestrator:
         self.session_context = {
             "last_gateway": None,
             "last_query_time": None,
-            "session_timeout_minutes": 10
+            "session_timeout_minutes": 10,
+            # Enhanced conversational context
+            "last_timeframe": None,  # e.g., "last_24_hours", "today"
+            "last_ip_addresses": [],  # List of IPs from previous query
+            "last_usernames": [],  # List of usernames from previous query
+            "last_domains": [],  # List of domains from previous query
+            "last_task_type": None  # Last query task type
         }
+    
+    def _map_intent_to_classification(self, intent_task_type: str, user_query: str) -> tuple[str, list[str], list[str], str]:
+        """Map Stage 1 intent task_type to Stage 2 classification with server filtering
+        
+        This provides semantic classification from LLM instead of brittle keyword matching.
+        
+        Args:
+            intent_task_type: Task type from Stage 1 intent analysis
+            user_query: Original user query (for performance/troubleshooting validation)
+            
+        Returns:
+            Tuple of (query_type, allowed_servers, forbidden_servers, instructions)
+        """
+        query_lower = user_query.lower()
+        
+        # Check for performance keywords (override intent if present)
+        performance_keywords = [
+            'cpu', 'memory', 'ram', 'disk space', 'load', 'performance', 
+            'concurrent connections', 'session count', 'sessions', 'connections count',
+            'resource usage', 'utilization', 'capacity', 'processes', 'top processes',
+            'bandwidth usage', 'throughput', 'latency', 'response time'
+        ]
+        is_performance_query = any(keyword in query_lower for keyword in performance_keywords)
+        
+        if is_performance_query:
+            return (
+                "PERFORMANCE/CAPACITY ANALYSIS",
+                ["quantum-gw-cli", "quantum-management", "quantum-gaia"],
+                ["management-logs"],
+                """This is a PERFORMANCE/CAPACITY query requiring gateway metrics.
+REQUIRED servers: quantum-gw-cli (for cpstat, fw ctl pstat, top, df, free commands)
+OPTIONAL servers: quantum-management (for gateway discovery), quantum-gaia (for system commands)
+FORBIDDEN servers: management-logs (logs don't contain performance metrics)
+
+CRITICAL PERFORMANCE/CAPACITY COMMANDS (in priority order):
+1. cpview -p (BEST: all metrics in one command - CPU, memory, disk, connections, throughput)
+2. cpstat os -f all (Complete OS stats - CPU, memory, disk, interfaces, routes, sensors)
+3. cpstat fw -f policy (Firewall performance - active connections, policy hits, sync stats)
+4. cpstat ha (Cluster load distribution and synchronization)
+5. top -b -n 1 (Process snapshot with CPU/memory per process)
+6. fw ctl pstat (Connection table statistics and kernel memory usage)
+7. fwaccel stat (SecureXL offload efficiency and F2F violations)
+8. iostat -x (Disk I/O bottleneck detection)
+9. mpstat -P ALL (Per-CPU core utilization)
+10. free -h (Memory usage details)
+11. df -h (Disk space usage)
+
+ANALYSIS STRATEGY: Start with cpview -p or cpstat os -f all for holistic view, then drill into specific metrics if needed"""
+            )
+        
+        # Map intent task_type to classification
+        if intent_task_type == "troubleshooting":
+            return (
+                "CONNECTIVITY_TROUBLESHOOTING",
+                ["management-logs"],
+                ["quantum-management", "threat-prevention", "https-inspection"],
+                """This is a CONNECTIVITY/TROUBLESHOOTING query - investigating connection issues.
+REQUIRED servers: management-logs ONLY (traffic logs show what's happening)
+FORBIDDEN servers: quantum-management, threat-prevention, https-inspection (policy data is irrelevant for troubleshooting)
+
+CRITICAL: User wants to see TRAFFIC DATA for specific connections, NOT policy configuration.
+Focus ONLY on retrieving logs that show connection attempts, blocks, accepts, NAT, routing."""
+            )
+        elif intent_task_type in ["security_investigation", "threat_assessment"]:
+            return (
+                "PURE_THREAT",
+                ["management-logs"],
+                ["quantum-management", "threat-prevention", "https-inspection"],
+                """This is a PURE THREAT/SECURITY query - looking for ACTUAL threat events.
+ALLOWED servers: management-logs (actual threat events in logs)
+FORBIDDEN servers: quantum-management, threat-prevention, https-inspection (these show POLICY/CONFIGURATION, not threat data)"""
+            )
+        elif intent_task_type == "policy_review":
+            return (
+                "PURE_POLICY",
+                ["quantum-management", "threat-prevention", "https-inspection", "management-logs"],
+                [],
+                """This is a PURE POLICY query - reviewing CONFIGURATION/SETTINGS.
+ALLOWED servers: quantum-management (firewall rules), threat-prevention (IPS/Anti-Bot profiles), https-inspection (HTTPS policies), management-logs (audit logs)
+FORBIDDEN servers: None"""
+            )
+        elif intent_task_type in ["log_analysis", "network_analysis"]:
+            # Get all available servers for mixed analysis
+            available_servers = list(self.MCP_CAPABILITIES.keys())
+            return (
+                "MIXED",
+                available_servers,
+                [],
+                """This is a MIXED query (or general query).
+ALLOWED servers: All servers available"""
+            )
+        else:  # general_info or unknown
+            available_servers = list(self.MCP_CAPABILITIES.keys())
+            return (
+                "GENERAL",
+                available_servers,
+                [],
+                """This is a GENERAL query.
+ALLOWED servers: All servers available"""
+            )
+    
+    def _validate_execution_results(self, results: Dict[str, Any], query_type: str) -> tuple[bool, str]:
+        """Validate if execution results contain meaningful data
+        
+        Args:
+            results: Execution results from MCP servers
+            query_type: Type of query that was executed
+            
+        Returns:
+            Tuple of (is_valid, reason_if_invalid)
+        """
+        data_collected = results.get('data_collected', {})
+        
+        # Check if we got any data at all
+        if not data_collected:
+            return False, "No data collected from any MCP server"
+        
+        # Check if all servers returned errors
+        errors = results.get('errors', [])
+        if errors and len(errors) >= len(data_collected):
+            return False, f"All servers returned errors: {'; '.join(errors[:2])}"
+        
+        # Check if primary data sources returned empty results
+        total_items = 0
+        for server_name, server_data in data_collected.items():
+            if isinstance(server_data, dict):
+                # Count items in various formats
+                if 'logs' in server_data:
+                    total_items += len(server_data.get('logs', []))
+                elif 'objects' in server_data:
+                    total_items += len(server_data.get('objects', []))
+                elif 'data' in server_data:
+                    total_items += len(server_data.get('data', []))
+                elif isinstance(server_data, list):
+                    total_items += len(server_data)
+        
+        if total_items == 0:
+            return False, f"Primary data sources returned no items for {query_type} query"
+        
+        # Results are valid
+        return True, ""
+    
+    def _get_fallback_classification(self, original_query_type: str, user_query: str) -> Optional[tuple[str, list[str], list[str], str]]:
+        """Get fallback classification when primary returns no data
+        
+        Args:
+            original_query_type: The query type that returned no results
+            user_query: Original user query
+            
+        Returns:
+            Tuple of (query_type, allowed_servers, forbidden_servers, instructions) or None if no fallback
+        """
+        query_lower = user_query.lower()
+        available_servers = list(self.MCP_CAPABILITIES.keys())
+        
+        # Fallback strategies based on original classification
+        if original_query_type == "CONNECTIVITY_TROUBLESHOOTING":
+            # Troubleshooting returned no logs → Try adding gateway diagnostics
+            if self.gateway_script_executor:
+                return (
+                    "TROUBLESHOOTING_WITH_DIAGNOSTICS",
+                    ["management-logs", "quantum-gw-cli", "quantum-management"],
+                    [],
+                    """FALLBACK: No traffic logs found. Trying gateway diagnostic tools.
+ALLOWED servers: management-logs (traffic logs), quantum-gw-cli (gateway diagnostics), quantum-management (gateway discovery)
+FORBIDDEN servers: None"""
+                )
+        
+        elif original_query_type == "PURE_THREAT":
+            # Threat query returned no logs → Try adding policy review as fallback
+            return (
+                "THREAT_WITH_POLICY_CONTEXT",
+                ["management-logs", "quantum-management", "threat-prevention"],
+                [],
+                """FALLBACK: No threat events found in logs. Adding policy context.
+ALLOWED servers: management-logs (threat logs), quantum-management (policy rules), threat-prevention (threat profiles)
+FORBIDDEN servers: None"""
+            )
+        
+        elif original_query_type == "PURE_POLICY":
+            # Policy query returned nothing → Try MIXED (all servers)
+            return (
+                "MIXED",
+                available_servers,
+                [],
+                """FALLBACK: Policy servers returned no data. Trying all available servers.
+ALLOWED servers: All servers available"""
+            )
+        
+        # No fallback strategy available
+        return None
+    
+    def _detect_troubleshooting_intent(self, user_query: str) -> bool:
+        """Detect if query is about connectivity troubleshooting using robust regex patterns
+        
+        This is the single source of truth for troubleshooting detection, used by both
+        planning stage (server selection) and analysis stage (prompt customization).
+        
+        Args:
+            user_query: User's natural language query
+            
+        Returns:
+            True if query is about troubleshooting, False otherwise
+        """
+        import re
+        
+        query_lower = user_query.lower()
+        
+        # Exact phrase matches (high confidence troubleshooting indicators)
+        exact_troubleshooting_phrases = [
+            'troubleshoot',
+            'connectivity issue', 'connectivity problem', 'connectivity fail',
+            'connection issue', 'connection problem', 'connection fail',
+            'cannot connect', 'unable to connect', 'can\'t connect', 'not connecting',
+            'cannot reach', 'unable to reach', 'not reachable',
+            'connection refused', 'connection timeout', 'connection reset',
+            'vpn down', 'vpn not working', 'vpn fail', 'vpn issue',
+            'tunnel down', 'tunnel not working', 'tunnel fail', 'tunnel issue',
+            'network down', 'network not working', 'network fail', 'network issue',
+            'link down', 'link not working', 'link fail'
+        ]
+        
+        # Pattern-based detection for question-style troubleshooting
+        # Requires BOTH issue indicator (can't/cannot/unable) AND connectivity noun (vpn/tunnel/network/connection)
+        # to avoid false positives like "Why can't we access threat logs?"
+        troubleshooting_patterns = [
+            # "Why can't users connect to VPN?" "Why can't X reach the tunnel?"
+            r'\bwhy\s+(?:can\'t|cannot|unable)\s+.{0,50}?\b(?:connect|reach)\s+(?:to\s+)?(?:vpn|tunnel|network|gateway|server)',
+            # "Users can't connect to VPN" "Unable to reach network"
+            r'\b(?:can\'t|cannot|unable)\s+.{0,30}?\b(?:connect|reach)\s+(?:to\s+)?(?:vpn|tunnel|network|gateway|server)',
+        ]
+        
+        exact_match = any(phrase in query_lower for phrase in exact_troubleshooting_phrases)
+        pattern_match = any(re.search(pattern, query_lower) for pattern in troubleshooting_patterns)
+        
+        return exact_match or pattern_match
     
     def _extract_gateway_from_query(self, user_query: str) -> Optional[str]:
         """Extract gateway name from user query using regex patterns
@@ -241,15 +483,17 @@ class QueryOrchestrator:
         
         return time_since_last_query < timeout
     
-    def _update_session_context(self, user_query: str, plan: Optional[Dict[str, Any]] = None):
-        """Update session context with gateway name from plan or query
+    def _update_session_context(self, user_query: str, plan: Optional[Dict[str, Any]] = None, intent: Optional[Dict[str, Any]] = None):
+        """Update session context with entities from plan and intent for conversational queries
         
         Args:
             user_query: User's natural language query
             plan: Optional execution plan from Stage 2 (preferred source for gateway extraction)
+            intent: Optional intent from Stage 1 (contains extracted entities and timeframe)
         """
         self.session_context["last_query_time"] = datetime.now()
         
+        # Extract gateway name
         gateway_name = None
         
         # Method 1 (PREFERRED): Extract from LLM execution plan (more reliable)
@@ -266,6 +510,37 @@ class QueryOrchestrator:
         if gateway_name:
             self.session_context["last_gateway"] = gateway_name
             print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Session context updated: gateway='{gateway_name}'")
+        
+        # Extract and cache entities from Stage 1 intent (if available)
+        if intent:
+            extracted_entities = intent.get('extracted_entities', {})
+            time_context = intent.get('time_context', {})
+            task_type = intent.get('task_type')
+            
+            # Cache IP addresses
+            if extracted_entities.get('ip_addresses'):
+                self.session_context["last_ip_addresses"] = extracted_entities['ip_addresses']
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Session context updated: IPs={extracted_entities['ip_addresses']}")
+            
+            # Cache usernames
+            if extracted_entities.get('usernames'):
+                self.session_context["last_usernames"] = extracted_entities['usernames']
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Session context updated: users={extracted_entities['usernames']}")
+            
+            # Cache domains
+            if extracted_entities.get('domains'):
+                self.session_context["last_domains"] = extracted_entities['domains']
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Session context updated: domains={extracted_entities['domains']}")
+            
+            # Cache timeframe
+            if time_context.get('relative_time'):
+                self.session_context["last_timeframe"] = time_context['relative_time']
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Session context updated: timeframe={time_context['relative_time']}")
+            
+            # Cache task type
+            if task_type:
+                self.session_context["last_task_type"] = task_type
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Session context updated: task_type={task_type}")
     
     def _apply_session_context(self, data_to_fetch: List[str], user_query: str) -> List[str]:
         """Apply cached gateway name to data_to_fetch if no gateway specified in current query
@@ -355,14 +630,34 @@ class QueryOrchestrator:
             print(f"[QueryOrchestrator] Could not load network context: {e}")
             network_context_text = "\nNETWORK TOPOLOGY: Not available\n"
         
+        # Build session context section for conversational queries
+        session_context_section = ""
+        if self._is_session_active():
+            context_items = []
+            if self.session_context.get("last_gateway"):
+                context_items.append(f"Gateway: {self.session_context['last_gateway']}")
+            if self.session_context.get("last_timeframe"):
+                context_items.append(f"Timeframe: {self.session_context['last_timeframe']}")
+            if self.session_context.get("last_ip_addresses"):
+                context_items.append(f"IPs: {', '.join(self.session_context['last_ip_addresses'])}")
+            if self.session_context.get("last_usernames"):
+                context_items.append(f"Users: {', '.join(self.session_context['last_usernames'])}")
+            if self.session_context.get("last_domains"):
+                context_items.append(f"Domains: {', '.join(self.session_context['last_domains'])}")
+            if self.session_context.get("last_task_type"):
+                context_items.append(f"Previous task: {self.session_context['last_task_type']}")
+            
+            if context_items:
+                session_context_section = f"\n\nCONVERSATIONAL CONTEXT (from previous query - use if current query references 'it', 'them', 'same', 'more', etc.):\n" + " | ".join(context_items)
+        
         intent_prompt = f"""You are analyzing a Check Point security platform query to understand what the user needs.
 
 Available Capabilities:
 {capabilities_desc}
-{network_context_text}
+{network_context_text}{session_context_section}
 User Query: "{user_query}"
 
-Return a JSON object describing the user's intent:
+Return a JSON object describing the user's intent with IOCs and entities extracted:
 {{
     "task_type": "log_analysis | security_investigation | troubleshooting | policy_review | network_analysis | threat_assessment | general_info",
     "primary_goal": "What the user wants to achieve",
@@ -371,6 +666,20 @@ Return a JSON object describing the user's intent:
         "time_scope": "real-time | historical | specific_period | not_applicable",
         "specific_period": "last_hour | today | yesterday | last_24_hours | this_week | this_month | last_7_days | last_30_days | all_time | custom",
         "filters": ["IP addresses | users | applications | etc."]
+    }},
+    "extracted_entities": {{
+        "ip_addresses": ["List any IP addresses mentioned"],
+        "domains": ["List any domains/URLs mentioned"],
+        "file_hashes": ["List any file hashes mentioned (MD5, SHA256, etc.)"],
+        "usernames": ["List any usernames mentioned"],
+        "gateway_names": ["List any gateway/firewall names mentioned"],
+        "services_ports": ["List any services or port numbers mentioned"],
+        "rule_numbers": ["List any rule numbers mentioned"]
+    }},
+    "time_context": {{
+        "relative_time": "last_hour | today | yesterday | last_24_hours | etc. if mentioned, otherwise null",
+        "absolute_start": "YYYY-MM-DD HH:MM if specific start time mentioned, otherwise null",
+        "absolute_end": "YYYY-MM-DD HH:MM if specific end time mentioned, otherwise null"
     }},
     "expected_outcome": "summary | detailed_report | troubleshooting_steps | etc.",
     "urgency": "routine | important | critical",
@@ -513,114 +822,58 @@ Intent Analysis:"""
         filters = data_requirements.get('filters', [])
         file_path = intent.get('file_path', None)
         
+        # Extract entities from Stage 1 (IOCs, timeframes, etc.)
+        extracted_entities = intent.get('extracted_entities', {})
+        time_context = intent.get('time_context', {})
+        
         # Add gateway script executor instructions if enabled
         gateway_executor_instructions = ""
         if self.gateway_script_executor:
             from services.gateway_script_executor import GATEWAY_EXECUTOR_LLM_PROMPT
             gateway_executor_instructions = f"\n\n{GATEWAY_EXECUTOR_LLM_PROMPT}"
         
-        # Determine query classification based on keywords
-        query_lower = user_query.lower()
-        
-        # Threat EVENT detection keywords (actual attacks/incidents, not configuration)
-        threat_keywords = [
-            'suspicious', 'attack', 'threat', 'malware', 'intrusion', 'malicious', 
-            'exploit', 'vulnerability', 'compromise', 'breach', 'infected', 'virus',
-            'phishing', 'botnet', 'ransomware', 'detected', 'blocked', 'dropped'
-        ]
-        
-        # Policy/Configuration keywords (reviewing settings, not looking for events)
-        policy_keywords = [
-            'rulebase', 'firewall rules', 'nat', 'access control', 'policy review', 'rule review',
-            'ips profile', 'anti-bot profile', 'https inspection', 'threat prevention profile',
-            'configuration', 'settings', 'layer', 'show profile', 'assess policy'
-        ]
-        
-        # Connectivity/Troubleshooting keywords - STRICT to avoid false matches
-        # Require explicit troubleshooting action verbs or connectivity-specific failure phrases
-        troubleshooting_keywords = [
-            'troubleshoot', 'connectivity issue', 'connectivity problem',
-            'cannot connect', 'unable to connect', 'can\'t connect',
-            'connection refused', 'connection timeout', 'connection fail',
-            'unreachable', 'not reachable'
-        ]
-        
-        is_threat_query = any(keyword in query_lower for keyword in threat_keywords)
-        is_policy_query = any(keyword in query_lower for keyword in policy_keywords)
-        
-        # Troubleshooting detection: STRICT - only if explicit troubleshooting AND NOT policy/threat
-        # Removed generic "connection issue" to prevent "debug connection issue" false matches
-        is_troubleshooting = (
-            any(keyword in query_lower for keyword in troubleshooting_keywords) and 
-            not is_policy_query and 
-            not is_threat_query
+        # Use Stage 1 intent for semantic classification (replaces keyword-based detection)
+        # This is more reliable than substring matching
+        query_type, allowed_servers, forbidden_servers, instructions = self._map_intent_to_classification(
+            task_type, user_query
         )
         
-        # Performance/Capacity keywords (gateway metrics, not logs)
-        performance_keywords = [
-            'cpu', 'memory', 'ram', 'disk space', 'load', 'performance', 
-            'concurrent connections', 'session count', 'sessions', 'connections count',
-            'resource usage', 'utilization', 'capacity', 'processes', 'top processes',
-            'bandwidth usage', 'throughput', 'latency', 'response time'
-        ]
-        is_performance_query = any(keyword in query_lower for keyword in performance_keywords)
+        # Build extracted entities section for planning prompt
+        entities_section = ""
+        if extracted_entities and any(extracted_entities.values()):
+            entities_lines = []
+            if extracted_entities.get('ip_addresses'):
+                entities_lines.append(f"  • IP Addresses: {', '.join(extracted_entities['ip_addresses'])}")
+            if extracted_entities.get('domains'):
+                entities_lines.append(f"  • Domains/URLs: {', '.join(extracted_entities['domains'])}")
+            if extracted_entities.get('file_hashes'):
+                entities_lines.append(f"  • File Hashes: {', '.join(extracted_entities['file_hashes'])}")
+            if extracted_entities.get('usernames'):
+                entities_lines.append(f"  • Usernames: {', '.join(extracted_entities['usernames'])}")
+            if extracted_entities.get('gateway_names'):
+                entities_lines.append(f"  • Gateway Names: {', '.join(extracted_entities['gateway_names'])}")
+            if extracted_entities.get('services_ports'):
+                entities_lines.append(f"  • Services/Ports: {', '.join(extracted_entities['services_ports'])}")
+            if extracted_entities.get('rule_numbers'):
+                entities_lines.append(f"  • Rule Numbers: {', '.join(extracted_entities['rule_numbers'])}")
+            
+            if entities_lines:
+                entities_section = "\nExtracted Entities (use these directly, no need to re-extract):\n" + "\n".join(entities_lines)
         
-        # Build allowed servers list based on query type
-        if is_performance_query:
-            # Performance queries need gateway CLI tools, not logs
-            query_type = "PERFORMANCE/CAPACITY ANALYSIS"
-            allowed_servers = ["quantum-gw-cli", "quantum-management", "quantum-gaia"]
-            forbidden_servers = ["management-logs"]
-            instructions = """This is a PERFORMANCE/CAPACITY query requiring gateway metrics.
-REQUIRED servers: quantum-gw-cli (for cpstat, fw ctl pstat, top, df, free commands)
-OPTIONAL servers: quantum-management (for gateway discovery), quantum-gaia (for system commands)
-FORBIDDEN servers: management-logs (logs don't contain performance metrics)
-
-CRITICAL PERFORMANCE/CAPACITY COMMANDS (in priority order):
-1. cpview -p (BEST: all metrics in one command - CPU, memory, disk, connections, throughput)
-2. cpstat os -f all (Complete OS stats - CPU, memory, disk, interfaces, routes, sensors)
-3. cpstat fw -f policy (Firewall performance - active connections, policy hits, sync stats)
-4. cpstat ha (Cluster load distribution and synchronization)
-5. top -b -n 1 (Process snapshot with CPU/memory per process)
-6. fw ctl pstat (Connection table statistics and kernel memory usage)
-7. fwaccel stat (SecureXL offload efficiency and F2F violations)
-8. iostat -x (Disk I/O bottleneck detection)
-9. mpstat -P ALL (Per-CPU core utilization)
-10. free -h (Memory usage details)
-11. df -h (Disk space usage)
-
-ANALYSIS STRATEGY: Start with cpview -p or cpstat os -f all for holistic view, then drill into specific metrics if needed"""
-        elif is_troubleshooting:
-            # Connectivity/troubleshooting queries need ONLY logs, not policy
-            query_type = "CONNECTIVITY_TROUBLESHOOTING"
-            allowed_servers = ["management-logs"]
-            forbidden_servers = ["quantum-management", "threat-prevention", "https-inspection"]
-            instructions = """This is a CONNECTIVITY/TROUBLESHOOTING query - investigating connection issues.
-REQUIRED servers: management-logs ONLY (traffic logs show what's happening)
-FORBIDDEN servers: quantum-management, threat-prevention, https-inspection (policy data is irrelevant for troubleshooting)
-
-CRITICAL: User wants to see TRAFFIC DATA for specific connections, NOT policy configuration.
-Focus ONLY on retrieving logs that show connection attempts, blocks, accepts, NAT, routing."""
-        elif is_threat_query and not is_policy_query:
-            query_type = "PURE_THREAT"
-            allowed_servers = ["management-logs"]  # ONLY logs for actual threat data
-            forbidden_servers = ["quantum-management", "threat-prevention", "https-inspection"]
-            instructions = """This is a PURE THREAT/SECURITY query - looking for ACTUAL threat events.
-ALLOWED servers: management-logs (actual threat events in logs)
-FORBIDDEN servers: quantum-management, threat-prevention, https-inspection (these show POLICY/CONFIGURATION, not threat data)"""
-        elif is_policy_query and not is_threat_query:
-            query_type = "PURE_POLICY"
-            allowed_servers = ["quantum-management", "threat-prevention", "https-inspection", "management-logs"]
-            forbidden_servers = []
-            instructions = """This is a PURE POLICY query - reviewing CONFIGURATION/SETTINGS.
-ALLOWED servers: quantum-management (firewall rules), threat-prevention (IPS/Anti-Bot profiles), https-inspection (HTTPS policies), management-logs (audit logs)
-FORBIDDEN servers: None"""
-        else:
-            query_type = "MIXED"
-            allowed_servers = active_server_types
-            forbidden_servers = []
-            instructions = """This is a MIXED query (or general query).
-ALLOWED servers: All servers available"""
+        # Build time context section
+        time_context_section = ""
+        if time_context:
+            time_lines = []
+            if time_context.get('relative_time'):
+                time_lines.append(f"  • Relative Time: {time_context['relative_time']}")
+            if time_context.get('absolute_start') or time_context.get('absolute_end'):
+                if time_context.get('absolute_start'):
+                    time_lines.append(f"  • Start Time: {time_context['absolute_start']}")
+                if time_context.get('absolute_end'):
+                    time_lines.append(f"  • End Time: {time_context['absolute_end']}")
+            
+            if time_lines:
+                time_context_section = "\nTime Context:\n" + "\n".join(time_lines)
         
         planning_prompt = f"""You are creating a technical plan to retrieve data from Check Point security platform MCP servers.
 
@@ -639,7 +892,7 @@ User Intent:
 - Goal: {primary_goal}
 - Data Needed: {', '.join(data_types)}
 - Time Scope: {time_scope} {f"({specific_period})" if specific_period else ""}
-{f"- Filters: {', '.join(filters)}" if filters else ""}
+{f"- Filters: {', '.join(filters)}" if filters else ""}{entities_section}{time_context_section}
 {f"- File Path: {file_path}" if file_path else ""}
 
 MANDATORY SERVER SELECTION:
@@ -760,8 +1013,10 @@ Technical Execution Plan:"""
                         print(f"[QueryOrchestrator] 🔄 Server list corrected: {original_servers} → {validated_servers}")
                         plan['required_servers'] = validated_servers
                 
-                # CRITICAL: Inject user_query into plan for session context caching
+                # CRITICAL: Inject user_query, query_type, and intent into plan for session context caching and validation
                 plan['user_query'] = user_query
+                plan['query_type'] = query_type
+                plan['intent'] = intent  # Store intent for session context updates
                 return plan
             else:
                 # Fallback: create basic plan
@@ -797,7 +1052,8 @@ Technical Execution Plan:"""
         # Update session context with current query (for conversational caching)
         # Use parameter user_query if provided, otherwise fall back to plan['user_query']
         query_text = user_query if user_query else plan.get("user_query", "")
-        self._update_session_context(query_text, plan)  # Pass plan for LLM-based gateway extraction
+        intent = plan.get("intent")  # Get intent if stored in plan
+        self._update_session_context(query_text, plan, intent)  # Pass plan and intent for full context extraction
         
         # Apply session context to data_to_fetch (inject cached gateway if applicable)
         data_to_fetch = self._apply_session_context(plan.get("data_to_fetch", []), query_text)
@@ -2416,39 +2672,9 @@ Errors: {', '.join(errors) if errors else 'None'}{warnings_text}
         
         # Detect query intent to provide appropriate analysis context
         task_type_header = ""
-        # Troubleshooting detection using import re for pattern matching
-        import re
         
-        query_lower = user_query.lower()
-        
-        # Exact phrase matches (high confidence troubleshooting indicators)
-        exact_troubleshooting_phrases = [
-            'troubleshoot',
-            'connectivity issue', 'connectivity problem', 'connectivity fail',
-            'connection issue', 'connection problem', 'connection fail',
-            'cannot connect', 'unable to connect', 'can\'t connect', 'not connecting',
-            'cannot reach', 'unable to reach', 'not reachable',
-            'connection refused', 'connection timeout', 'connection reset',
-            'vpn down', 'vpn not working', 'vpn fail', 'vpn issue',
-            'tunnel down', 'tunnel not working', 'tunnel fail', 'tunnel issue',
-            'network down', 'network not working', 'network fail', 'network issue',
-            'link down', 'link not working', 'link fail'
-        ]
-        
-        # Pattern-based detection for question-style troubleshooting
-        # Requires BOTH issue indicator (can't/cannot/unable) AND connectivity noun (vpn/tunnel/network/connection)
-        # to avoid false positives like "Why can't we access threat logs?"
-        troubleshooting_patterns = [
-            # "Why can't users connect to VPN?" "Why can't X reach the tunnel?"
-            r'\bwhy\s+(?:can\'t|cannot|unable)\s+.{0,50}?\b(?:connect|reach)\s+(?:to\s+)?(?:vpn|tunnel|network|gateway|server)',
-            # "Users can't connect to VPN" "Unable to reach network"
-            r'\b(?:can\'t|cannot|unable)\s+.{0,30}?\b(?:connect|reach)\s+(?:to\s+)?(?:vpn|tunnel|network|gateway|server)',
-        ]
-        
-        exact_match = any(phrase in query_lower for phrase in exact_troubleshooting_phrases)
-        pattern_match = any(re.search(pattern, query_lower) for pattern in troubleshooting_patterns)
-        
-        is_troubleshooting = exact_match or pattern_match
+        # Use shared robust troubleshooting detection (single source of truth)
+        is_troubleshooting = self._detect_troubleshooting_intent(user_query)
         
         if is_troubleshooting:
             # CRITICAL: Make troubleshooting intent EXTREMELY EXPLICIT at the very top
@@ -2798,6 +3024,41 @@ The AI model failed to analyze your query due to an API issue.
                 "execution_plan": plan,
                 "execution_results": execution_results
             }
+        
+        # Step 2.5: Validate results and try fallback if needed
+        query_type = plan.get('query_type', 'UNKNOWN')
+        is_valid, invalid_reason = self._validate_execution_results(execution_results, query_type)
+        
+        if not is_valid:
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Primary execution returned no data: {invalid_reason}")
+            
+            # Try fallback classification
+            fallback_classification = self._get_fallback_classification(query_type, user_query)
+            
+            if fallback_classification:
+                fallback_query_type, fallback_allowed, fallback_forbidden, fallback_instructions = fallback_classification
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Trying fallback classification: {fallback_query_type}")
+                
+                if self.progress_callback:
+                    self.progress_callback(f"🔄 No data found, trying alternative sources...")
+                
+                # Create new plan with fallback classification
+                fallback_plan = plan.copy()
+                fallback_plan['query_type'] = fallback_query_type
+                fallback_plan['required_servers'] = fallback_allowed
+                fallback_plan['fallback_attempt'] = True
+                fallback_plan['original_query_type'] = query_type
+                
+                # Re-execute with fallback servers
+                execution_results = self.execute_plan(fallback_plan, user_parameter_selections, user_query)
+                
+                # Update plan to reflect fallback was used
+                plan = fallback_plan
+                
+                # Add warning about fallback
+                execution_results.setdefault('warnings', []).append(
+                    f"Primary {query_type} query returned no data. Used fallback: {fallback_query_type}"
+                )
         
         # Step 3: Analyze results with appropriate model
         if self.progress_callback:
