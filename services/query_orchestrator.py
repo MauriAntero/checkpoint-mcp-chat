@@ -2139,7 +2139,8 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             output.append(f"| {rule_num} | {name} | {source_str} | {dest_str} | {service_str} | {action_str} | {track_str} |")
         
         output.append(f"\n**Total Rules: {len(rules)}**")
-        output.append(f"\n**NOTE**: Rulebase action field may be inaccurate due to MCP server limitations. **Always rely on LOG 'action' field for actual enforcement actions (Drop/Accept/Reject)**.")
+        output.append(f"\n**NOTE 1**: Rulebase action field may be inaccurate due to MCP server limitations. **Always rely on LOG 'action' field for actual enforcement actions (Drop/Accept/Reject)**.")
+        output.append(f"\n**NOTE 2**: Check Point automatically adds implicit/cleanup rules (typically last rule) that are NOT shown in this rulebase. If logs reference a rule number NOT in this table, it's an implicit cleanup rule (usually drops traffic that doesn't match explicit rules).")
         
         return '\n'.join(output)
     
@@ -3440,6 +3441,7 @@ TROUBLESHOOTING ROOT CAUSE ANALYSIS REQUIREMENTS:
 
 2. SECURITY POLICY ENFORCEMENT ANALYSIS:
    ✓ Which firewall rule processed the traffic? **CRITICAL: Match LOG 'rule' field NUMBER to RULEBASE 'rule-number' (e.g., log shows 'rule: 1' → find rulebase rule-number: 1)**
+   ✓ **IMPLICIT RULES**: If log shows a rule number NOT in the rulebase table (e.g., log shows rule 4 but table only has rules 1-3), it's Check Point's implicit cleanup rule (auto-added, not in API responses). These typically DROP traffic that doesn't match explicit rules.
    ✓ What action did the rule take? **CRITICAL: Use LOG 'action' field (Drop/Accept/Reject), NOT rulebase action field (may show incorrect values like 'Policy Targets' due to MCP server bug)**
    ✓ Which security blade enforced the action? (Firewall, Application Control, IPS, URL Filtering, etc.)
    ✓ WHY was traffic dropped/blocked? Check rule's source, destination, service fields AND service categories

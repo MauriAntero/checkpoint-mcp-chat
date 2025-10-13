@@ -229,17 +229,28 @@ class NetworkContextService:
                 
                 # Extract first gateway name from discovered_resources (preferred) or tool_results
                 if mgmt_result:
+                    print(f"[NetworkContext] DEBUG: mgmt_result keys: {list(mgmt_result.keys())}")
+                    
                     # First try: discovered_resources (contains parsed gateway data)
-                    if 'discovered_resources' in mgmt_result and 'show_gateways_and_servers' in mgmt_result['discovered_resources']:
-                        gateways = mgmt_result['discovered_resources']['show_gateways_and_servers']
-                        for gw in gateways:
-                            if gw.get('type') == 'gateway':
-                                gateway_name = gw.get('name')
-                                print(f"[NetworkContext] Discovered gateway from discovered_resources: {gateway_name}")
-                                break
+                    if 'discovered_resources' in mgmt_result:
+                        print(f"[NetworkContext] DEBUG: discovered_resources keys: {list(mgmt_result['discovered_resources'].keys())}")
+                        if 'show_gateways_and_servers' in mgmt_result['discovered_resources']:
+                            gateways = mgmt_result['discovered_resources']['show_gateways_and_servers']
+                            print(f"[NetworkContext] DEBUG: Found {len(gateways)} gateway/server objects")
+                            for gw in gateways:
+                                print(f"[NetworkContext] DEBUG: Object type={gw.get('type')}, name={gw.get('name')}")
+                                if gw.get('type') == 'gateway':
+                                    gateway_name = gw.get('name')
+                                    print(f"[NetworkContext] Discovered gateway from discovered_resources: {gateway_name}")
+                                    break
+                        else:
+                            print(f"[NetworkContext] DEBUG: 'show_gateways_and_servers' not in discovered_resources")
+                    else:
+                        print(f"[NetworkContext] DEBUG: 'discovered_resources' not in mgmt_result")
                     
                     # Fallback: Parse from tool_results JSON
                     if not gateway_name and 'tool_results' in mgmt_result:
+                        print(f"[NetworkContext] DEBUG: Trying tool_results fallback...")
                         for tool_result in mgmt_result['tool_results']:
                             if 'result' in tool_result and 'content' in tool_result['result']:
                                 for item in tool_result['result']['content']:
@@ -250,8 +261,10 @@ class NetworkContextService:
                                                 gateway_name = data['objects'][0].get('name')
                                                 print(f"[NetworkContext] Discovered gateway from tool_results: {gateway_name}")
                                                 break
-                                        except:
-                                            pass
+                                        except Exception as e:
+                                            print(f"[NetworkContext] DEBUG: Failed to parse tool_result: {e}")
+                else:
+                    print(f"[NetworkContext] DEBUG: mgmt_result is None or empty")
             
             # If still no gateway_name, skip routing discovery
             if not gateway_name:
