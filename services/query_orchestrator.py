@@ -576,12 +576,20 @@ REQUIRED servers: quantum-gw-cli (for cpstat, fw ctl pstat, top, df, free comman
 OPTIONAL servers: quantum-management (for gateway discovery), quantum-gaia (for system commands)
 FORBIDDEN servers: management-logs (logs don't contain performance metrics)
 
-IMPORTANT: Suggest specific diagnostic commands like:
-- cpstat (gateway statistics)
-- fw ctl pstat (connection table stats)
-- top (CPU/memory usage)
-- df -h (disk space)
-- free -m (memory usage)"""
+CRITICAL PERFORMANCE/CAPACITY COMMANDS (in priority order):
+1. cpview -p (BEST: all metrics in one command - CPU, memory, disk, connections, throughput)
+2. cpstat os -f all (Complete OS stats - CPU, memory, disk, interfaces, routes, sensors)
+3. cpstat fw -f policy (Firewall performance - active connections, policy hits, sync stats)
+4. cpstat ha (Cluster load distribution and synchronization)
+5. top -b -n 1 (Process snapshot with CPU/memory per process)
+6. fw ctl pstat (Connection table statistics and kernel memory usage)
+7. fwaccel stat (SecureXL offload efficiency and F2F violations)
+8. iostat -x (Disk I/O bottleneck detection)
+9. mpstat -P ALL (Per-CPU core utilization)
+10. free -h (Memory usage details)
+11. df -h (Disk space usage)
+
+ANALYSIS STRATEGY: Start with cpview -p or cpstat os -f all for holistic view, then drill into specific metrics if needed"""
         elif is_troubleshooting:
             # Connectivity/troubleshooting queries need ONLY logs, not policy
             query_type = "CONNECTIVITY_TROUBLESHOOTING"
@@ -2330,6 +2338,82 @@ Errors: {', '.join(errors) if errors else 'None'}{warnings_text}
         if warnings and any("truncation" in w.lower() or "truncated" in w.lower() for w in warnings):
             truncation_warning = "\n⚠️ IMPORTANT: Some data was truncated to fit the model. If evidence is missing, report that limitation instead of making assumptions."
         
+        # BUILD DATA SOURCE CONTEXT (Gap 1 - HIGH priority improvement)
+        # Explain to LLM what types of data sources are in the results
+        data_source_context = ""
+        run_script_commands = []
+        if self.gateway_script_executor:
+            run_script_commands = [item for item in plan.get("data_to_fetch", []) 
+                                  if isinstance(item, str) and item.startswith("run_script:")]
+            if run_script_commands:
+                cmd_list = ', '.join([cmd.replace('run_script:', '') for cmd in run_script_commands[:3]])
+                if len(run_script_commands) > 3:
+                    cmd_list += f"... (+{len(run_script_commands)-3} more)"
+                
+                data_source_context = f"""
+📊 DATA SOURCE TYPES IN RESULTS:
+- **Primary Data Sources**: management-logs (comprehensive traffic/threat logs), quantum-management (policy/config data)
+- **Supplemental Diagnostics**: {len(run_script_commands)} gateway CLI command(s) - {cmd_list}
+  → These are real-time gateway snapshots providing ADDITIONAL context to primary data
+  → Prioritize primary log/policy data for analysis, use diagnostics for supplemental insights only
+
+"""
+        
+        # BUILD DIAGNOSTIC COMMAND LEGEND (Gap 2 - MEDIUM priority improvement)
+        # Help LLM understand what each diagnostic command provides
+        command_legend_text = ""
+        if run_script_commands:
+            command_legend = {
+                'cphaprob state': 'Cluster HA state (Active/Standby)',
+                'cphaprob stat': 'Cluster member states',
+                'cphaprob -a if': 'Monitored cluster interfaces',
+                'cphaprob list': 'Cluster failover history',
+                'fwaccel stat': 'SecureXL acceleration status',
+                'fwaccel6 stat': 'SecureXL IPv6 acceleration',
+                'fwaccel stats -p': 'SecureXL F2F violations',
+                'fw stat': 'Firewall policy enforcement status',
+                'fw ver': 'Firewall version and hotfixes',
+                'fw ctl pstat': 'Policy server connection statistics',
+                'fw ctl conntab': 'Current connection table',
+                'fw tab -t connections': 'Connection table details',
+                'cpview -p': 'Complete system performance metrics',
+                'cpview -m': 'Memory-specific performance metrics',
+                'cpstat os -f all': 'Complete OS statistics',
+                'cpstat fw -f all': 'Firewall blade statistics',
+                'cpstat ha': 'HA state and statistics',
+                'cpstat vpn': 'VPN daemon statistics',
+                'top -b -n 1': 'Process CPU/memory snapshot',
+                'ps aux': 'Running processes list',
+                'free -h': 'Memory usage (human-readable)',
+                'df -h': 'Disk space usage',
+                'ifconfig -a': 'Network interface details',
+                'netstat -rn': 'Routing table',
+                'vpn tu tlist': 'Active VPN tunnels',
+                'cpwd_admin list': 'Check Point daemon status',
+                'cpinfo -y all': 'Comprehensive diagnostic bundle',
+                'iostat -x': 'Extended I/O statistics',
+                'mpstat -P ALL': 'Per-CPU core utilization',
+                'vmstat': 'Virtual memory statistics',
+                'fw log': 'Firewall log viewer',
+                'fw lslogs': 'Available log files'
+            }
+            
+            matched_commands = []
+            for cmd in run_script_commands:
+                cmd_clean = cmd.replace('run_script:', '').strip()
+                # Try exact match first
+                if cmd_clean in command_legend:
+                    matched_commands.append(f"  • {cmd_clean}: {command_legend[cmd_clean]}")
+                else:
+                    # Try partial match for commands with arguments
+                    for base_cmd, description in command_legend.items():
+                        if cmd_clean.startswith(base_cmd):
+                            matched_commands.append(f"  • {cmd_clean}: {description}")
+                            break
+            
+            if matched_commands:
+                command_legend_text = "\n🔍 DIAGNOSTIC COMMAND REFERENCE:\n" + "\n".join(matched_commands) + "\n"
+        
         # Detect query intent to provide appropriate analysis context
         query_intent_context = ""
         troubleshooting_keywords = ['troubleshoot', 'connectivity', 'connection', 'issue', 'problem', 'fail', 
@@ -2346,6 +2430,7 @@ QUERY INTENT: This is a CONNECTIVITY/TROUBLESHOOTING query, NOT a threat hunting
 """
         
         analysis_prompt = f"""User Query: {user_query}
+{data_source_context}{command_legend_text}
 {query_intent_context}
 CRITICAL INSTRUCTIONS - ANTI-HALLUCINATION RULES:
 1. **Evidence-Only Reporting**: Only report findings that are explicitly present in the provided data above
