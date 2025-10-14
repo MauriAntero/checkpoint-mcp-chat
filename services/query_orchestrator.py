@@ -1392,6 +1392,9 @@ Technical Execution Plan:"""
         # PARALLEL EXECUTION: Query all required servers simultaneously
         import asyncio
         
+        # Extract intent task_type for rate limiting detection
+        intent_task_type = plan.get('intent', {}).get('task_type', '') if plan else ''
+        
         # CRITICAL FIX: quantum-management must run FIRST to populate gateway directory
         # before quantum-gw-cli tries to resolve IPs to gateway names
         async def run_queries_with_dependencies():
@@ -1444,9 +1447,25 @@ Technical Execution Plan:"""
                         results["errors"].append(f"Required server '{server_name}' is not configured. Please add it in MCP Servers page.")
                 
                 if tasks:
-                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Phase 2: Querying {len(tasks)} servers in parallel")
-                    parallel_results = await asyncio.gather(*tasks, return_exceptions=True)
-                    all_results.extend(parallel_results)
+                    # Check if this is a threat assessment query (queries many servers)
+                    is_threat_assessment = intent_task_type == 'threat_assessment'
+                    
+                    if is_threat_assessment and len(tasks) > 3:
+                        # Threat assessment with many servers - use staggered execution to avoid rate limiting
+                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Phase 2: Querying {len(tasks)} servers with staggered delays (rate limit protection)")
+                        parallel_results = []
+                        for i, task in enumerate(tasks):
+                            if i > 0:
+                                # Add 0.5s delay between each server query
+                                await asyncio.sleep(0.5)
+                            result = await task
+                            parallel_results.append(result)
+                        all_results.extend(parallel_results)
+                    else:
+                        # Normal parallel execution for other query types
+                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Phase 2: Querying {len(tasks)} servers in parallel")
+                        parallel_results = await asyncio.gather(*tasks, return_exceptions=True)
+                        all_results.extend(parallel_results)
             
             return all_results, server_task_map
         
