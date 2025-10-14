@@ -250,21 +250,17 @@ def clean_uuids_from_data(obj: Any, parent_key: str = None) -> Any:
             # Check if this is an action/category object with embedded name
             if 'name' in obj:
                 # Return the intrinsic name directly, ignore UID
-                print(f"[SANITIZER_DEBUG] Preserving {parent_key} name: {obj['name']}")
                 return obj['name']
             # If no name field but has uid, preserve it for debugging
             elif 'uid' in obj:
                 uid_val = obj['uid']
                 if isinstance(uid_val, str) and re.match(uuid_pattern, uid_val, flags=re.IGNORECASE):
-                    print(f"[SANITIZER_DEBUG] Converting {parent_key} UID to ref: {uid_val[:8]}")
                     return f"<{parent_key}-{uid_val[:8]}>"
                 return uid_val
         
         # STEP 4: Now check uid/name combinations for simple objects
         if 'uid' in obj and 'name' in obj:
             # Simple object with uid/name (host, network, service) - collapse to name
-            if parent_key in ['action', 'site-category']:
-                print(f"[SANITIZER_DEBUG] WARNING: {parent_key} object reached step 4 with name={obj['name']}")
             return obj['name']
         
         # If dict has 'uid' but no 'name', try to use uid as fallback (but clean it)

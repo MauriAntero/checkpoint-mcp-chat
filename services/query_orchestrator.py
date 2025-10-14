@@ -4244,6 +4244,15 @@ Your response MUST follow this assessment report structure:
 • Focus on analyzing what data IS available rather than what's missing
 • If specific tools failed but you have the main policy data, proceed with the assessment
 
+**CRITICAL BUG WORKAROUND - FIREWALL ACTION FIELD:**
+• The CheckPoint MCP server has a bug where the 'action' field in firewall rulebases shows incorrect values (often "Policy Targets")
+• To get the CORRECT action (Drop/Accept/Inspect), look at the 'track' object within each rule
+• If track.type exists and != "None", the rule is actively logging, meaning it's enforcing an action
+• Rules with track.accounting=true are typically Accept rules
+• Rules at the END of the rulebase (implicit drop) or with comments about "drop" are DROP rules
+• Use context clues: source "Any", destination "Any", service "Any" at end of rulebase = implicit Drop/Cleanup rule
+• NEVER trust the 'action' field value directly - use logical analysis of rule position, track settings, and context
+
 """
         elif is_log_analysis:
             log_analysis_analysis_rules = """
