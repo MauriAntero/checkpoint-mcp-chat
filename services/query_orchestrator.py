@@ -165,6 +165,9 @@ class QueryOrchestrator:
             "last_domains": [],  # List of domains from previous query
             "last_task_type": None  # Last query task type
         }
+        
+        # Discovery bootstrap tracking (per management context)
+        self.discovery_bootstrap_completed = {}  # {management_context: timestamp}
     
     def _map_intent_to_classification(self, intent_task_type: str, user_query: str) -> tuple[str, list[str], list[str], str]:
         """Map Stage 1 intent task_type to Stage 2 classification with server filtering
@@ -944,6 +947,34 @@ Intent Analysis:"""
             intent: Structured intent from Stage 1 (if None, will run Stage 1 first)
         """
         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] create_execution_plan called with planner_model: '{planner_model}'")
+        
+        # Discovery Bootstrap: Prefetch core datasets before Stage 1 to prevent rate limiting
+        # Only run once per management context when cache is cold
+        if not intent:
+            import time
+            from services.discovery_bootstrap_service import run_discovery_bootstrap, should_run_discovery
+            
+            # Check if discovery bootstrap is needed (cache cold or stale)
+            all_servers = self.mcp_manager.get_all_servers()
+            if 'quantum-management' in all_servers:
+                server_env = all_servers['quantum-management'].get('env', {})
+                management_context = f"{server_env.get('MANAGEMENT_HOST', '')}:{server_env.get('PORT', '443')}"
+                
+                # Check if discovery already completed recently (within 5 minutes)
+                last_run = self.discovery_bootstrap_completed.get(management_context, 0)
+                time_since_last_run = time.time() - last_run
+                
+                if time_since_last_run > 300 or should_run_discovery(self.mcp_manager):  # 5 minutes timeout
+                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Running discovery bootstrap (cache cold or stale)...")
+                    discovery_results = run_discovery_bootstrap(self.mcp_manager)
+                    if discovery_results:
+                        self.discovery_bootstrap_completed[management_context] = time.time()
+                        if discovery_results['success']:
+                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ✓ Discovery bootstrap completed: {discovery_results['datasets_fetched']}")
+                        else:
+                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ⚠️ Discovery bootstrap partial: {len(discovery_results['datasets_failed'])} datasets failed")
+                else:
+                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ✓ Discovery bootstrap skipped (ran {int(time_since_last_run)}s ago, cache warm)")
         
         # Stage 1: Analyze user intent if not provided
         if not intent:
