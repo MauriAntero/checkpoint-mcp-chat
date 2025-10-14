@@ -52,6 +52,10 @@ class GatewayDirectory:
         updated_count = 0
         
         for gw in gateways_data:
+            # Skip non-dict items (defensive check)
+            if not isinstance(gw, dict):
+                continue
+                
             # Only process actual gateway objects (exclude interoperable-device)
             if gw.get('type') == 'interoperable-device':
                 continue

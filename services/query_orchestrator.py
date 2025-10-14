@@ -711,8 +711,11 @@ ALLOWED servers: All servers available"""
                         # Check for 'objects' array (Check Point API response format)
                         gateways = data.get('objects', [])
                         if gateways and isinstance(gateways, list):
-                            self.gateway_directory.update_from_management_api(gateways)
-                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Updated gateway directory with {len(gateways)} gateways")
+                            # Filter out non-dict items (some tools return string arrays)
+                            gateway_dicts = [gw for gw in gateways if isinstance(gw, dict)]
+                            if gateway_dicts:
+                                self.gateway_directory.update_from_management_api(gateway_dicts)
+                                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Updated gateway directory with {len(gateway_dicts)} gateways")
                             break
                     except json.JSONDecodeError:
                         pass
