@@ -118,19 +118,19 @@ class NetworkContextService:
             server_env = server_config.get('env', {})
             package_name = '@chkp/quantum-management-mcp'
             
-            # Query 1: Get all network objects
-            print(f"[NetworkContext] Querying network objects...")
+            # Query 1: Get all network objects (hosts and groups contain network definitions)
+            print(f"[NetworkContext] Querying network objects (hosts)...")
             networks_result = await query_mcp_server_async(
                 package_name,
                 server_env,
-                ['show_networks'],
+                ['show_hosts'],
                 discovery_mode=False,  # Disable smart prioritization - we want exactly this tool
-                user_query="Get all network objects"
+                user_query="Get all host network objects"
             )
             
             # Parse network objects from tool_results
             if networks_result and 'tool_results' in networks_result:
-                print(f"[NetworkContext] DEBUG: show_networks returned {len(networks_result['tool_results'])} tool results")
+                print(f"[NetworkContext] DEBUG: show_hosts returned {len(networks_result['tool_results'])} tool results")
                 for tool_result in networks_result['tool_results']:
                     if 'result' in tool_result and 'content' in tool_result['result']:
                         for item in tool_result['result']['content']:
@@ -170,14 +170,14 @@ class NetworkContextService:
             else:
                 print(f"[NetworkContext] DEBUG: networks_result is None or missing tool_results")
             
-            # Query 2: Get VPN communities to identify partner networks
+            # Query 2: Get VPN communities to identify partner networks (query all 3 types)
             print(f"[NetworkContext] Querying VPN communities...")
             vpn_result = await query_mcp_server_async(
                 package_name,
                 server_env,
-                ['show_vpn_communities'],
-                discovery_mode=False,  # Disable smart prioritization - we want exactly this tool
-                user_query="Get VPN communities"
+                ['show_vpn_communities_star', 'show_vpn_communities_meshed', 'show_vpn_communities_remote_access'],
+                discovery_mode=False,  # Disable smart prioritization - we want exactly these tools
+                user_query="Get all VPN communities"
             )
             
             # Parse VPN communities

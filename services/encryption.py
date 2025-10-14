@@ -185,6 +185,7 @@ class EncryptionService:
     
     def decrypt_file(self, file_path: Path) -> Optional[Dict[str, Any]]:
         """Load and decrypt data from file"""
+        encrypted_string = ""
         try:
             if not file_path.exists():
                 return None
@@ -192,10 +193,17 @@ class EncryptionService:
             with open(file_path, 'r') as f:
                 encrypted_string = f.read().strip()
             
+            # Skip empty files silently
+            if not encrypted_string:
+                return None
+            
             return self.decrypt_data(encrypted_string)
             
         except Exception as e:
-            print(f"File decryption failed: {str(e)}")
+            # Only log non-empty file decryption failures (suppress empty file noise)
+            error_msg = str(e)
+            if "Expecting value" not in error_msg or len(encrypted_string) > 10:
+                print(f"File decryption failed: {error_msg}")
             return None
     
     def change_master_password(self, old_password: str, new_password: str) -> bool:
