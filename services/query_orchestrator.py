@@ -1837,73 +1837,76 @@ Technical Execution Plan:"""
         discovered_resources['show_https_layers'] = https_layers
         discovered_resources['show_threat_layers'] = threat_layers
         
-        # Process each requested data point
-        for data_point in data_points:
-            tool_name = data_point
-            
-            # Firewall rules (access rulebase)
-            if 'show_access_rulebase' in tool_name:
-                for pkg in packages:
-                    for layer in access_layers:
-                        rulebase = self.mgmt_api_client.get_access_rulebase(layer['name'], pkg['name'])
-                        if rulebase and rulebase.get('rulebase'):
-                            tool_results.append({
-                                'tool_name': 'show_access_rulebase',
-                                'result': rulebase,
-                                'metadata': {
-                                    'source': 'management_api',
-                                    'package': pkg['name'],
-                                    'layer': layer['name']
-                                }
-                            })
-            
-            # NAT rules
-            elif 'show_nat_rulebase' in tool_name:
-                for pkg in packages:
-                    rulebase = self.mgmt_api_client.get_nat_rulebase(pkg['name'])
+        # CRITICAL FIX: Always fetch ALL policy rulebases when layers exist
+        # The planner sends generic data_points to all servers, so we need to be smart about what to fetch
+        # Don't wait for specific tool names - if layers exist, fetch their rulebases!
+        
+        # Firewall rules (access rulebase) - if access layers exist OR explicitly requested
+        if access_layers and ('show_access_rulebase' in str(data_points) or 'show_access' in str(data_points) or len(data_points) > 0):
+            for pkg in packages:
+                for layer in access_layers:
+                    rulebase = self.mgmt_api_client.get_access_rulebase(layer['name'], pkg['name'])
                     if rulebase and rulebase.get('rulebase'):
                         tool_results.append({
-                            'tool_name': 'show_nat_rulebase',
+                            'tool_name': 'show_access_rulebase',
                             'result': rulebase,
                             'metadata': {
                                 'source': 'management_api',
-                                'package': pkg['name']
-                            }
-                        })
-            
-            # HTTPS inspection
-            elif 'show_https_rulebase' in tool_name:
-                for pkg in packages:
-                    for layer in https_layers:
-                        rulebase = self.mgmt_api_client.get_https_rulebase(layer['name'], pkg['name'])
-                        if rulebase and rulebase.get('rulebase'):
-                            tool_results.append({
-                                'tool_name': 'show_https_rulebase',
-                                'result': rulebase,
-                                'metadata': {
-                                    'source': 'management_api',
-                                    'package': pkg['name'],
-                                    'layer': layer['name']
-                                }
-                            })
-            
-            # Threat prevention
-            elif 'show_threat_rulebase' in tool_name:
-                for layer in threat_layers:
-                    rulebase = self.mgmt_api_client.get_threat_rulebase(layer['name'])
-                    if rulebase and rulebase.get('rulebase'):
-                        tool_results.append({
-                            'tool_name': 'show_threat_rulebase',
-                            'result': rulebase,
-                            'metadata': {
-                                'source': 'management_api',
+                                'package': pkg['name'],
                                 'layer': layer['name']
                             }
                         })
-            
-            # Gateways
-            elif 'show_gateways_and_servers' in tool_name:
-                gateways = self.mgmt_api_client.get_gateways()
+        
+        # NAT rules - if packages exist OR explicitly requested
+        if packages and ('show_nat_rulebase' in str(data_points) or 'show_nat' in str(data_points) or len(data_points) > 0):
+            for pkg in packages:
+                rulebase = self.mgmt_api_client.get_nat_rulebase(pkg['name'])
+                if rulebase and rulebase.get('rulebase'):
+                    tool_results.append({
+                        'tool_name': 'show_nat_rulebase',
+                        'result': rulebase,
+                        'metadata': {
+                            'source': 'management_api',
+                            'package': pkg['name']
+                        }
+                    })
+        
+        # HTTPS inspection - ALWAYS fetch if layers exist (don't wait for specific tool request)
+        if https_layers:
+            print(f"[MGMT_API] Discovered {len(https_layers)} HTTPS layers - fetching rulebases automatically...")
+            for pkg in packages:
+                for layer in https_layers:
+                    rulebase = self.mgmt_api_client.get_https_rulebase(layer['name'], pkg['name'])
+                    if rulebase and rulebase.get('rulebase'):
+                        tool_results.append({
+                            'tool_name': 'show_https_rulebase',
+                            'result': rulebase,
+                            'metadata': {
+                                'source': 'management_api',
+                                'package': pkg['name'],
+                                'layer': layer['name']
+                            }
+                        })
+        
+        # Threat prevention - ALWAYS fetch if layers exist (don't wait for specific tool request)
+        if threat_layers:
+            print(f"[MGMT_API] Discovered {len(threat_layers)} threat prevention layers - fetching rulebases automatically...")
+            for layer in threat_layers:
+                rulebase = self.mgmt_api_client.get_threat_rulebase(layer['name'])
+                if rulebase and rulebase.get('rulebase'):
+                    tool_results.append({
+                        'tool_name': 'show_threat_rulebase',
+                        'result': rulebase,
+                        'metadata': {
+                            'source': 'management_api',
+                            'layer': layer['name']
+                        }
+                    })
+        
+        # Gateways - fetch if requested
+        if 'show_gateways_and_servers' in str(data_points):
+            gateways = self.mgmt_api_client.get_gateways()
+            if gateways:
                 tool_results.append({
                     'tool_name': 'show_gateways_and_servers',
                     'result': {'objects': gateways},
