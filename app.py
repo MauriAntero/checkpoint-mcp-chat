@@ -1729,19 +1729,11 @@ def process_with_orchestration(message: str, update_status=None):
     # Add analysis
     response_parts.append(f"\n{analysis}")
     
-    # Add cache statistics
+    # Log cache statistics to debug logs
     cache = get_cache()
     cache_stats = cache.get_stats()
     if cache_stats['total_requests'] > 0:
-        cache_info = (
-            f"\n\n---\n"
-            f"**📊 Cache Performance:** "
-            f"{cache_stats['hits']} hits / {cache_stats['total_requests']} requests "
-            f"({cache_stats['hit_rate_percent']}% hit rate) • "
-            f"{cache_stats['cached_items']} items cached • "
-            f"{cache_stats['cache_size_mb']} MB"
-        )
-        response_parts.append(cache_info)
+        print(f"[Cache] 📊 Performance: {cache_stats['hits']} hits / {cache_stats['total_requests']} requests ({cache_stats['hit_rate_percent']}% hit rate) • {cache_stats['cached_items']} items cached • {cache_stats['cache_size_mb']} MB")
     
     response_content = "\n".join(response_parts)
     
