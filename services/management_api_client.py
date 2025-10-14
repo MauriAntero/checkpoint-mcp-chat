@@ -23,9 +23,14 @@ class ManagementAPIClient:
         self.base_url = f"https://{host}:{port}/web_api"
         self.session_id = None
         
-    def login(self, max_retries: int = 3) -> bool:
+    def login(self, max_retries: int = 5) -> bool:
         """Login to Management API and obtain session ID with retry logic for rate limiting"""
         import time
+        
+        # If already logged in with valid session, skip login
+        if self.session_id:
+            print(f"[MGMT_API] [{_ts()}] Reusing existing session")
+            return True
         
         for attempt in range(max_retries):
             try:
@@ -44,8 +49,8 @@ class ManagementAPIClient:
                     try:
                         error_data = resp.json()
                         if error_data.get('code') == 'err_too_many_requests':
-                            # Rate limited - retry with exponential backoff
-                            wait_time = (2 ** attempt) * 2  # 2s, 4s, 8s
+                            # Rate limited - retry with longer exponential backoff
+                            wait_time = (2 ** attempt) * 3  # 3s, 6s, 12s, 24s, 48s
                             print(f"[MGMT_API] [{_ts()}] Rate limited - waiting {wait_time}s before retry...")
                             time.sleep(wait_time)
                             continue
@@ -67,7 +72,7 @@ class ManagementAPIClient:
             except Exception as e:
                 print(f"[MGMT_API] Login error: {e}")
                 if attempt < max_retries - 1:
-                    wait_time = (2 ** attempt) * 2
+                    wait_time = (2 ** attempt) * 3
                     print(f"[MGMT_API] [{_ts()}] Retrying in {wait_time}s...")
                     time.sleep(wait_time)
                 else:
