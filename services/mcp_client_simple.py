@@ -180,7 +180,7 @@ async def call_tool_with_retry(
                 print(f"[MCP_DEBUG] [{_ts()}] ✗ All {max_retries + 1} attempts failed for {tool_name}: {last_exception}")
                 raise last_exception
 
-def clean_uuids_from_data(obj: Any) -> Any:
+def clean_uuids_from_data(obj: Any, parent_key: str = None) -> Any:
     """Remove UUIDs from CheckPoint object data, keeping only readable names
     
     Handles multiple CheckPoint data formats:
@@ -188,8 +188,13 @@ def clean_uuids_from_data(obj: Any) -> Any:
     2. Strings with "uuid (name)" pattern -> "name"  
     3. Standalone UUID strings -> removed/replaced with placeholder
     
+    CRITICAL FIXES:
+    - Preserves action field intrinsic name (Drop/Accept) without dictionary lookups
+    - Preserves site-category embedded names to avoid duplicates
+    
     Args:
         obj: Any data structure (dict, list, str, etc.)
+        parent_key: Key from parent dict (for context-aware processing)
         
     Returns:
         Cleaned version with UUIDs removed and names extracted
@@ -209,7 +214,7 @@ def clean_uuids_from_data(obj: Any) -> Any:
         # STEP 1: Check for container fields FIRST (highest priority)
         if any(field in obj for field in container_fields):
             # This is a complex container object - preserve all fields
-            return {key: clean_uuids_from_data(value) for key, value in obj.items()}
+            return {key: clean_uuids_from_data(value, key) for key, value in obj.items()}
         
         # STEP 2: Check for rule objects (BEFORE uid/name checks)
         # Rule objects can be identified by specific field combinations OR rule-identifying fields
@@ -229,11 +234,31 @@ def clean_uuids_from_data(obj: Any) -> Any:
             ('type' in obj and obj.get('type') == 'nat-rule')
         )
         
-        if is_access_rule or is_nat_rule:
-            # This is a firewall or NAT rule - preserve ALL fields
-            return {key: clean_uuids_from_data(value) for key, value in obj.items()}
+        # HTTPS Inspection Rule indicators
+        is_https_rule = (
+            ('type' in obj and obj.get('type') == 'https-rule') or
+            ('site-category' in obj and 'blade' in obj)
+        )
         
-        # STEP 3: Now check uid/name combinations for simple objects
+        if is_access_rule or is_nat_rule or is_https_rule:
+            # This is a firewall, NAT, or HTTPS rule - preserve ALL fields
+            return {key: clean_uuids_from_data(value, key) for key, value in obj.items()}
+        
+        # STEP 3: SPECIAL HANDLING for action and site-category objects
+        # These fields have embedded names that must be preserved WITHOUT dictionary lookups
+        if parent_key in ['action', 'site-category']:
+            # Check if this is an action/category object with embedded name
+            if 'name' in obj:
+                # Return the intrinsic name directly, ignore UID
+                return obj['name']
+            # If no name field but has uid, preserve it for debugging
+            elif 'uid' in obj:
+                uid_val = obj['uid']
+                if isinstance(uid_val, str) and re.match(uuid_pattern, uid_val, flags=re.IGNORECASE):
+                    return f"<{parent_key}-{uid_val[:8]}>"
+                return uid_val
+        
+        # STEP 4: Now check uid/name combinations for simple objects
         if 'uid' in obj and 'name' in obj:
             # Simple object with uid/name (host, network, service) - collapse to name
             return obj['name']
@@ -248,7 +273,7 @@ def clean_uuids_from_data(obj: Any) -> Any:
         
         # Otherwise, recursively clean all values in the dict
         else:
-            return {key: clean_uuids_from_data(value) for key, value in obj.items()}
+            return {key: clean_uuids_from_data(value, key) for key, value in obj.items()}
     
     elif isinstance(obj, str):
         # Pattern 1: "uuid (name)" -> extract name
@@ -261,7 +286,8 @@ def clean_uuids_from_data(obj: Any) -> Any:
         return cleaned
     
     elif isinstance(obj, list):
-        return [clean_uuids_from_data(item) for item in obj]
+        # For lists, preserve parent_key context (e.g., action array, site-category array)
+        return [clean_uuids_from_data(item, parent_key) for item in obj]
     
     else:
         return obj
@@ -1398,9 +1424,15 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         
                         # CRITICAL: Use show_raw=true to get raw JSON and bypass MCP server's table formatting
                         # The MCP server's formatted table may not properly resolve object names from dictionary
+                        # EXCEPTION: threat-prevention MCP server rejects 'show_raw' parameter (generates invalid 'body' param)
                         if 'show_raw' not in args:
-                            args['show_raw'] = True
-                            print(f"[MCP_DEBUG] [{_ts()}] Set show_raw=true for {tool.name} (bypass server formatting, get raw JSON)")
+                            # Check if this is threat-prevention MCP server
+                            is_threat_prevention = 'threat-prevention' in package_name.lower()
+                            if not is_threat_prevention:
+                                args['show_raw'] = True
+                                print(f"[MCP_DEBUG] [{_ts()}] Set show_raw=true for {tool.name} (bypass server formatting, get raw JSON)")
+                            else:
+                                print(f"[MCP_DEBUG] [{_ts()}] Skipping show_raw for {tool.name} (threat-prevention MCP server incompatibility)")
                     
                     # FIX: Special handling for show_access_rule, show_access_section, show_nat_section
                     # These tools have specific parameter requirements that differ from rulebases
