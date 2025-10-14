@@ -6,6 +6,8 @@ import json
 import asyncio
 import time
 import random
+import requests
+import urllib3
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
@@ -13,6 +15,9 @@ from dataclasses import dataclass
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from services.gateway_directory import GatewayDirectory
+
+# Disable SSL warnings for Management API calls (self-signed certs common in CheckPoint)
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Module-level gateway directory instance (loads from disk cache)
 _gateway_directory = None
@@ -31,6 +36,95 @@ _discovered_resources_cache = {}
 def _ts():
     """Return timestamp string for debug logging"""
     return datetime.now().strftime("%H:%M:%S.%f")[:-3]
+
+def _get_correct_actions_from_api(layer_name: str, package_name: str, credentials: dict) -> Dict[str, str]:
+    """
+    Directly query CheckPoint Management API to get correct action values for rules.
+    This bypasses the buggy MCP server that returns incorrect action fields.
+    
+    Args:
+        layer_name: Access layer name (e.g. "Network")
+        package_name: Policy package name (e.g. "Standard")  
+        credentials: Dict with MANAGEMENT_HOST, PORT, USERNAME, PASSWORD
+        
+    Returns:
+        Dict mapping rule UIDs to correct action names (Drop/Accept/Inspect/etc)
+    """
+    try:
+        mgmt_host = credentials.get('MANAGEMENT_HOST')
+        port = credentials.get('PORT', '443')
+        username = credentials.get('USERNAME')
+        password = credentials.get('PASSWORD')
+        
+        if not all([mgmt_host, username, password]):
+            print(f"[ACTION_FIX] Missing credentials for direct API call")
+            return {}
+        
+        # Build API URL
+        base_url = f"https://{mgmt_host}:{port}/web_api"
+        
+        # Step 1: Login
+        login_url = f"{base_url}/login"
+        login_data = {"user": username, "password": password}
+        
+        print(f"[ACTION_FIX] [{_ts()}] Logging into Management API to get correct actions...")
+        resp = requests.post(login_url, json=login_data, verify=False, timeout=30)
+        
+        if resp.status_code != 200:
+            print(f"[ACTION_FIX] Login failed: {resp.status_code}")
+            return {}
+        
+        sid = resp.json().get('sid')
+        if not sid:
+            print(f"[ACTION_FIX] No session ID received")
+            return {}
+        
+        headers = {"X-chkp-sid": sid, "Content-Type": "application/json"}
+        
+        # Step 2: Get access rulebase with correct actions
+        rulebase_url = f"{base_url}/show-access-rulebase"
+        rulebase_data = {
+            "name": layer_name,
+            "package": package_name,
+            "details-level": "standard",
+            "use-object-dictionary": False  # Get full objects, not references
+        }
+        
+        print(f"[ACTION_FIX] [{_ts()}] Fetching rulebase: layer={layer_name}, package={package_name}")
+        resp = requests.post(rulebase_url, json=rulebase_data, headers=headers, verify=False, timeout=30)
+        
+        if resp.status_code != 200:
+            print(f"[ACTION_FIX] Rulebase query failed: {resp.status_code}")
+            # Logout before returning
+            requests.post(f"{base_url}/logout", headers=headers, verify=False, timeout=10)
+            return {}
+        
+        data = resp.json()
+        action_map = {}
+        
+        # Extract action values from each rule
+        if 'rulebase' in data:
+            for rule in data['rulebase']:
+                if isinstance(rule, dict) and 'uid' in rule and 'action' in rule:
+                    rule_uid = rule['uid']
+                    action = rule['action']
+                    
+                    # Extract action name
+                    if isinstance(action, dict) and 'name' in action:
+                        action_map[rule_uid] = action['name']
+                    elif isinstance(action, str):
+                        action_map[rule_uid] = action
+        
+        print(f"[ACTION_FIX] [{_ts()}] ✓ Retrieved {len(action_map)} correct action values from API")
+        
+        # Step 3: Logout
+        requests.post(f"{base_url}/logout", headers=headers, verify=False, timeout=10)
+        
+        return action_map
+        
+    except Exception as e:
+        print(f"[ACTION_FIX] Error querying Management API: {e}")
+        return {}
 
 @dataclass
 class MCPTool:
@@ -1998,6 +2092,92 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         # Combine MCP server's isError flag with our API error detection
                         # Use OR logic: error if either the tool says so OR we detected an API error
                         is_error = (tool_result.isError if hasattr(tool_result, 'isError') else False) or has_api_error
+                        
+                        # FIX BUGGY ACTION VALUES: Check if this is access rulebase with suspicious actions
+                        if tool.name == 'show_access_rulebase' and not is_error:
+                            try:
+                                # Check for buggy action values in the rulebase
+                                has_buggy_actions = False
+                                layer_name = None
+                                package_name_param = None
+                                
+                                # Extract data from content
+                                for item in content_serializable if isinstance(content_serializable, list) else []:
+                                    if isinstance(item, dict) and 'text' in item:
+                                        text = item['text']
+                                        # Parse JSON if it's a string
+                                        if isinstance(text, str):
+                                            try:
+                                                data = json.loads(text)
+                                            except:
+                                                data = text
+                                        else:
+                                            data = text
+                                        
+                                        # Check if this has rulebase data
+                                        if isinstance(data, dict) and 'rulebase' in data:
+                                            layer_name = data.get('name')
+                                            # Check for suspicious action values
+                                            for rule in data.get('rulebase', []):
+                                                if isinstance(rule, dict):
+                                                    action = rule.get('action')
+                                                    # "Policy Targets" is a known buggy value from MCP server
+                                                    if action == "Policy Targets" or action == "Unknown" or action == "":
+                                                        has_buggy_actions = True
+                                                        print(f"[ACTION_FIX] [{_ts()}] ⚠️ Detected buggy action value: '{action}'")
+                                                        break
+                                                if has_buggy_actions:
+                                                    break
+                                
+                                # If we found buggy actions, get correct ones from Management API
+                                if has_buggy_actions and layer_name:
+                                    # Get package name from discovered resources or arguments
+                                    if 'show_packages' in discovered_resources and discovered_resources['show_packages']:
+                                        package_name_param = discovered_resources['show_packages'][0].get('name')
+                                    elif 'package' in args:
+                                        package_name_param = args['package']
+                                    
+                                    if package_name_param:
+                                        print(f"[ACTION_FIX] [{_ts()}] 🔧 Fixing buggy actions for layer '{layer_name}', package '{package_name_param}'")
+                                        
+                                        # Get correct actions from Management API
+                                        correct_actions = _get_correct_actions_from_api(
+                                            layer_name=layer_name,
+                                            package_name=package_name_param,
+                                            credentials=env_vars
+                                        )
+                                        
+                                        if correct_actions:
+                                            # Patch the data with correct actions
+                                            for item in content_serializable if isinstance(content_serializable, list) else []:
+                                                if isinstance(item, dict) and 'text' in item:
+                                                    text = item['text']
+                                                    if isinstance(text, str):
+                                                        try:
+                                                            data = json.loads(text)
+                                                        except:
+                                                            continue
+                                                    else:
+                                                        data = text
+                                                    
+                                                    if isinstance(data, dict) and 'rulebase' in data:
+                                                        fixed_count = 0
+                                                        for rule in data.get('rulebase', []):
+                                                            if isinstance(rule, dict) and 'uid' in rule:
+                                                                rule_uid = rule['uid']
+                                                                if rule_uid in correct_actions:
+                                                                    old_action = rule.get('action')
+                                                                    rule['action'] = correct_actions[rule_uid]
+                                                                    fixed_count += 1
+                                                                    print(f"[ACTION_FIX] [{_ts()}] ✅ Fixed rule {rule.get('rule-number', '?')}: '{old_action}' → '{correct_actions[rule_uid]}'")
+                                                        
+                                                        # Re-serialize if needed
+                                                        if isinstance(item['text'], str):
+                                                            item['text'] = json.dumps(data)
+                                                        
+                                                        print(f"[ACTION_FIX] [{_ts()}] ✅ Fixed {fixed_count} action values using Management API")
+                            except Exception as e:
+                                print(f"[ACTION_FIX] [{_ts()}] ⚠️ Could not fix actions: {e}")
                         
                         results["tool_results"].append({
                             "tool": tool.name,
