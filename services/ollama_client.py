@@ -10,7 +10,7 @@ class OllamaClient:
     """Client for interacting with Ollama LLM service"""
     
     def __init__(self, base_url: str = None, context_window: int = 32768):
-        url = base_url or os.getenv("OLLAMA_HOST", "http://network-host:11434")
+        url = base_url or os.getenv("OLLAMA_HOST", "http://localhost:11434")
         self.base_url = self._normalize_url(url)
         self.security_model = os.getenv("SECURITY_MODEL", "saki007ster/cybersecurityriskanalyst")
         self.general_model = os.getenv("GENERAL_MODEL", "llama3.1")

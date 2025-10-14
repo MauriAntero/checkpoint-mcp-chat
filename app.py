@@ -1385,21 +1385,39 @@ def show_chat_interface():
                 st.markdown("""
                 <div style='text-align: center; padding: 40px; color: #666;'>
                     <h3>Welcome to Check Point MCP Chat</h3>
-                    <p>Query your entire Check Point infrastructure across 11 specialized services.</p>
-                    <p style='font-size: 0.9em; margin-top: 20px;'><strong>Fleet-Wide Operations (For Large Deployments):</strong></p>
-                    <p style='font-size: 0.85em;'>• "Which gateways need immediate attention - show threats, performance issues, and misconfigurations"</p>
-                    <p style='font-size: 0.85em;'>• "Audit all gateways for compliance violations, unused rules, and security gaps across my infrastructure"</p>
-                    <p style='font-size: 0.9em; margin-top: 15px;'><strong>Specialized Services:</strong></p>
-                    <p style='font-size: 0.85em;'>• "Show all policy changes across my gateways" (Management)</p>
-                    <p style='font-size: 0.85em;'>• "Analyze traffic and audit logs from yesterday" (Logs)</p>
-                    <p style='font-size: 0.85em;'>• "What threats were blocked this week?" (Threat Prevention)</p>
-                    <p style='font-size: 0.85em;'>• "Show HTTPS inspection policy exceptions" (HTTPS Inspection)</p>
-                    <p style='font-size: 0.85em;'>• "Check reputation of suspicious URL" (Reputation Service)</p>
-                    <p style='font-size: 0.85em;'>• "Analyze file for malware" (Threat Emulation)</p>
-                    <p style='font-size: 0.85em;'>• "Debug connection issue on gateway" (Connection Analysis)</p>
-                    <p style='font-size: 0.85em;'>• "Show gateway interface status" (Gateway CLI / GAIA)</p>
-                    <p style='font-size: 0.85em;'>• "Review Harmony SASE configuration" (SASE)</p>
-                    <p style='font-size: 0.85em;'>• "Manage Spark appliances for customer" (Spark MSP)</p>
+                    <p>AI-powered security operations across 11 specialized Check Point services with intelligent intent discovery.</p>
+                    
+                    <p style='font-size: 0.95em; margin-top: 25px; color: #444;'><strong>🎯 Intelligent Intent Discovery System</strong></p>
+                    <p style='font-size: 0.85em; margin-bottom: 20px;'>The LLM automatically detects your intent and routes queries to the right services with optimal analysis:</p>
+                    
+                    <div style='text-align: left; max-width: 800px; margin: 0 auto;'>
+                        <p style='font-size: 0.9em; margin-top: 15px;'><strong>📋 Policy Review</strong> <em>(show, list, display)</em></p>
+                        <p style='font-size: 0.85em; margin-left: 20px;'>• "Show all firewall rules" — Clean data display without analysis</p>
+                        <p style='font-size: 0.85em; margin-left: 20px;'>• "List unused access rules across all gateways"</p>
+                        
+                        <p style='font-size: 0.9em; margin-top: 15px;'><strong>🔧 Troubleshooting</strong> <em>(why, debug, investigate, diagnose)</em></p>
+                        <p style='font-size: 0.85em; margin-left: 20px;'>• "Why can't user 10.1.5.20 access 192.168.10.5?" — Root cause with iterative diagnostics</p>
+                        <p style='font-size: 0.85em; margin-left: 20px;'>• "Investigate performance issues on cp-gw-01" — Auto-executes gateway diagnostics</p>
+                        
+                        <p style='font-size: 0.9em; margin-top: 15px;'><strong>🛡️ Security Investigation</strong> <em>(threats, suspicious, malware)</em></p>
+                        <p style='font-size: 0.85em; margin-left: 20px;'>• "Any suspicious activity in the last 24 hours?" — Threat event hunting</p>
+                        <p style='font-size: 0.85em; margin-left: 20px;'>• "Find all malware detections this week across infrastructure"</p>
+                        
+                        <p style='font-size: 0.9em; margin-top: 15px;'><strong>🎯 Threat Assessment</strong> <em>(assess, evaluate, compliance)</em></p>
+                        <p style='font-size: 0.85em; margin-left: 20px;'>• "Assess security posture of my infrastructure" — Posture evaluation with recommendations</p>
+                        <p style='font-size: 0.85em; margin-left: 20px;'>• "Vulnerability assessment for all gateways" — Forward-looking analysis</p>
+                        
+                        <p style='font-size: 0.9em; margin-top: 15px;'><strong>📊 Log Analysis</strong> <em>(traffic, bandwidth, connections)</em></p>
+                        <p style='font-size: 0.85em; margin-left: 20px;'>• "Show all traffic from 172.16.50.10 today" — Traffic pattern analysis</p>
+                        <p style='font-size: 0.85em; margin-left: 20px;'>• "What hit firewall rule 15 in the last hour?" — Descriptive log analysis</p>
+                        
+                        <p style='font-size: 0.9em; margin-top: 15px;'><strong>🌐 Network Analysis</strong> <em>(topology, routing, infrastructure)</em></p>
+                        <p style='font-size: 0.85em; margin-left: 20px;'>• "Show network topology and gateway status" — Infrastructure overview</p>
+                        <p style='font-size: 0.85em; margin-left: 20px;'>• "Display routing tables for all gateways" — Network infrastructure details</p>
+                        
+                        <p style='font-size: 0.9em; margin-top: 15px;'><strong>💡 General Info</strong> <em>(help, what can you do)</em></p>
+                        <p style='font-size: 0.85em; margin-left: 20px;'>• "What services can you access?" — Capabilities overview</p>
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
         
