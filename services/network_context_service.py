@@ -138,8 +138,7 @@ class NetworkContextService:
             
             # Check intelligent cache first for VPN communities (discovery bootstrap pre-populates this)
             cache = get_cache()
-            vpn_cache_key = f"{management_context}:vpn_communities"
-            cached_vpn = cache.get(vpn_cache_key)
+            cached_vpn = cache.get('vpn_communities', management_context=management_context)
             
             if cached_vpn:
                 print(f"[NetworkContext] ✓ Using cached VPN communities ({len(cached_vpn)} communities)")

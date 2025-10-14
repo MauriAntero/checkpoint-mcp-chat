@@ -177,16 +177,8 @@ class DiscoveryBootstrapService:
     
     def _write_to_cache(self, data_type: str, data: Any, ttl: int = 600):
         """Write discovery data to intelligent cache with management-context scoping"""
-        cache_key = f"{self.management_context}:{data_type}"
-        
-        self.cache._cache[cache_key] = {
-            'data': data,
-            'timestamp': time.time(),
-            'ttl': ttl,
-            'data_type': data_type,
-            'gateway': self.management_context,
-            'source': 'discovery_bootstrap'
-        }
+        # Use intelligent cache's proper API for consistent key formatting
+        self.cache.set(data_type, data, management_context=self.management_context, custom_ttl=ttl)
         
         print(f"[Discovery] [{_ts()}] 💾 Wrote '{data_type}' to cache (TTL: {ttl}s)")
 
@@ -218,16 +210,10 @@ def should_run_discovery(mcp_manager) -> bool:
     core_datasets = ['gateways_and_servers', 'policy_packages', 'access_layers']
     
     for dataset in core_datasets:
-        cache_key = f"{management_context}:{dataset}"
-        if cache_key not in cache._cache:
+        # Use intelligent cache API instead of direct dict access
+        cached_data = cache.get(dataset, management_context=management_context)
+        if cached_data is None:
             print(f"[Discovery] [{_ts()}] Cache cold: '{dataset}' not found")
-            return True
-        
-        # Check if data is stale
-        entry = cache._cache[cache_key]
-        age = time.time() - entry['timestamp']
-        if age > entry['ttl']:
-            print(f"[Discovery] [{_ts()}] Cache stale: '{dataset}' expired ({int(age)}s old, TTL: {entry['ttl']}s)")
             return True
     
     print(f"[Discovery] [{_ts()}] Cache warm: All core datasets fresh")

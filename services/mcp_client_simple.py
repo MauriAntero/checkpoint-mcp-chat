@@ -753,14 +753,10 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                     port = env_vars.get('PORT', '443')
                     management_context = f"{host}:{port}"
                     
-                    # Try to load from intelligent cache first
-                    gateways_cache_key = f"{management_context}:gateways_and_servers"
-                    layers_cache_key = f"{management_context}:access_layers"
-                    packages_cache_key = f"{management_context}:policy_packages"
-                    
-                    cached_gateways = cache.get(gateways_cache_key)
-                    cached_layers = cache.get(layers_cache_key)
-                    cached_packages = cache.get(packages_cache_key)
+                    # Use intelligent cache API for consistent key formatting
+                    cached_gateways = cache.get('gateways_and_servers', management_context=management_context)
+                    cached_layers = cache.get('access_layers', management_context=management_context)
+                    cached_packages = cache.get('policy_packages', management_context=management_context)
                     
                     if cached_gateways:
                         print(f"[MCP_DEBUG] [{_ts()}] ✓ Using cached gateways/servers ({len(cached_gateways)} items)")
