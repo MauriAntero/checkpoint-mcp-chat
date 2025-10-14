@@ -2595,21 +2595,206 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         blade_types = [self._extract_blade_type(log) for log in logs]
         return dict(Counter(blade_types))
     
-    def _apply_smart_log_sampling(self, data_collected: Dict[str, Any], timeframe_hours: float = 24) -> Dict[str, Any]:
-        """Apply intelligent temporal sampling to reduce log volume while preserving analysis coherence
+    def _sample_logs_hybrid_troubleshooting(self, logs: list, timeframe_hours: float) -> tuple[list, dict]:
+        """Hybrid sampling for troubleshooting: Chronological timeline + blade coverage
         
         Strategy:
-        - Short timeframes (<48h): First 15 + Last 15 logs per action type (30 total per action)
-        - Long timeframes (≥48h): Stratified temporal sampling across time buckets
-          * 2-10 days: 1 bucket per day, 3 samples per bucket per action
-          * 11-30 days: 1 bucket per 2 days, 3 samples per bucket per action  
-          * 31+ days: 1 bucket per week, 3 samples per bucket per action
+        1. Timeline anchors: First 10 + Last 10 chronologically (preserves cause-effect)
+        2. Recent issues: ALL Drop/Reject logs from last 1 hour (recent problems priority)
+        3. Blade transitions: Logs where blade type changes (multi-layer enforcement)
+        4. Blade representation: Fill quota with samples from each blade type
         
-        Always includes first and last log to show trend direction.
+        Args:
+            logs: List of log entries
+            timeframe_hours: Query timeframe in hours
+            
+        Returns:
+            Tuple of (sampled_logs, metadata)
+        """
+        from datetime import datetime as dt, timedelta
+        from collections import defaultdict
+        
+        if len(logs) <= 50:
+            # Small dataset, keep all
+            blade_dist = self._get_blade_distribution(logs)
+            return logs, {
+                'strategy': 'hybrid_troubleshooting_all',
+                'total_original': len(logs),
+                'total_sampled': len(logs),
+                'blade_distribution': blade_dist,
+                'temporal_coverage': 'complete',
+                'method': 'kept_all_logs'
+            }
+        
+        sampled_logs = []
+        sampled_ids = set()
+        
+        # Sort logs chronologically
+        sorted_logs = sorted(logs, key=lambda x: x.get('time', ''))
+        
+        # 1. Timeline anchors: First 10 + Last 10 chronologically
+        for log in sorted_logs[:10]:
+            log_id = id(log)
+            if log_id not in sampled_ids:
+                sampled_logs.append(log)
+                sampled_ids.add(log_id)
+        
+        for log in sorted_logs[-10:]:
+            log_id = id(log)
+            if log_id not in sampled_ids:
+                sampled_logs.append(log)
+                sampled_ids.add(log_id)
+        
+        # 2. Recent issues: ALL Drop/Reject logs from last 1 hour
+        try:
+            latest_time = dt.fromisoformat(sorted_logs[-1].get('time', '').replace('Z', '+00:00'))
+            one_hour_ago = latest_time - timedelta(hours=1)
+            
+            for log in sorted_logs:
+                action = log.get('action', '').lower()
+                if action in ['drop', 'reject', 'block', 'prevent']:
+                    try:
+                        log_time = dt.fromisoformat(log.get('time', '').replace('Z', '+00:00'))
+                        if log_time >= one_hour_ago:
+                            log_id = id(log)
+                            if log_id not in sampled_ids:
+                                sampled_logs.append(log)
+                                sampled_ids.add(log_id)
+                    except:
+                        pass
+        except:
+            pass
+        
+        # 3. Blade transitions: Detect where blade type changes
+        prev_blade = None
+        for log in sorted_logs:
+            blade = self._extract_blade_type(log)
+            if blade != prev_blade and prev_blade is not None:
+                # Blade transition - include this log
+                log_id = id(log)
+                if log_id not in sampled_ids:
+                    sampled_logs.append(log)
+                    sampled_ids.add(log_id)
+            prev_blade = blade
+        
+        # 4. Blade representation: Ensure each blade type has samples
+        logs_by_blade = defaultdict(list)
+        for log in sorted_logs:
+            blade = self._extract_blade_type(log)
+            logs_by_blade[blade].append(log)
+        
+        # Take 5 samples from each blade (first 3 + last 2)
+        for blade, blade_logs in logs_by_blade.items():
+            samples_to_take = min(5, len(blade_logs))
+            blade_samples = blade_logs[:3] + blade_logs[-2:] if len(blade_logs) > 5 else blade_logs
+            
+            for log in blade_samples:
+                log_id = id(log)
+                if log_id not in sampled_ids:
+                    sampled_logs.append(log)
+                    sampled_ids.add(log_id)
+        
+        # Get blade distribution
+        blade_dist_original = self._get_blade_distribution(logs)
+        blade_dist_sampled = self._get_blade_distribution(sampled_logs)
+        
+        metadata = {
+            'strategy': 'hybrid_troubleshooting',
+            'total_original': len(logs),
+            'total_sampled': len(sampled_logs),
+            'blade_distribution_original': blade_dist_original,
+            'blade_distribution_sampled': blade_dist_sampled,
+            'temporal_coverage': 'timeline_anchors_plus_recent_issues',
+            'enforcement_chain': 'multi_blade' if len(blade_dist_sampled) > 1 else 'single_blade',
+            'components': {
+                'timeline_anchors': 20,
+                'recent_drops': 'all_from_last_1h',
+                'blade_transitions': 'included',
+                'blade_samples': '5_per_blade'
+            }
+        }
+        
+        return sampled_logs, metadata
+    
+    def _sample_logs_threat_hunting(self, logs: list) -> tuple[list, dict]:
+        """Threat-focused sampling: Prioritize threat prevention logs and high severity
+        
+        Strategy:
+        1. ALL threat prevention logs (IPS, Anti-Bot, Anti-Virus)
+        2. ALL high/critical severity logs
+        3. Representative samples of other logs for context
+        
+        Args:
+            logs: List of log entries
+            
+        Returns:
+            Tuple of (sampled_logs, metadata)
+        """
+        from collections import defaultdict
+        
+        sampled_logs = []
+        sampled_ids = set()
+        
+        # 1. Threat prevention logs (IPS, Anti-Bot, Anti-Virus)
+        threat_blades = {'IPS', 'AntiBot', 'AntiVirus', 'DLP'}
+        for log in logs:
+            blade = self._extract_blade_type(log)
+            if blade in threat_blades:
+                log_id = id(log)
+                if log_id not in sampled_ids:
+                    sampled_logs.append(log)
+                    sampled_ids.add(log_id)
+        
+        # 2. High/critical severity
+        for log in logs:
+            severity = log.get('severity', '').lower()
+            if severity in ['high', 'critical']:
+                log_id = id(log)
+                if log_id not in sampled_ids:
+                    sampled_logs.append(log)
+                    sampled_ids.add(log_id)
+        
+        # 3. Context samples (first 10 + last 10 of non-threat logs)
+        context_logs = [log for log in logs if id(log) not in sampled_ids]
+        for log in context_logs[:10]:
+            sampled_logs.append(log)
+            sampled_ids.add(id(log))
+        for log in context_logs[-10:]:
+            log_id = id(log)
+            if log_id not in sampled_ids:
+                sampled_logs.append(log)
+                sampled_ids.add(log_id)
+        
+        blade_dist = self._get_blade_distribution(sampled_logs)
+        
+        metadata = {
+            'strategy': 'threat_hunting',
+            'total_original': len(logs),
+            'total_sampled': len(sampled_logs),
+            'blade_distribution': blade_dist,
+            'focus': 'threat_prevention_priority',
+            'components': {
+                'threat_logs': 'all',
+                'high_severity': 'all',
+                'context_samples': 20
+            }
+        }
+        
+        return sampled_logs, metadata
+    
+    def _apply_smart_log_sampling(self, data_collected: Dict[str, Any], timeframe_hours: float = 24, query_type: str = "general") -> Dict[str, Any]:
+        """Apply intelligent temporal sampling to reduce log volume while preserving analysis coherence
+        
+        Strategy now includes query-type awareness:
+        - troubleshooting: Hybrid chronological+blade sampling (timeline + multi-layer enforcement)
+        - threat_hunting: Threat prevention priority + high severity focus
+        - policy_review: Action-based sampling (original strategy)
+        - general: Action-based sampling (original strategy)
         
         Args:
             data_collected: Raw data from MCP servers
             timeframe_hours: Query timeframe in hours (used for stratification logic)
+            query_type: Type of query (troubleshooting, threat_hunting, policy_review, general)
             
         Returns:
             Sampled data with metadata about sampling applied
@@ -2617,7 +2802,7 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         from datetime import datetime as dt
         from collections import defaultdict
         
-        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] _apply_smart_log_sampling: Starting with timeframe={timeframe_hours}h...")
+        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] _apply_smart_log_sampling: Starting with timeframe={timeframe_hours}h, query_type={query_type}...")
         
         sampled_data = {}
         total_original_logs = 0
@@ -2666,13 +2851,19 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
                                                 sampled_content.append(item)
                                                 continue
                                             
-                                            # Apply sampling based on timeframe
-                                            if timeframe_hours < 48:
-                                                # Short timeframe: First 15 + Last 15 per action type
-                                                sampled_logs, sampling_meta = self._sample_logs_short_timeframe(logs)
+                                            # Apply query-type-aware sampling
+                                            if query_type == "troubleshooting":
+                                                # Hybrid chronological+blade sampling
+                                                sampled_logs, sampling_meta = self._sample_logs_hybrid_troubleshooting(logs, timeframe_hours)
+                                            elif query_type == "threat_hunting":
+                                                # Threat prevention priority sampling
+                                                sampled_logs, sampling_meta = self._sample_logs_threat_hunting(logs)
                                             else:
-                                                # Long timeframe: Stratified temporal sampling
-                                                sampled_logs, sampling_meta = self._sample_logs_long_timeframe(logs, timeframe_hours)
+                                                # Policy review or general: Action-based sampling (original strategy)
+                                                if timeframe_hours < 48:
+                                                    sampled_logs, sampling_meta = self._sample_logs_short_timeframe(logs)
+                                                else:
+                                                    sampled_logs, sampling_meta = self._sample_logs_long_timeframe(logs, timeframe_hours)
                                             
                                             total_sampled_logs += len(sampled_logs)
                                             
@@ -3394,8 +3585,19 @@ RESPOND WITH VALID JSON ONLY (no markdown, no explanations outside JSON):
                 print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ⚠️ Failed to parse timeframe '{timeframe_str}': {e}, defaulting to 24h")
                 timeframe_hours = 24.0
         
+        # Map analysis_type to query_type for sampling strategy
+        query_type_mapping = {
+            'connectivity_troubleshooting': 'troubleshooting',
+            'security_investigation': 'troubleshooting',
+            'threat_assessment': 'threat_hunting',
+            'security_risk_analysis': 'threat_hunting',
+            'policy_review': 'policy_review',
+            'general_query': 'general'
+        }
+        query_type = query_type_mapping.get(analysis_type, 'general')
+        
         # Apply intelligent temporal log sampling to reduce volume while preserving analysis coherence
-        data_collected = self._apply_smart_log_sampling(data_collected, timeframe_hours=timeframe_hours)
+        data_collected = self._apply_smart_log_sampling(data_collected, timeframe_hours=timeframe_hours, query_type=query_type)
         
         # Apply intelligent log field filtering to reduce token usage while preserving valuable security information
         data_collected = self._filter_log_fields(data_collected)
