@@ -4488,15 +4488,17 @@ Your response MUST follow this assessment report structure:
 • Include security ratings and risk levels where appropriate
 
 **POLICY DISPLAY REQUIREMENTS:**
-• When discussing firewall rules, NAT rules, or HTTPS inspection policies, ALWAYS display the complete policy table from the data
-• **CRITICAL: Show ALL rules in the table - NEVER truncate, summarize, or display partial lists**
-• If the policy has 9 rules, your table MUST show all 9 rows - no exceptions
+• When discussing firewall rules, NAT rules, or HTTPS inspection policies, display relevant rules in a clear table format
+• **For small rulebases (<15 rules)**: Show ALL rules to provide complete visibility
+• **For large rulebases (15+ rules)**: Show the most relevant rules for your analysis:
+  - Security risks (overly permissive rules, Any-Any rules)
+  - VPN-specific rules (if discussing VPN connectivity)
+  - Rules related to the user's question
+  - Always include the cleanup/implicit drop rule if present
+• **Always state the selection criteria**: "Showing 8 of 45 rules (VPN-related and high-risk rules shown)"
 • Include all columns: rule number, name, source, destination, service, action, VPN (if present)
-• Extract and show the actual policy configuration that you're analyzing
 • Use markdown tables to present policy rules clearly
-• Example: If the access rulebase has 9 rules including VPN rules and a "Cleanup rule", ALL 9 must appear in your table
-• This makes the assessment concrete and allows admins to see the complete security posture
-• **Verify your table row count matches the "Total Rules" number in the data before responding**
+• This makes the assessment concrete while keeping it readable
 
 **API ERROR HANDLING:**
 • If you successfully retrieved policy data (firewall, HTTPS, NAT), DO NOT claim "limited visibility"
