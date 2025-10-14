@@ -4,6 +4,7 @@ import requests
 import urllib3
 from typing import Dict, List, Any, Optional
 from datetime import datetime
+from services.intelligent_cache import get_cache
 
 # Disable SSL warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -22,6 +23,8 @@ class ManagementAPIClient:
         self.password = password
         self.base_url = f"https://{host}:{port}/web_api"
         self.session_id = None
+        self.cache = get_cache()  # Use global intelligent cache
+        self.management_context = f"{host}:{port}"  # Unique identifier for this management server
         
     def login(self, max_retries: int = 5) -> bool:
         """Login to Management API and obtain session ID with retry logic for rate limiting"""
@@ -117,7 +120,11 @@ class ManagementAPIClient:
             return None
     
     def get_packages(self) -> List[Dict[str, Any]]:
-        """Get all policy packages"""
+        """Get all policy packages (cached)"""
+        return self.cache.get_or_fetch('policy_packages', self._fetch_packages, management_context=self.management_context)
+    
+    def _fetch_packages(self) -> List[Dict[str, Any]]:
+        """Internal: Fetch packages from API"""
         print(f"[MGMT_API] [{_ts()}] Fetching policy packages...")
         
         data = self._call_api("show-packages", {"details-level": "standard"})
@@ -136,7 +143,11 @@ class ManagementAPIClient:
         return packages
     
     def get_access_layers(self) -> List[Dict[str, Any]]:
-        """Get all access control layers"""
+        """Get all access control layers (cached)"""
+        return self.cache.get_or_fetch('access_layers', self._fetch_access_layers, management_context=self.management_context)
+    
+    def _fetch_access_layers(self) -> List[Dict[str, Any]]:
+        """Internal: Fetch access layers from API"""
         print(f"[MGMT_API] [{_ts()}] Fetching access layers...")
         
         data = self._call_api("show-access-layers", {"details-level": "standard"})
@@ -603,90 +614,89 @@ class ManagementAPIClient:
         }
     
     def get_vpn_communities_star(self) -> List[Dict[str, Any]]:
-        """Get all Star VPN communities (hub-and-spoke)"""
-        print(f"[MGMT_API] [{_ts()}] Fetching Star VPN communities...")
-        
-        data = self._call_api("show-vpn-communities-star", {"details-level": "full"})
-        if not data or 'objects' not in data:
-            return []
-        
-        communities = []
-        for comm in data['objects']:
-            # Extract center gateways (hub)
-            center_gws = comm.get('center-gateways', [])
-            center_names = [gw.get('name') if isinstance(gw, dict) else gw for gw in center_gws]
-            
-            # Extract satellite gateways (spoke)
-            satellite_gws = comm.get('satellite-gateways', [])
-            satellite_names = [gw.get('name') if isinstance(gw, dict) else gw for gw in satellite_gws]
-            
-            communities.append({
-                'name': comm.get('name'),
-                'uid': comm.get('uid'),
-                'type': 'star',
-                'center-gateways': center_names,
-                'satellite-gateways': satellite_names,
-                'encryption-method': comm.get('encryption-method'),
-                'encryption-suite': comm.get('encryption-suite')
-            })
-        
-        print(f"[MGMT_API] [{_ts()}] ✓ Found {len(communities)} Star VPN communities")
-        return communities
+        """Get all Star VPN communities (hub-and-spoke) (cached as part of vpn_communities)"""
+        vpn_data = self.cache.get_or_fetch('vpn_communities', self._fetch_all_vpn_communities, management_context=self.management_context)
+        return vpn_data.get('star', [])
     
     def get_vpn_communities_meshed(self) -> List[Dict[str, Any]]:
-        """Get all Meshed VPN communities (site-to-site)"""
-        print(f"[MGMT_API] [{_ts()}] Fetching Meshed VPN communities...")
-        
-        data = self._call_api("show-vpn-communities-meshed", {"details-level": "full"})
-        if not data or 'objects' not in data:
-            return []
-        
-        communities = []
-        for comm in data['objects']:
-            # Extract member gateways
-            gateways = comm.get('gateways', [])
-            gateway_names = [gw.get('name') if isinstance(gw, dict) else gw for gw in gateways]
-            
-            communities.append({
-                'name': comm.get('name'),
-                'uid': comm.get('uid'),
-                'type': 'meshed',
-                'gateways': gateway_names,
-                'encryption-method': comm.get('encryption-method'),
-                'encryption-suite': comm.get('encryption-suite')
-            })
-        
-        print(f"[MGMT_API] [{_ts()}] ✓ Found {len(communities)} Meshed VPN communities")
-        return communities
+        """Get all Meshed VPN communities (site-to-site) (cached as part of vpn_communities)"""
+        vpn_data = self.cache.get_or_fetch('vpn_communities', self._fetch_all_vpn_communities, management_context=self.management_context)
+        return vpn_data.get('meshed', [])
     
     def get_vpn_communities_remote_access(self) -> List[Dict[str, Any]]:
-        """Get all Remote Access VPN communities"""
+        """Get all Remote Access VPN communities (cached as part of vpn_communities)"""
+        vpn_data = self.cache.get_or_fetch('vpn_communities', self._fetch_all_vpn_communities, management_context=self.management_context)
+        return vpn_data.get('remote_access', [])
+    
+    def _fetch_all_vpn_communities(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Internal: Fetch all VPN communities at once (more efficient)"""
+        result = {'star': [], 'meshed': [], 'remote_access': []}
+        
+        # Fetch Star communities
+        print(f"[MGMT_API] [{_ts()}] Fetching Star VPN communities...")
+        data = self._call_api("show-vpn-communities-star", {"details-level": "full"})
+        if data and 'objects' in data:
+            for comm in data['objects']:
+                center_gws = comm.get('center-gateways', [])
+                center_names = [gw.get('name') if isinstance(gw, dict) else gw for gw in center_gws]
+                satellite_gws = comm.get('satellite-gateways', [])
+                satellite_names = [gw.get('name') if isinstance(gw, dict) else gw for gw in satellite_gws]
+                
+                result['star'].append({
+                    'name': comm.get('name'),
+                    'uid': comm.get('uid'),
+                    'type': 'star',
+                    'center-gateways': center_names,
+                    'satellite-gateways': satellite_names,
+                    'encryption-method': comm.get('encryption-method'),
+                    'encryption-suite': comm.get('encryption-suite')
+                })
+        print(f"[MGMT_API] [{_ts()}] ✓ Found {len(result['star'])} Star VPN communities")
+        
+        # Fetch Meshed communities
+        print(f"[MGMT_API] [{_ts()}] Fetching Meshed VPN communities...")
+        data = self._call_api("show-vpn-communities-meshed", {"details-level": "full"})
+        if data and 'objects' in data:
+            for comm in data['objects']:
+                gateways = comm.get('gateways', [])
+                gateway_names = [gw.get('name') if isinstance(gw, dict) else gw for gw in gateways]
+                
+                result['meshed'].append({
+                    'name': comm.get('name'),
+                    'uid': comm.get('uid'),
+                    'type': 'meshed',
+                    'gateways': gateway_names,
+                    'encryption-method': comm.get('encryption-method'),
+                    'encryption-suite': comm.get('encryption-suite')
+                })
+        print(f"[MGMT_API] [{_ts()}] ✓ Found {len(result['meshed'])} Meshed VPN communities")
+        
+        # Fetch Remote Access communities
         print(f"[MGMT_API] [{_ts()}] Fetching Remote Access VPN communities...")
-        
         data = self._call_api("show-vpn-communities-remote-access", {"details-level": "full"})
-        if not data or 'objects' not in data:
-            return []
+        if data and 'objects' in data:
+            for comm in data['objects']:
+                gateways = comm.get('gateways', [])
+                gateway_names = [gw.get('name') if isinstance(gw, dict) else gw for gw in gateways]
+                
+                result['remote_access'].append({
+                    'name': comm.get('name'),
+                    'uid': comm.get('uid'),
+                    'type': 'remote-access',
+                    'gateways': gateway_names,
+                    'encryption-method': comm.get('encryption-method'),
+                    'encryption-suite': comm.get('encryption-suite')
+                })
+        print(f"[MGMT_API] [{_ts()}] ✓ Found {len(result['remote_access'])} Remote Access VPN communities")
         
-        communities = []
-        for comm in data['objects']:
-            # Extract gateways
-            gateways = comm.get('gateways', [])
-            gateway_names = [gw.get('name') if isinstance(gw, dict) else gw for gw in gateways]
-            
-            communities.append({
-                'name': comm.get('name'),
-                'uid': comm.get('uid'),
-                'type': 'remote-access',
-                'gateways': gateway_names,
-                'encryption-method': comm.get('encryption-method'),
-                'encryption-suite': comm.get('encryption-suite')
-            })
-        
-        print(f"[MGMT_API] [{_ts()}] ✓ Found {len(communities)} Remote Access VPN communities")
-        return communities
+        return result
     
     def get_gateways(self) -> List[Dict[str, Any]]:
-        """Get all gateways and servers"""
+        """Get all gateways and servers (cached)"""
+        return self.cache.get_or_fetch('all_gateways', self._fetch_gateways, management_context=self.management_context)
+    
+    def _fetch_gateways(self) -> List[Dict[str, Any]]:
+        """Internal: Fetch gateways from API"""
         print(f"[MGMT_API] [{_ts()}] Fetching gateways...")
         
         data = self._call_api("show-gateways-and-servers", {"details-level": "standard"})
