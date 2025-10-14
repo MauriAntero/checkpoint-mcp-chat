@@ -33,13 +33,18 @@ This document maps all possible network security administrator queries to their 
 **Server Mapping**: management-logs, quantum-management, quantum-gw-cli (optional)  
 **Response Style**: Step-by-step diagnostic analysis with cause identification
 
+**Note**: "Debug" queries are included in troubleshooting (same diagnostic analysis)
+
 **Example Queries:**
 - "why can't user X connect to server Y"
 - "debug connectivity issue from 192.168.1.10 to 10.0.0.5"
+- "debug why traffic is being dropped"
+- "troubleshoot connection timeout"
 - "connection to web server is failing"
 - "traffic from subnet A to subnet B is being dropped"
 - "why is connection slow between sites"
 - "investigate timeout connecting to application"
+- "diagnose user access problem"
 - "user can't access internet, why"
 - "VPN connection drops frequently, diagnose"
 - "email server unreachable from office, investigate"
@@ -183,8 +188,8 @@ Query Type Decision Flow:
 ├─ Contains "show/list/display/what/get" + config object?
 │  └─ YES → policy_review
 │
-├─ Contains "why/debug/investigate/diagnose" + problem?
-│  └─ YES → troubleshooting
+├─ Contains "why/debug/investigate/diagnose/troubleshoot" + problem?
+│  └─ YES → troubleshooting (includes all debug queries)
 │
 ├─ Contains "threat/attack/malware/suspicious/intrusion"?
 │  └─ YES → security_investigation
