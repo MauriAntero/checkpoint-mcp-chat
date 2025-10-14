@@ -3778,6 +3778,38 @@ TASK: Determine why connections failed and what security controls enforced the a
         troubleshooting_analysis_rules = ""
         if is_troubleshooting:
             troubleshooting_analysis_rules = """
+UNDERSTANDING YOUR DATA - SAMPLING METADATA:
+
+The log data you receive has been intelligently sampled to preserve analysis coherence while reducing volume.
+Check the '_sampling_applied' field in each log dataset to understand what you're seeing:
+
+✓ **Sampling Strategy**: Tells you which sampling method was used
+  - 'hybrid_troubleshooting': Timeline anchors + blade coverage + recent issues
+  - 'threat_hunting': All threat prevention logs + high severity focus
+  - 'short_timeframe' / 'long_timeframe_stratified': Action-based sampling
+
+✓ **Blade Distribution**: Shows which security blades are represented in the sample
+  - Example: {'Firewall': 25, 'IPS': 5, 'AppControl': 3}
+  - Use this to understand which enforcement layers are visible in your data
+  - If a blade is missing, you cannot conclude it wasn't involved - it may be in the full dataset
+
+✓ **Temporal Coverage**: Indicates what timeline is covered
+  - 'timeline_anchors_plus_recent_issues': First/last logs + all recent drops
+  - 'complete': All logs included (small dataset)
+  - Use this to understand if you're seeing the full timeline or sampled points
+
+✓ **Enforcement Chain**: Tells you if multiple blades enforced actions
+  - 'multi_blade': Traffic passed through multiple security layers
+  - 'single_blade': Only one blade type enforced actions
+  - This helps you understand the complexity of enforcement
+
+**IMPORTANT RULES FOR SAMPLED DATA:**
+1. If you see Drop logs, you can conclude traffic WAS dropped
+2. If you DON'T see Drop logs, you CANNOT conclude traffic wasn't dropped (may be outside sample)
+3. Always mention sampling strategy in your analysis to set user expectations
+4. For hybrid_troubleshooting: Recent issues (last 1 hour) are ALWAYS complete
+5. Blade transitions are included, so you can see when enforcement shifted between blades
+
 TROUBLESHOOTING ROOT CAUSE ANALYSIS REQUIREMENTS:
 
 1. TRAFFIC FLOW ANALYSIS (START HERE - OBVIOUS CHECKS):
