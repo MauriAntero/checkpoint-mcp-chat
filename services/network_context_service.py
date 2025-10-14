@@ -128,6 +128,7 @@ class NetworkContextService:
             
             # Parse network objects from tool_results
             if networks_result and 'tool_results' in networks_result:
+                print(f"[NetworkContext] DEBUG: show_networks returned {len(networks_result['tool_results'])} tool results")
                 for tool_result in networks_result['tool_results']:
                     if 'result' in tool_result and 'content' in tool_result['result']:
                         for item in tool_result['result']['content']:
@@ -140,7 +141,11 @@ class NetworkContextService:
                                     else:
                                         data = text_data
                                     
+                                    print(f"[NetworkContext] DEBUG: Parsed data keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
+                                    print(f"[NetworkContext] DEBUG: Data content: {json.dumps(data, indent=2)[:500]}...")
+                                    
                                     if 'objects' in data:
+                                        print(f"[NetworkContext] Found {len(data['objects'])} network objects")
                                         for obj in data['objects']:
                                             name = obj.get('name', '')
                                             subnet = obj.get('subnet4', obj.get('ipv4-address'))
@@ -154,8 +159,14 @@ class NetworkContextService:
                                                 if self._is_rfc1918(cidr):
                                                     internal_networks.append(cidr)
                                                     print(f"[NetworkContext] Found internal network: {cidr} ({name})")
+                                    else:
+                                        print(f"[NetworkContext] DEBUG: No 'objects' key in data")
                                 except Exception as e:
                                     print(f"[NetworkContext] Error parsing network object: {e}")
+                                    import traceback
+                                    traceback.print_exc()
+            else:
+                print(f"[NetworkContext] DEBUG: networks_result is None or missing tool_results")
             
             # Query 2: Get VPN communities to identify partner networks
             print(f"[NetworkContext] Querying VPN communities...")
