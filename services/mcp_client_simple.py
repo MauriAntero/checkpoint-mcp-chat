@@ -1876,6 +1876,11 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                 if isinstance(item, dict) and 'text' in item:
                                     try:
                                         text_content = item['text']
+                                        
+                                        # Skip empty content silently
+                                        if not text_content or (isinstance(text_content, str) and not text_content.strip()):
+                                            continue
+                                        
                                         print(f"[MCP_DEBUG] [{_ts()}] 📊 Parsing JSON from text (length: {len(text_content)} chars)...")
                                         data = json.loads(text_content)
                                         
@@ -1920,15 +1925,19 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                         
                                         if data_field:
                                             break
-                                    except Exception as parse_error:
-                                        print(f"[MCP_DEBUG] [{_ts()}] ⚠️ JSON parse error for item {idx}: {parse_error}")
+                                    except json.JSONDecodeError as parse_error:
+                                        # JSON parse errors are expected for plain text responses (gateway CLI output)
+                                        # No need to print traceback for these common cases
+                                        print(f"[MCP_DEBUG] [{_ts()}] 📝 Non-JSON response detected (plain text from gateway CLI)")
                                         # Gateway CLI tools often return plain text, not JSON - wrap it for safe processing
                                         current_text = item.get('text')
-                                        print(f"[MCP_DEBUG] [{_ts()}] 📝 Current item['text'] type: {type(current_text)}, value: {current_text if len(str(current_text)) < 100 else str(current_text)[:100] + '...'}")
-                                        if isinstance(current_text, str):
+                                        if isinstance(current_text, str) and current_text.strip():
                                             # Keep plain text as-is (for gateway CLI output like cpinfo, show commands)
                                             item['text'] = {"message": current_text, "_plain_text": True}
-                                            print(f"[MCP_DEBUG] [{_ts()}] 📝 Wrapped plain text response in message field: {item['text']}")
+                                            print(f"[MCP_DEBUG] [{_ts()}] 📝 Wrapped plain text response (length: {len(current_text)} chars)")
+                                    except Exception as parse_error:
+                                        # Unexpected errors (not JSON parsing) - print traceback for debugging
+                                        print(f"[MCP_DEBUG] [{_ts()}] ⚠️ Unexpected error parsing item {idx}: {parse_error}")
                                         import traceback
                                         print(f"[MCP_DEBUG] [{_ts()}] ⚠️ Traceback: {traceback.format_exc()}")
                         
