@@ -1846,7 +1846,8 @@ Technical Execution Plan:"""
             for pkg in packages:
                 for layer in access_layers:
                     rulebase = self.mgmt_api_client.get_access_rulebase(layer['name'], pkg['name'])
-                    if rulebase and rulebase.get('rulebase'):
+                    # Include ALL rulebases, even empty ones (LLM needs to see which layers exist)
+                    if rulebase is not None:
                         tool_results.append({
                             'tool_name': 'show_access_rulebase',
                             'result': rulebase,
@@ -1861,7 +1862,8 @@ Technical Execution Plan:"""
         if packages and ('show_nat_rulebase' in str(data_points) or 'show_nat' in str(data_points) or len(data_points) > 0):
             for pkg in packages:
                 rulebase = self.mgmt_api_client.get_nat_rulebase(pkg['name'])
-                if rulebase and rulebase.get('rulebase'):
+                # Include ALL rulebases, even empty ones (LLM needs to see which layers exist)
+                if rulebase is not None:
                     tool_results.append({
                         'tool_name': 'show_nat_rulebase',
                         'result': rulebase,
@@ -1877,7 +1879,8 @@ Technical Execution Plan:"""
             for pkg in packages:
                 for layer in https_layers:
                     rulebase = self.mgmt_api_client.get_https_rulebase(layer['name'], pkg['name'])
-                    if rulebase and rulebase.get('rulebase'):
+                    # Include ALL rulebases, even empty ones (LLM needs to see which layers exist)
+                    if rulebase is not None:
                         tool_results.append({
                             'tool_name': 'show_https_rulebase',
                             'result': rulebase,
@@ -1893,7 +1896,8 @@ Technical Execution Plan:"""
             print(f"[MGMT_API] Discovered {len(threat_layers)} threat prevention layers - fetching rulebases automatically...")
             for layer in threat_layers:
                 rulebase = self.mgmt_api_client.get_threat_rulebase(layer['name'])
-                if rulebase and rulebase.get('rulebase'):
+                # Include ALL rulebases, even empty ones (LLM needs to see which layers exist)
+                if rulebase is not None:
                     tool_results.append({
                         'tool_name': 'show_threat_rulebase',
                         'result': rulebase,
