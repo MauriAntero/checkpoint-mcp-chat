@@ -149,6 +149,10 @@ class QueryOrchestrator:
         from services.network_context_service import NetworkContextService
         self.network_context_service = NetworkContextService(mcp_manager)
         
+        # Management API client for direct access (bypasses buggy MCP servers)
+        from services.management_api_client import ManagementAPIClient
+        self.mgmt_api_client = None  # Initialize on first use
+        
         # Session context for conversational caching
         self.session_context = {
             "last_gateway": None,
@@ -1412,7 +1416,18 @@ Technical Execution Plan:"""
                 if self.progress_callback:
                     self.progress_callback("🔍 Querying quantum-management (gateway discovery)...")
                 try:
-                    mgmt_result = await self._query_mcp_server_async('quantum-management', data_to_fetch, user_parameter_selections, query_text)
+                    # CRITICAL FIX: Check if requesting policy data (use direct Management API to bypass MCP bugs)
+                    policy_tools = ['show_access_rulebase', 'show_nat_rulebase', 'show_https_rulebase', 'show_threat_rulebase']
+                    requesting_policy_data = any(tool in str(data_to_fetch) for tool in policy_tools)
+                    
+                    if requesting_policy_data:
+                        # Use direct Management API (clean data, no bugs)
+                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Policy data requested - using direct Management API (bypassing MCP bugs)")
+                        mgmt_result = await self._query_management_api_async(data_to_fetch, user_parameter_selections)
+                    else:
+                        # Use MCP server for non-policy data
+                        mgmt_result = await self._query_mcp_server_async('quantum-management', data_to_fetch, user_parameter_selections, query_text)
+                    
                     all_results.append(mgmt_result)
                     server_task_map[0] = 'quantum-management'
                     
@@ -1731,6 +1746,165 @@ Technical Execution Plan:"""
         """
         import asyncio
         return asyncio.run(self._query_mcp_server_async(server_name, data_points, user_parameter_selections, user_query))
+    
+    def _init_mgmt_api_client(self) -> bool:
+        """Initialize Management API client with credentials from quantum-management MCP server"""
+        if self.mgmt_api_client:
+            return True  # Already initialized
+        
+        from services.management_api_client import ManagementAPIClient
+        
+        # Get quantum-management server credentials
+        servers = self.mcp_manager.get_all_servers()
+        if 'quantum-management' not in servers:
+            print(f"[QueryOrchestrator] No quantum-management server configured for Management API")
+            return False
+        
+        mgmt_env = servers['quantum-management'].get('env', {})
+        
+        # S1C (cloud) or on-premise
+        if mgmt_env.get('S1C_URL'):
+            # Cloud S1C
+            host = mgmt_env['S1C_URL'].replace('https://', '').replace('http://', '').split(':')[0]
+            port = "443"
+            username = None  # S1C uses API_KEY
+            password = None
+        else:
+            # On-premise
+            host = mgmt_env.get('MANAGEMENT_HOST', '')
+            port = mgmt_env.get('PORT', '443')
+            username = mgmt_env.get('USERNAME')
+            password = mgmt_env.get('PASSWORD')
+        
+        if not host:
+            print(f"[QueryOrchestrator] No management host configured")
+            return False
+        
+        print(f"[QueryOrchestrator] Initializing Management API client for {host}:{port}")
+        self.mgmt_api_client = ManagementAPIClient(host, port, username, password)
+        
+        return self.mgmt_api_client.login()
+    
+    async def _query_management_api_async(self, data_points: List[str], user_parameter_selections: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+        """Query Management API directly for policy data (bypasses buggy MCP servers)
+        
+        This replaces quantum-management MCP server for:
+        - Firewall rules (show_access_rulebase)
+        - NAT rules (show_nat_rulebase)  
+        - HTTPS inspection (show_https_rulebase)
+        - Threat prevention (show_threat_rulebase)
+        
+        Returns data in same format as MCP server for compatibility
+        """
+        print(f"[QueryOrchestrator] Using direct Management API for policy data (bypassing MCP bugs)")
+        
+        # Initialize API client
+        if not self._init_mgmt_api_client():
+            return {
+                "server_name": "quantum-management",
+                "tool_results": [],
+                "discovered_resources": {},
+                "api_errors": ["Failed to initialize Management API client"]
+            }
+        
+        tool_results = []
+        discovered_resources = {}
+        api_errors = []
+        
+        # Discover packages and layers first
+        packages = self.mgmt_api_client.get_packages()
+        access_layers = self.mgmt_api_client.get_access_layers()
+        https_layers = self.mgmt_api_client.get_https_layers()
+        threat_layers = self.mgmt_api_client.get_threat_layers()
+        
+        # Store discovered resources
+        discovered_resources['show_packages'] = packages
+        discovered_resources['show_access_layers'] = access_layers
+        discovered_resources['show_https_layers'] = https_layers
+        discovered_resources['show_threat_layers'] = threat_layers
+        
+        # Process each requested data point
+        for data_point in data_points:
+            tool_name = data_point
+            
+            # Firewall rules (access rulebase)
+            if 'show_access_rulebase' in tool_name:
+                for pkg in packages:
+                    for layer in access_layers:
+                        rulebase = self.mgmt_api_client.get_access_rulebase(layer['name'], pkg['name'])
+                        if rulebase and rulebase.get('rulebase'):
+                            tool_results.append({
+                                'tool_name': 'show_access_rulebase',
+                                'result': rulebase,
+                                'metadata': {
+                                    'source': 'management_api',
+                                    'package': pkg['name'],
+                                    'layer': layer['name']
+                                }
+                            })
+            
+            # NAT rules
+            elif 'show_nat_rulebase' in tool_name:
+                for pkg in packages:
+                    rulebase = self.mgmt_api_client.get_nat_rulebase(pkg['name'])
+                    if rulebase and rulebase.get('rulebase'):
+                        tool_results.append({
+                            'tool_name': 'show_nat_rulebase',
+                            'result': rulebase,
+                            'metadata': {
+                                'source': 'management_api',
+                                'package': pkg['name']
+                            }
+                        })
+            
+            # HTTPS inspection
+            elif 'show_https_rulebase' in tool_name:
+                for pkg in packages:
+                    for layer in https_layers:
+                        rulebase = self.mgmt_api_client.get_https_rulebase(layer['name'], pkg['name'])
+                        if rulebase and rulebase.get('rulebase'):
+                            tool_results.append({
+                                'tool_name': 'show_https_rulebase',
+                                'result': rulebase,
+                                'metadata': {
+                                    'source': 'management_api',
+                                    'package': pkg['name'],
+                                    'layer': layer['name']
+                                }
+                            })
+            
+            # Threat prevention
+            elif 'show_threat_rulebase' in tool_name:
+                for layer in threat_layers:
+                    rulebase = self.mgmt_api_client.get_threat_rulebase(layer['name'])
+                    if rulebase and rulebase.get('rulebase'):
+                        tool_results.append({
+                            'tool_name': 'show_threat_rulebase',
+                            'result': rulebase,
+                            'metadata': {
+                                'source': 'management_api',
+                                'layer': layer['name']
+                            }
+                        })
+            
+            # Gateways
+            elif 'show_gateways_and_servers' in tool_name:
+                gateways = self.mgmt_api_client.get_gateways()
+                tool_results.append({
+                    'tool_name': 'show_gateways_and_servers',
+                    'result': {'objects': gateways},
+                    'metadata': {'source': 'management_api'}
+                })
+                discovered_resources['show_gateways_and_servers'] = gateways
+        
+        print(f"[QueryOrchestrator] Direct Management API returned {len(tool_results)} results")
+        
+        return {
+            "server_name": "quantum-management",
+            "tool_results": tool_results,
+            "discovered_resources": discovered_resources,
+            "api_errors": api_errors if api_errors else None
+        }
     
     def _reduce_context_intelligently(self, data_collected: Dict[str, Any], max_tokens: int) -> Dict[str, Any]:
         """Intelligently reduce context size while preserving critical information
