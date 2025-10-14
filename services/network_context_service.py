@@ -92,6 +92,8 @@ class NetworkContextService:
     async def discover_networks_from_management(self) -> Dict[str, List[str]]:
         """Discover networks from Check Point Management API
         
+        Uses Direct Management API for reliable network object discovery.
+        
         Returns:
             Dict with 'internal_networks', 'vpn_networks', 'all_objects'
         """
@@ -112,91 +114,90 @@ class NetworkContextService:
             }
         
         try:
-            from services.mcp_client_simple import query_mcp_server_async
+            from services.management_api_client import ManagementAPIClient
             
             server_config = all_servers['quantum-management']
             server_env = server_config.get('env', {})
-            package_name = '@chkp/quantum-management-mcp'
             
-            # Query 1: Get all network objects (hosts and groups contain network definitions)
-            print(f"[NetworkContext] Querying network objects (hosts)...")
-            networks_result = await query_mcp_server_async(
-                package_name,
-                server_env,
-                ['show_hosts'],
-                discovery_mode=False,  # Disable smart prioritization - we want exactly this tool
-                user_query="Get all host network objects"
-            )
+            # Extract connection details
+            host = server_env.get('MANAGEMENT_HOST', '')
+            port = server_env.get('PORT', '443')
+            username = server_env.get('USERNAME', '')
+            password = server_env.get('PASSWORD', '')
             
-            # Parse network objects from tool_results
-            if networks_result and 'tool_results' in networks_result:
-                print(f"[NetworkContext] DEBUG: show_hosts returned {len(networks_result['tool_results'])} tool results")
-                for tool_result in networks_result['tool_results']:
-                    if 'result' in tool_result and 'content' in tool_result['result']:
-                        for item in tool_result['result']['content']:
-                            if isinstance(item, dict) and item.get('type') == 'text':
-                                try:
-                                    text_data = item.get('text', '{}')
-                                    # Handle both string JSON and already-parsed dict
-                                    if isinstance(text_data, str):
-                                        data = json.loads(text_data)
-                                    else:
-                                        data = text_data
-                                    
-                                    print(f"[NetworkContext] DEBUG: Parsed data keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
-                                    print(f"[NetworkContext] DEBUG: Data content: {json.dumps(data, indent=2)[:500]}...")
-                                    
-                                    if 'objects' in data:
-                                        print(f"[NetworkContext] Found {len(data['objects'])} network objects")
-                                        for obj in data['objects']:
-                                            name = obj.get('name', '')
-                                            subnet = obj.get('subnet4', obj.get('ipv4-address'))
-                                            mask = obj.get('subnet-mask4', obj.get('mask-length4'))
-                                            
-                                            if subnet:
-                                                cidr = f"{subnet}/{mask}" if mask else subnet
-                                                all_objects.append({'name': name, 'network': cidr})
-                                                
-                                                # Classify as internal if RFC1918
-                                                if self._is_rfc1918(cidr):
-                                                    internal_networks.append(cidr)
-                                                    print(f"[NetworkContext] Found internal network: {cidr} ({name})")
-                                    else:
-                                        print(f"[NetworkContext] DEBUG: No 'objects' key in data")
-                                except Exception as e:
-                                    print(f"[NetworkContext] Error parsing network object: {e}")
-                                    import traceback
-                                    traceback.print_exc()
-            else:
-                print(f"[NetworkContext] DEBUG: networks_result is None or missing tool_results")
+            if not all([host, username, password]):
+                print(f"[NetworkContext] Missing Management API credentials")
+                return {
+                    'internal_networks': internal_networks,
+                    'vpn_networks': vpn_networks,
+                    'all_objects': all_objects
+                }
             
-            # Query 2: Get VPN communities to identify partner networks (query all 3 types)
-            print(f"[NetworkContext] Querying VPN communities...")
-            vpn_result = await query_mcp_server_async(
-                package_name,
-                server_env,
-                ['show_vpn_communities_star', 'show_vpn_communities_meshed', 'show_vpn_communities_remote_access'],
-                discovery_mode=False,  # Disable smart prioritization - we want exactly these tools
-                user_query="Get all VPN communities"
-            )
+            # Use Direct Management API
+            print(f"[NetworkContext] Using Direct Management API for network discovery...")
+            mgmt_client = ManagementAPIClient(host, port, username, password)
             
-            # Parse VPN communities
-            if vpn_result and 'tool_results' in vpn_result:
-                for tool_result in vpn_result['tool_results']:
-                    if 'result' in tool_result and 'content' in tool_result['result']:
-                        for item in tool_result['result']['content']:
-                            if isinstance(item, dict) and item.get('type') == 'text':
-                                try:
-                                    data = json.loads(item.get('text', '{}'))
-                                    # VPN communities indicate partner/remote networks
-                                    # Extract encryption domain from communities
-                                    if 'objects' in data:
-                                        for community in data['objects']:
-                                            # VPN community networks are considered partner networks
-                                            if 'encryption-domain' in community:
-                                                vpn_networks.append(community.get('name', 'VPN'))
-                                except:
-                                    pass
+            if not mgmt_client.login():
+                print(f"[NetworkContext] Failed to login to Management API")
+                return {
+                    'internal_networks': internal_networks,
+                    'vpn_networks': vpn_networks,
+                    'all_objects': all_objects
+                }
+            
+            # Query 1: Get all network objects via Management API
+            print(f"[NetworkContext] Fetching host objects...")
+            hosts_response = mgmt_client._api_call('show-hosts', {'limit': 500, 'details-level': 'standard'})
+            
+            # Parse hosts from Management API response
+            if hosts_response and 'objects' in hosts_response:
+                print(f"[NetworkContext] Found {len(hosts_response['objects'])} host objects")
+                for obj in hosts_response['objects']:
+                    name = obj.get('name', '')
+                    ipv4 = obj.get('ipv4-address')
+                    
+                    if ipv4:
+                        cidr = f"{ipv4}/32"  # Hosts are typically /32
+                        all_objects.append({'name': name, 'network': cidr, 'type': 'host'})
+                        
+                        # Classify as internal if RFC1918
+                        if self._is_rfc1918(cidr):
+                            internal_networks.append(cidr)
+                            print(f"[NetworkContext] Found internal host: {cidr} ({name})")
+            
+            # Query 2: Get network objects (subnets)
+            print(f"[NetworkContext] Fetching network objects...")
+            networks_response = mgmt_client._api_call('show-networks', {'limit': 500, 'details-level': 'standard'})
+            
+            if networks_response and 'objects' in networks_response:
+                print(f"[NetworkContext] Found {len(networks_response['objects'])} network objects")
+                for obj in networks_response['objects']:
+                    name = obj.get('name', '')
+                    subnet = obj.get('subnet4')
+                    mask_len = obj.get('mask-length4')
+                    
+                    if subnet and mask_len:
+                        cidr = f"{subnet}/{mask_len}"
+                        all_objects.append({'name': name, 'network': cidr, 'type': 'network'})
+                        
+                        # Classify as internal if RFC1918
+                        if self._is_rfc1918(cidr):
+                            internal_networks.append(cidr)
+                            print(f"[NetworkContext] Found internal network: {cidr} ({name})")
+            
+            # Query 3: Get VPN communities using Management API client's VPN methods
+            print(f"[NetworkContext] Fetching VPN communities...")
+            vpn_star = mgmt_client.get_vpn_communities_star()
+            vpn_meshed = mgmt_client.get_vpn_communities_meshed()
+            vpn_remote = mgmt_client.get_vpn_communities_remote_access()
+            
+            for community in vpn_star + vpn_meshed + vpn_remote:
+                vpn_name = community.get('name', 'VPN')
+                vpn_networks.append(vpn_name)
+                print(f"[NetworkContext] Found VPN community: {vpn_name}")
+            
+            # Logout
+            mgmt_client.logout()
         
         except Exception as e:
             print(f"[NetworkContext] Error discovering from Management API: {e}")
