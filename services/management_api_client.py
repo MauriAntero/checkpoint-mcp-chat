@@ -123,123 +123,163 @@ class ManagementAPIClient:
         return layers
     
     def get_access_rulebase(self, layer_name: str, package_name: str) -> Dict[str, Any]:
-        """Get firewall access rulebase with correct action values"""
+        """Get firewall access rulebase with correct action values (with pagination)"""
         print(f"[MGMT_API] [{_ts()}] Fetching access rulebase: layer={layer_name}, package={package_name}")
         
-        data = self._call_api("show-access-rulebase", {
-            "name": layer_name,
-            "package": package_name,
-            "details-level": "full",
-            "use-object-dictionary": False  # Get clean embedded objects
-        })
+        all_rules = []
+        offset = 0
+        limit = 50
+        total = None
         
-        if not data:
-            return {}
-        
-        # Extract clean rule data
-        rules = []
-        for rule in data.get('rulebase', []):
-            if isinstance(rule, dict):
-                clean_rule = {
-                    'rule-number': rule.get('rule-number'),
-                    'name': rule.get('name', ''),
-                    'uid': rule.get('uid'),
-                    'type': rule.get('type'),
-                    'enabled': rule.get('enabled'),
-                    'comments': rule.get('comments', ''),
-                }
-                
-                # Extract action (this is the CORRECT value from API)
-                action = rule.get('action')
-                if isinstance(action, dict):
-                    clean_rule['action'] = action.get('name')
-                else:
-                    clean_rule['action'] = action
-                
-                # Extract source
-                source = rule.get('source', [])
-                clean_rule['source'] = [s.get('name') if isinstance(s, dict) else s for s in source]
-                
-                # Extract destination  
-                destination = rule.get('destination', [])
-                clean_rule['destination'] = [d.get('name') if isinstance(d, dict) else d for d in destination]
-                
-                # Extract service
-                service = rule.get('service', [])
-                clean_rule['service'] = [s.get('name') if isinstance(s, dict) else s for s in service]
-                
-                # Extract track
-                track = rule.get('track', {})
-                if isinstance(track, dict):
-                    clean_rule['track'] = {
-                        'type': track.get('type', {}).get('name') if isinstance(track.get('type'), dict) else track.get('type'),
-                        'accounting': track.get('accounting'),
-                        'per-session': track.get('per-session'),
-                        'per-connection': track.get('per-connection')
+        # Paginate through all results
+        while True:
+            data = self._call_api("show-access-rulebase", {
+                "name": layer_name,
+                "package": package_name,
+                "details-level": "full",
+                "use-object-dictionary": False,
+                "offset": offset,
+                "limit": limit
+            })
+            
+            if not data:
+                break
+            
+            # Get total on first iteration
+            if total is None:
+                total = data.get('total', 0)
+                print(f"[MGMT_API] [{_ts()}] Total access rules: {total}")
+            
+            # Extract rules from this page
+            for rule in data.get('rulebase', []):
+                if isinstance(rule, dict):
+                    clean_rule = {
+                        'rule-number': rule.get('rule-number'),
+                        'name': rule.get('name', ''),
+                        'uid': rule.get('uid'),
+                        'type': rule.get('type'),
+                        'enabled': rule.get('enabled'),
+                        'comments': rule.get('comments', ''),
                     }
-                
-                # Extract install-on
-                install_on = rule.get('install-on', [])
-                clean_rule['install-on'] = [i.get('name') if isinstance(i, dict) else i for i in install_on]
-                
-                rules.append(clean_rule)
+                    
+                    # Extract action (this is the CORRECT value from API)
+                    action = rule.get('action')
+                    if isinstance(action, dict):
+                        clean_rule['action'] = action.get('name')
+                    else:
+                        clean_rule['action'] = action
+                    
+                    # Extract source
+                    source = rule.get('source', [])
+                    clean_rule['source'] = [s.get('name') if isinstance(s, dict) else s for s in source]
+                    
+                    # Extract destination  
+                    destination = rule.get('destination', [])
+                    clean_rule['destination'] = [d.get('name') if isinstance(d, dict) else d for d in destination]
+                    
+                    # Extract service
+                    service = rule.get('service', [])
+                    clean_rule['service'] = [s.get('name') if isinstance(s, dict) else s for s in service]
+                    
+                    # Extract track
+                    track = rule.get('track', {})
+                    if isinstance(track, dict):
+                        clean_rule['track'] = {
+                            'type': track.get('type', {}).get('name') if isinstance(track.get('type'), dict) else track.get('type'),
+                            'accounting': track.get('accounting'),
+                            'per-session': track.get('per-session'),
+                            'per-connection': track.get('per-connection')
+                        }
+                    
+                    # Extract install-on
+                    install_on = rule.get('install-on', [])
+                    clean_rule['install-on'] = [i.get('name') if isinstance(i, dict) else i for i in install_on]
+                    
+                    all_rules.append(clean_rule)
+            
+            # Check if we've retrieved all rules
+            current_to = data.get('to', 0)
+            if current_to >= total:
+                break
+            
+            # Move to next page
+            offset = current_to
+            print(f"[MGMT_API] [{_ts()}] Fetching next page: offset={offset}")
         
-        print(f"[MGMT_API] [{_ts()}] ✓ Retrieved {len(rules)} firewall rules with correct actions")
+        print(f"[MGMT_API] [{_ts()}] ✓ Retrieved {len(all_rules)} firewall rules with correct actions (paginated)")
         
         return {
-            'uid': data.get('uid'),
-            'name': data.get('name'),
-            'rulebase': rules,
-            'from': data.get('from'),
-            'to': data.get('to'),
-            'total': data.get('total')
+            'uid': data.get('uid') if data else None,
+            'name': layer_name,
+            'rulebase': all_rules,
+            'total': total or len(all_rules)
         }
     
     def get_nat_rulebase(self, package_name: str) -> Dict[str, Any]:
-        """Get NAT rulebase"""
+        """Get NAT rulebase (with pagination)"""
         print(f"[MGMT_API] [{_ts()}] Fetching NAT rulebase: package={package_name}")
         
-        data = self._call_api("show-nat-rulebase", {
-            "package": package_name,
-            "details-level": "full",
-            "use-object-dictionary": False
-        })
+        all_rules = []
+        offset = 0
+        limit = 50
+        total = None
         
-        if not data:
-            return {}
+        # Paginate through all results
+        while True:
+            data = self._call_api("show-nat-rulebase", {
+                "package": package_name,
+                "details-level": "full",
+                "use-object-dictionary": False,
+                "offset": offset,
+                "limit": limit
+            })
+            
+            if not data:
+                break
+            
+            # Get total on first iteration
+            if total is None:
+                total = data.get('total', 0)
+                print(f"[MGMT_API] [{_ts()}] Total NAT rules: {total}")
+            
+            # Extract NAT rules from this page
+            for rule in data.get('rulebase', []):
+                if isinstance(rule, dict):
+                    clean_rule = {
+                        'rule-number': rule.get('rule-number'),
+                        'uid': rule.get('uid'),
+                        'type': rule.get('type'),
+                        'enabled': rule.get('enabled'),
+                        'method': rule.get('method'),
+                        'comments': rule.get('comments', ''),
+                    }
+                    
+                    # Extract NAT fields
+                    for field in ['original-source', 'translated-source', 'original-destination', 
+                                 'translated-destination', 'original-service', 'translated-service']:
+                        value = rule.get(field)
+                        if isinstance(value, dict):
+                            clean_rule[field] = value.get('name')
+                        else:
+                            clean_rule[field] = value
+                    
+                    all_rules.append(clean_rule)
+            
+            # Check if we've retrieved all rules
+            current_to = data.get('to', 0)
+            if current_to >= total:
+                break
+            
+            # Move to next page
+            offset = current_to
+            print(f"[MGMT_API] [{_ts()}] Fetching next page: offset={offset}")
         
-        # Extract clean NAT rules
-        rules = []
-        for rule in data.get('rulebase', []):
-            if isinstance(rule, dict):
-                clean_rule = {
-                    'rule-number': rule.get('rule-number'),
-                    'uid': rule.get('uid'),
-                    'type': rule.get('type'),
-                    'enabled': rule.get('enabled'),
-                    'method': rule.get('method'),
-                    'comments': rule.get('comments', ''),
-                }
-                
-                # Extract NAT fields
-                for field in ['original-source', 'translated-source', 'original-destination', 
-                             'translated-destination', 'original-service', 'translated-service']:
-                    value = rule.get(field)
-                    if isinstance(value, dict):
-                        clean_rule[field] = value.get('name')
-                    else:
-                        clean_rule[field] = value
-                
-                rules.append(clean_rule)
-        
-        print(f"[MGMT_API] [{_ts()}] ✓ Retrieved {len(rules)} NAT rules")
+        print(f"[MGMT_API] [{_ts()}] ✓ Retrieved {len(all_rules)} NAT rules (paginated)")
         
         return {
-            'uid': data.get('uid'),
-            'rulebase': rules,
-            'from': data.get('from'),
-            'to': data.get('to'),
-            'total': data.get('total')
+            'uid': data.get('uid') if data else None,
+            'rulebase': all_rules,
+            'total': total or len(all_rules)
         }
     
     def get_https_layers(self) -> List[Dict[str, Any]]:
@@ -262,68 +302,88 @@ class ManagementAPIClient:
         return layers
     
     def get_https_rulebase(self, layer_name: str, package_name: str) -> Dict[str, Any]:
-        """Get HTTPS inspection rulebase"""
+        """Get HTTPS inspection rulebase (with pagination)"""
         print(f"[MGMT_API] [{_ts()}] Fetching HTTPS rulebase: layer={layer_name}, package={package_name}")
         
-        data = self._call_api("show-https-rulebase", {
-            "name": layer_name,
-            "package": package_name,
-            "details-level": "full",
-            "use-object-dictionary": False
-        })
+        all_rules = []
+        offset = 0
+        limit = 50
+        total = None
         
-        if not data:
-            return {}
-        
-        # Extract clean HTTPS rules
-        rules = []
-        for rule in data.get('rulebase', []):
-            if isinstance(rule, dict):
-                clean_rule = {
-                    'rule-number': rule.get('rule-number'),
-                    'name': rule.get('name', ''),
-                    'uid': rule.get('uid'),
-                    'enabled': rule.get('enabled'),
-                    'comments': rule.get('comments', ''),
-                }
-                
-                # Extract action
-                action = rule.get('action')
-                if isinstance(action, dict):
-                    clean_rule['action'] = action.get('name')
-                else:
-                    clean_rule['action'] = action
-                
-                # Extract source
-                source = rule.get('source', [])
-                clean_rule['source'] = [s.get('name') if isinstance(s, dict) else s for s in source]
-                
-                # Extract destination
-                destination = rule.get('destination', [])
-                clean_rule['destination'] = [d.get('name') if isinstance(d, dict) else d for d in destination]
-                
-                # Extract site-category (CRITICAL: preserve exact names)
-                site_category = rule.get('site-category', [])
-                clean_rule['site-category'] = [c.get('name') if isinstance(c, dict) else c for c in site_category]
-                
-                # Extract track
-                track = rule.get('track', {})
-                if isinstance(track, dict):
-                    clean_rule['track'] = {
-                        'type': track.get('type', {}).get('name') if isinstance(track.get('type'), dict) else track.get('type')
+        # Paginate through all results
+        while True:
+            data = self._call_api("show-https-rulebase", {
+                "name": layer_name,
+                "package": package_name,
+                "details-level": "full",
+                "use-object-dictionary": False,
+                "offset": offset,
+                "limit": limit
+            })
+            
+            if not data:
+                break
+            
+            # Get total on first iteration
+            if total is None:
+                total = data.get('total', 0)
+                print(f"[MGMT_API] [{_ts()}] Total HTTPS rules: {total}")
+            
+            # Extract HTTPS rules from this page
+            for rule in data.get('rulebase', []):
+                if isinstance(rule, dict):
+                    clean_rule = {
+                        'rule-number': rule.get('rule-number'),
+                        'name': rule.get('name', ''),
+                        'uid': rule.get('uid'),
+                        'enabled': rule.get('enabled'),
+                        'comments': rule.get('comments', ''),
                     }
-                
-                rules.append(clean_rule)
+                    
+                    # Extract action
+                    action = rule.get('action')
+                    if isinstance(action, dict):
+                        clean_rule['action'] = action.get('name')
+                    else:
+                        clean_rule['action'] = action
+                    
+                    # Extract source
+                    source = rule.get('source', [])
+                    clean_rule['source'] = [s.get('name') if isinstance(s, dict) else s for s in source]
+                    
+                    # Extract destination
+                    destination = rule.get('destination', [])
+                    clean_rule['destination'] = [d.get('name') if isinstance(d, dict) else d for d in destination]
+                    
+                    # Extract site-category (CRITICAL: preserve exact names)
+                    site_category = rule.get('site-category', [])
+                    clean_rule['site-category'] = [c.get('name') if isinstance(c, dict) else c for c in site_category]
+                    
+                    # Extract track
+                    track = rule.get('track', {})
+                    if isinstance(track, dict):
+                        clean_rule['track'] = {
+                            'type': track.get('type', {}).get('name') if isinstance(track.get('type'), dict) else track.get('type')
+                        }
+                    
+                    all_rules.append(clean_rule)
+            
+            # Check if we've retrieved all rules
+            current_to = data.get('to', 0)
+            if current_to >= total:
+                break
+            
+            # Move to next page
+            offset = current_to
+            print(f"[MGMT_API] [{_ts()}] Fetching next page: offset={offset}")
         
-        print(f"[MGMT_API] [{_ts()}] ✓ Retrieved {len(rules)} HTTPS rules with correct site-categories")
+        print(f"[MGMT_API] [{_ts()}] ✓ Retrieved {len(all_rules)} HTTPS rules with correct site-categories (paginated)")
         
         return {
-            'uid': data.get('uid'),
-            'name': data.get('name'),
-            'rulebase': rules,
-            'from': data.get('from'),
-            'to': data.get('to'),
-            'total': data.get('total')
+            'uid': data.get('uid') if data else None,
+            'name': layer_name,
+            'rulebase': all_rules,
+            'total': total or len(all_rules)
         }
     
     def get_threat_layers(self) -> List[Dict[str, Any]]:
@@ -346,59 +406,79 @@ class ManagementAPIClient:
         return layers
     
     def get_threat_rulebase(self, layer_name: str) -> Dict[str, Any]:
-        """Get threat prevention rulebase (IPS, Anti-Virus, Anti-Bot, etc.)"""
+        """Get threat prevention rulebase (IPS, Anti-Virus, Anti-Bot, etc.) with pagination"""
         print(f"[MGMT_API] [{_ts()}] Fetching threat rulebase: layer={layer_name}")
         
-        data = self._call_api("show-threat-rulebase", {
-            "name": layer_name,
-            "details-level": "full",
-            "use-object-dictionary": False
-        })
+        all_rules = []
+        offset = 0
+        limit = 50
+        total = None
         
-        if not data:
-            return {}
-        
-        # Extract clean threat rules
-        rules = []
-        for rule in data.get('rulebase', []):
-            if isinstance(rule, dict):
-                clean_rule = {
-                    'rule-number': rule.get('rule-number'),
-                    'name': rule.get('name', ''),
-                    'uid': rule.get('uid'),
-                    'enabled': rule.get('enabled'),
-                    'comments': rule.get('comments', ''),
-                }
-                
-                # Extract action
-                action = rule.get('action')
-                if isinstance(action, dict):
-                    clean_rule['action'] = action.get('name')
-                else:
-                    clean_rule['action'] = action
-                
-                # Extract protected-scope
-                protected_scope = rule.get('protected-scope', [])
-                clean_rule['protected-scope'] = [p.get('name') if isinstance(p, dict) else p for p in protected_scope]
-                
-                # Extract track
-                track = rule.get('track', {})
-                if isinstance(track, dict):
-                    clean_rule['track'] = {
-                        'type': track.get('type', {}).get('name') if isinstance(track.get('type'), dict) else track.get('type')
+        # Paginate through all results
+        while True:
+            data = self._call_api("show-threat-rulebase", {
+                "name": layer_name,
+                "details-level": "full",
+                "use-object-dictionary": False,
+                "offset": offset,
+                "limit": limit
+            })
+            
+            if not data:
+                break
+            
+            # Get total on first iteration
+            if total is None:
+                total = data.get('total', 0)
+                print(f"[MGMT_API] [{_ts()}] Total threat prevention rules: {total}")
+            
+            # Extract threat rules from this page
+            for rule in data.get('rulebase', []):
+                if isinstance(rule, dict):
+                    clean_rule = {
+                        'rule-number': rule.get('rule-number'),
+                        'name': rule.get('name', ''),
+                        'uid': rule.get('uid'),
+                        'enabled': rule.get('enabled'),
+                        'comments': rule.get('comments', ''),
                     }
-                
-                rules.append(clean_rule)
+                    
+                    # Extract action
+                    action = rule.get('action')
+                    if isinstance(action, dict):
+                        clean_rule['action'] = action.get('name')
+                    else:
+                        clean_rule['action'] = action
+                    
+                    # Extract protected-scope
+                    protected_scope = rule.get('protected-scope', [])
+                    clean_rule['protected-scope'] = [p.get('name') if isinstance(p, dict) else p for p in protected_scope]
+                    
+                    # Extract track
+                    track = rule.get('track', {})
+                    if isinstance(track, dict):
+                        clean_rule['track'] = {
+                            'type': track.get('type', {}).get('name') if isinstance(track.get('type'), dict) else track.get('type')
+                        }
+                    
+                    all_rules.append(clean_rule)
+            
+            # Check if we've retrieved all rules
+            current_to = data.get('to', 0)
+            if current_to >= total:
+                break
+            
+            # Move to next page
+            offset = current_to
+            print(f"[MGMT_API] [{_ts()}] Fetching next page: offset={offset}")
         
-        print(f"[MGMT_API] [{_ts()}] ✓ Retrieved {len(rules)} threat prevention rules")
+        print(f"[MGMT_API] [{_ts()}] ✓ Retrieved {len(all_rules)} threat prevention rules (paginated)")
         
         return {
-            'uid': data.get('uid'),
-            'name': data.get('name'),
-            'rulebase': rules,
-            'from': data.get('from'),
-            'to': data.get('to'),
-            'total': data.get('total')
+            'uid': data.get('uid') if data else None,
+            'name': layer_name,
+            'rulebase': all_rules,
+            'total': total or len(all_rules)
         }
     
     def get_gateways(self) -> List[Dict[str, Any]]:
