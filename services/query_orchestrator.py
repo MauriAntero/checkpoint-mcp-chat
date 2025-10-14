@@ -2534,6 +2534,67 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         # Accept logs are kept to understand traffic patterns and destinations
         return True
     
+    def _extract_blade_type(self, log_item: Dict[str, Any]) -> str:
+        """Extract the security blade that generated this log
+        
+        Blade identification logic:
+        - Firewall: product='Firewall' or layer_name contains 'Firewall'
+        - IPS: product='IPS' or attack_name present
+        - App Control: appi_name or app_sig_name present
+        - URL Filtering: matched_category or url present
+        - Anti-Bot: product='Anti-Bot' or bot_name present
+        - Anti-Virus: product='Anti-Virus' or malware_name present
+        - DLP: product='DLP' or dlp fields present
+        - VPN: product='VPN' or vpn fields present
+        - Identity Awareness: identity_type or user_group present
+        
+        Args:
+            log_item: Individual log entry dict
+            
+        Returns:
+            Blade type string (e.g., 'Firewall', 'IPS', 'AppControl', 'URLFiltering')
+        """
+        product = log_item.get('product', '').lower()
+        layer_name = log_item.get('layer_name', '').lower()
+        
+        # Direct product mapping
+        if 'firewall' in product or 'firewall' in layer_name:
+            return 'Firewall'
+        if 'ips' in product or log_item.get('attack_name'):
+            return 'IPS'
+        if 'anti-bot' in product or 'anti bot' in product or log_item.get('bot_name'):
+            return 'AntiBot'
+        if 'anti-virus' in product or 'antivirus' in product or log_item.get('malware_name'):
+            return 'AntiVirus'
+        if 'dlp' in product or log_item.get('dlp_rule_name'):
+            return 'DLP'
+        if 'vpn' in product or log_item.get('peer_gateway'):
+            return 'VPN'
+        
+        # Blade-specific field detection
+        if log_item.get('appi_name') or log_item.get('app_sig_name'):
+            return 'AppControl'
+        if log_item.get('matched_category') or log_item.get('categories'):
+            return 'URLFiltering'
+        if log_item.get('identity_type') or log_item.get('user_group'):
+            return 'IdentityAwareness'
+        
+        # Default to Firewall if no specific blade detected
+        return 'Firewall'
+    
+    def _get_blade_distribution(self, logs: list) -> Dict[str, int]:
+        """Get distribution of logs by blade type
+        
+        Args:
+            logs: List of log entries
+            
+        Returns:
+            Dict mapping blade type to count
+        """
+        from collections import Counter
+        blade_types = [self._extract_blade_type(log) for log in logs]
+        return dict(Counter(blade_types))
+    
     def _apply_smart_log_sampling(self, data_collected: Dict[str, Any], timeframe_hours: float = 24) -> Dict[str, Any]:
         """Apply intelligent temporal sampling to reduce log volume while preserving analysis coherence
         
