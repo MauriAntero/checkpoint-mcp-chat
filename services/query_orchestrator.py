@@ -4038,7 +4038,27 @@ Errors: {', '.join(errors) if errors else 'None'}{warnings_text}
         # Use shared robust troubleshooting detection (single source of truth)
         is_troubleshooting = self._detect_troubleshooting_intent(user_query)
         
-        if is_troubleshooting:
+        # Detect threat assessment intent from analysis_type
+        is_threat_assessment = analysis_type in ['threat_assessment', 'security_risk_analysis']
+        
+        if is_threat_assessment:
+            # Make threat assessment intent EXTREMELY EXPLICIT at the very top
+            task_type_header = """
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                  🛡️  SECURITY POSTURE ASSESSMENT & RISK ANALYSIS  🛡️          ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+TASK OBJECTIVE:
+• Evaluate the overall security posture and identify potential risks
+• Assess security policy configuration and identify gaps or weaknesses
+• Review threat prevention effectiveness and coverage
+• Provide security recommendations and risk mitigation strategies
+
+YOUR ROLE: Security analyst conducting a comprehensive security assessment
+TASK: Assess security posture, identify risks, and provide actionable recommendations
+
+"""
+        elif is_troubleshooting:
             # CRITICAL: Make troubleshooting intent EXTREMELY EXPLICIT at the very top
             task_type_header = """
 ╔═══════════════════════════════════════════════════════════════════════════════╗
@@ -4056,9 +4076,58 @@ TASK: Determine why connections failed and what security controls enforced the a
 
 """
         
-        # Add troubleshooting-specific analysis guidance
+        # Add intent-specific analysis guidance
         troubleshooting_analysis_rules = ""
-        if is_troubleshooting:
+        threat_assessment_analysis_rules = ""
+        
+        if is_threat_assessment:
+            threat_assessment_analysis_rules = """
+SECURITY POSTURE ASSESSMENT REQUIREMENTS:
+
+**REPORT FORMAT: Structured Assessment Report (NOT Root Cause Analysis)**
+
+Your response MUST follow this assessment report structure:
+
+1. **EXECUTIVE SUMMARY**
+   • Overall security posture rating (Strong/Adequate/Needs Improvement/Weak)
+   • Key findings summary (3-5 bullet points)
+   • Critical risks identified
+   • Priority recommendations
+
+2. **SECURITY POLICY ANALYSIS**
+   ✓ Firewall policy configuration review
+   ✓ Unused/zero-hit rules analysis
+   ✓ Rule optimization opportunities
+   ✓ NAT policy configuration
+   ✓ Policy coverage gaps
+
+3. **THREAT PREVENTION EFFECTIVENESS**
+   ✓ Enabled security blades and profiles
+   ✓ Threat prevention layer configuration
+   ✓ IPS/Anti-Bot/Anti-Virus coverage
+   ✓ URL filtering and application control status
+   ✓ HTTPS inspection configuration
+
+4. **RISK ASSESSMENT**
+   ✓ Identified vulnerabilities and misconfigurations
+   ✓ Exposure to known threats
+   ✓ Compliance gaps
+   ✓ Attack surface analysis
+
+5. **RECOMMENDATIONS** (Prioritized by impact)
+   • High Priority: Critical security gaps requiring immediate action
+   • Medium Priority: Important improvements to strengthen posture
+   • Low Priority: Optimization and best practice recommendations
+
+**CRITICAL OUTPUT REQUIREMENTS:**
+• Use assessment language, NOT troubleshooting language
+• Focus on "risks", "gaps", "coverage", NOT "root causes" or "why traffic was dropped"
+• Provide forward-looking recommendations, NOT backward-looking diagnosis
+• Format as structured assessment report with clear sections
+• Include security ratings and risk levels where appropriate
+
+"""
+        elif is_troubleshooting:
             troubleshooting_analysis_rules = """
 UNDERSTANDING YOUR DATA - SAMPLING METADATA:
 
@@ -4452,7 +4521,7 @@ INVESTIGATION CAPABILITIES:
 Now analyze the data above and provide your structured response following the REQUIRED RESPONSE FORMAT."""
         
         analysis_prompt = f"""{task_type_header}{contextual_preamble}
-{data_source_context}{command_legend_text}{troubleshooting_analysis_rules}
+{data_source_context}{command_legend_text}{threat_assessment_analysis_rules}{troubleshooting_analysis_rules}
 {anti_hallucination_rules}
 
 {structured_response_template}
