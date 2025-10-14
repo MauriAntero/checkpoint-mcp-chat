@@ -3384,7 +3384,7 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] _filter_log_fields: Complete! Filtered {total_logs_filtered} total log/object items")
         return filtered_data
     
-    def analyze_iterative_troubleshooting(self, plan: Dict[str, Any], execution_results: Dict[str, Any], security_model: Optional[str] = None, max_iterations: int = 4) -> Tuple[str, str]:
+    def analyze_iterative_troubleshooting(self, plan: Dict[str, Any], execution_results: Dict[str, Any], security_model: Optional[str] = None, max_iterations: int = 6) -> Tuple[str, str]:
         """Iterative troubleshooting with smart escalation and context summarization
         
         Args:
@@ -3537,23 +3537,48 @@ Analyze the data and provide a structured response in this EXACT JSON format:
   "root_cause": "The definitive root cause if determined, otherwise null",
   "next_steps": {{
     "action": "request_data" or "finalize",
-    "data_needed": "routing_info" or "gateway_diagnostics" or "packet_capture" or null,
-    "specific_commands": ["fw tab -t connections", "cpstat fw"] or [],
-    "reason": "Why you need this additional data"
+    "data_needed": "gateway_diagnostics" (when requesting specific commands below),
+    "specific_commands": ["cpview", "show_route", "fw_tab_connections"] (ANY diagnostic commands you want),
+    "reason": "Why these specific diagnostics will add value to the investigation"
   }},
   "recommendations": "Actionable steps to resolve the issue"
 }}
 
-## ESCALATION LOGIC:
-- **Iteration 1**: Analyze logs + firewall rules. If cause is clear (policy drop) → set root_cause_determined=true
-- **Iteration 2+**: If logs show accepted but failing → request routing_info or gateway_diagnostics
-- **Only escalate** if current data is insufficient for diagnosis
+## DEEP INVESTIGATION PHILOSOPHY:
+🔍 **Be proactive with diagnostics** - Don't wait for data to be insufficient, request additional 
+   tools when they would provide VALUABLE insights, even if you have a working hypothesis.
+
+🎯 **Recommended Investigation Flow:**
+- **Iteration 1**: Analyze logs + firewall rules. Look for obvious policy drops/accepts.
+- **Iteration 2+**: Even if cause seems clear, VALIDATE with gateway diagnostics when valuable:
+  • Accepted but failing? → Check routing (show_route, netstat_route, ARP tables)
+  • Performance issues? → Request cpstat, cpview, fw ctl pstat, connection tracking
+  • Cluster/HA environment? → Check cphaprob_stat, sync status, failover logs
+  • Intermittent issues? → Request interface stats, packet captures, kernel drops
+  • NAT/topology? → Check NAT exhaustion, anti-spoofing, topology validation
+
+💡 **When to Request More Data:**
+- Current data suggests root cause BUT additional diagnostics would CONFIRM it
+- You see anomalies that could be validated with gateway-level metrics
+- Deep debugging would reveal WHY the issue happened (not just WHAT happened)
+- System-level diagnostics (CPU, memory, connections) would add valuable context
+- You can eliminate alternative hypotheses with specific diagnostic commands
+
+⚡ **Available Diagnostic Commands** (request ANY of these when valuable):
+- Routing: show_route, netstat_route, ip_route_show, show_arp
+- Interfaces: show_interfaces, show_interface, ethtool
+- Performance: cpstat_fw, cpstat_os, cpview, top_output, free_memory, df_disk
+- Connections: fw_tab_connections, fw_ctl_pstat, netstat_connections
+- Cluster/HA: cphaprob_stat, cphaprob_if, cphaprob_syncstat
+- Firewall: fw_stat, fw_ctl_pstat, fwaccel_stats
+- Debug: tcpdump, fw_monitor, fw_ctl_zdebug (use carefully)
 
 ## RULES:
-1. Set root_cause_determined=true ONLY when you have definitive evidence
-2. If you need more data, specify EXACTLY what commands to run
-3. If {iteration} == {max_iterations}, you MUST finalize with current findings
-4. Cite specific log entries, rule numbers, or metrics in your findings
+1. Set root_cause_determined=true when you have DEFINITIVE evidence AND validation
+2. Request additional diagnostics PROACTIVELY when they add value (don't be conservative!)
+3. Specify EXACTLY what commands to run and WHY they're valuable
+4. If {iteration} == {max_iterations}, you MUST finalize with current findings
+5. Cite specific log entries, rule numbers, or metrics in your findings
 
 RESPOND WITH VALID JSON ONLY (no markdown, no explanations outside JSON):
 """
@@ -3583,37 +3608,32 @@ RESPOND WITH VALID JSON ONLY (no markdown, no explanations outside JSON):
             }
     
     def _collect_additional_data(self, data_needed: str, commands: list, plan: Dict[str, Any]) -> Dict[str, Any]:
-        """Collect additional data based on LLM's request"""
+        """Collect additional data based on LLM's request
+        
+        The LLM can request ANY diagnostic commands - we execute them directly via gateway executor
+        or appropriate MCP servers based on the command type.
+        """
         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Collecting additional data: {data_needed}")
         
-        if not self.gateway_script_executor:
-            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Gateway script executor not available")
+        if not commands:
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] No specific commands provided")
             return {}
         
-        # Map data_needed to MCP server queries
-        additional_results = {}
+        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Executing {len(commands)} diagnostic commands: {commands}")
         
-        if data_needed == "gateway_diagnostics" and commands:
-            # Execute gateway commands
+        # Execute requested commands via gateway script executor
+        if self.gateway_script_executor:
+            # Convert commands to run_script format
             run_script_items = [f"run_script:{cmd}" for cmd in commands]
             plan_copy = plan.copy()
             plan_copy["data_to_fetch"] = run_script_items
             
             # Execute via MCP client
             exec_results = self.execute_plan(plan_copy, user_query=plan.get("user_query"))
-            additional_results = exec_results.get("data_collected", {})
-        
-        elif data_needed == "routing_info":
-            # Get routing table, interfaces
-            commands = ["netstat -rn", "ifconfig -a", "ip route show"]
-            run_script_items = [f"run_script:{cmd}" for cmd in commands]
-            plan_copy = plan.copy()
-            plan_copy["data_to_fetch"] = run_script_items
-            
-            exec_results = self.execute_plan(plan_copy, user_query=plan.get("user_query"))
-            additional_results = exec_results.get("data_collected", {})
-        
-        return additional_results
+            return exec_results.get("data_collected", {})
+        else:
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Gateway script executor not available")
+            return {}
     
     def _build_final_troubleshooting_report(self, iteration_history: list, final_result: Dict[str, Any]) -> str:
         """Build comprehensive troubleshooting report from all iterations"""
