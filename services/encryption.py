@@ -200,9 +200,11 @@ class EncryptionService:
             return self.decrypt_data(encrypted_string)
             
         except Exception as e:
-            # Only log non-empty file decryption failures (suppress empty file noise)
+            # Silently suppress JSON parsing errors from empty/invalid credential files
+            # These happen when credential files don't exist yet or are corrupted
             error_msg = str(e)
-            if "Expecting value" not in error_msg or len(encrypted_string) > 10:
+            if "Expecting value" not in error_msg:
+                # Only print non-JSON errors (actual decryption failures)
                 print(f"File decryption failed: {error_msg}")
             return None
     

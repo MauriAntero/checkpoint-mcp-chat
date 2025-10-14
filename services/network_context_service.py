@@ -147,7 +147,7 @@ class NetworkContextService:
             
             # Query 1: Get all network objects via Management API
             print(f"[NetworkContext] Fetching host objects...")
-            hosts_response = mgmt_client._api_call('show-hosts', {'limit': 500, 'details-level': 'standard'})
+            hosts_response = mgmt_client._call_api('show-hosts', {'limit': 500, 'details-level': 'standard'})
             
             # Parse hosts from Management API response
             if hosts_response and 'objects' in hosts_response:
@@ -167,7 +167,7 @@ class NetworkContextService:
             
             # Query 2: Get network objects (subnets)
             print(f"[NetworkContext] Fetching network objects...")
-            networks_response = mgmt_client._api_call('show-networks', {'limit': 500, 'details-level': 'standard'})
+            networks_response = mgmt_client._call_api('show-networks', {'limit': 500, 'details-level': 'standard'})
             
             if networks_response and 'objects' in networks_response:
                 print(f"[NetworkContext] Found {len(networks_response['objects'])} network objects")
