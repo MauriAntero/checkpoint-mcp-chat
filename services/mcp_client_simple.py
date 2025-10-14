@@ -825,8 +825,16 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                             if layers:
                                 # Check if user has already selected a value
                                 if user_parameter_selections and param in user_parameter_selections:
-                                    args[param] = user_parameter_selections[param]
-                                    print(f"[MCP_DEBUG] [{_ts()}] Using user-selected layer '{args[param]}' for {tool.name}.{param}")
+                                    # Validate that the selected value exists in discovered resources
+                                    selected_value = user_parameter_selections[param]
+                                    layer_names = [l.get('name') for l in layers]
+                                    if selected_value in layer_names:
+                                        args[param] = selected_value
+                                        print(f"[MCP_DEBUG] [{_ts()}] Using user-selected layer '{args[param]}' for {tool.name}.{param}")
+                                    else:
+                                        print(f"[MCP_DEBUG] [{_ts()}] ⚠️ User-selected '{selected_value}' not found in discovered layers {layer_names}, using first discovered layer instead")
+                                        args[param] = layers[0].get('name')
+                                        print(f"[MCP_DEBUG] [{_ts()}] Using discovered {layers[0].get('type')} '{args[param]}' for {tool.name}.{param}")
                                 elif len(layers) > 1:
                                     # Multiple options - need user input
                                     if param not in parameter_options:
@@ -848,9 +856,18 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                 access_layers = [r for r in all_discovered if r.get('type') == 'access-layer']
                                 if access_layers:
                                     if user_parameter_selections and param in user_parameter_selections:
-                                        args[param] = user_parameter_selections[param]
-                                        has_name_identifier = True
-                                        print(f"[MCP_DEBUG] [{_ts()}] Using user-selected access-layer '{args[param]}' for {tool.name}.{param}")
+                                        # Validate that the selected value exists in discovered resources
+                                        selected_value = user_parameter_selections[param]
+                                        layer_names = [l.get('name') for l in access_layers]
+                                        if selected_value in layer_names:
+                                            args[param] = selected_value
+                                            has_name_identifier = True
+                                            print(f"[MCP_DEBUG] [{_ts()}] Using user-selected access-layer '{args[param]}' for {tool.name}.{param}")
+                                        else:
+                                            print(f"[MCP_DEBUG] [{_ts()}] ⚠️ User-selected '{selected_value}' not found in discovered layers {layer_names}, using first discovered layer instead")
+                                            args[param] = access_layers[0].get('name')
+                                            has_name_identifier = True
+                                            print(f"[MCP_DEBUG] [{_ts()}] Using discovered access-layer '{args[param]}' for {tool.name}.{param}")
                                     elif len(access_layers) == 1:
                                         args[param] = access_layers[0].get('name')
                                         has_name_identifier = True

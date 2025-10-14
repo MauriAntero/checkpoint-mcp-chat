@@ -1459,8 +1459,8 @@ Technical Execution Plan:"""
                         parallel_results = []
                         for i, task in enumerate(tasks):
                             if i > 0:
-                                # Add 0.5s delay between each server query
-                                await asyncio.sleep(0.5)
+                                # Add 1.5s delay between each server query to prevent rate limiting
+                                await asyncio.sleep(1.5)
                             result = await task
                             parallel_results.append(result)
                         all_results.extend(parallel_results)
