@@ -261,7 +261,7 @@ DATA RETRIEVAL PATTERN:
   Step 3: Correlate logs→rules to identify enforcement chain
   Step 4: If needed, use gateway CLI for network/appliance diagnostics"""
             )
-        elif intent_task_type in ["security_investigation", "threat_assessment"]:
+        elif intent_task_type == "security_investigation":
             return (
                 "PURE_THREAT",
                 ["management-logs"],
@@ -270,24 +270,71 @@ DATA RETRIEVAL PATTERN:
 ALLOWED servers: management-logs (actual threat events in logs)
 FORBIDDEN servers: quantum-management, threat-prevention, https-inspection (these show POLICY/CONFIGURATION, not threat data)"""
             )
+        elif intent_task_type == "threat_assessment":
+            return (
+                "THREAT_ASSESSMENT",
+                ["quantum-management", "threat-prevention", "https-inspection", "management-logs"],
+                [],
+                """This is THREAT ASSESSMENT query - evaluating security posture/risk/compliance.
+ACTION: Assess security configuration, identify gaps, provide recommendations.
+ALLOWED servers:
+  • quantum-management (firewall policy analysis, unused rules)
+  • threat-prevention (IPS/Anti-Bot coverage assessment)
+  • https-inspection (HTTPS inspection coverage)
+  • management-logs (for historical security event patterns)
+FORBIDDEN servers: None
+
+FOCUS: Forward-looking security assessment and recommendations."""
+            )
         elif intent_task_type == "policy_review":
             return (
                 "PURE_POLICY",
                 ["quantum-management", "threat-prevention", "https-inspection", "management-logs"],
                 [],
-                """This is a PURE POLICY query - reviewing CONFIGURATION/SETTINGS.
-ALLOWED servers: quantum-management (firewall rules), threat-prevention (IPS/Anti-Bot profiles), https-inspection (HTTPS policies), management-logs (audit logs)
-FORBIDDEN servers: None"""
+                """This is a PURE POLICY query - reviewing/displaying CONFIGURATION/SETTINGS (NO analysis).
+ACTION: Return raw data without interpretation - just display what was requested.
+ALLOWED servers: 
+  • quantum-management (firewall rules, NAT rules, gateways, network objects, VPN communities)
+  • threat-prevention (IPS/Anti-Bot/Anti-Virus profiles and settings)
+  • https-inspection (HTTPS inspection policies)
+  • management-logs (for finding unused/zero-hit rules via audit data)
+FORBIDDEN servers: None
+
+EXAMPLES:
+- "show firewall rules" → call show_access_rulebase, display as table
+- "list NAT rules" → call show_nat_rulebase, display as table
+- "unused rules" → call find_zero_hits_rules, display results
+- "what VPN communities" → call show_vpn_communities, display list"""
             )
-        elif intent_task_type in ["log_analysis", "network_analysis"]:
-            # Get all available servers for mixed analysis
-            available_servers = list(self.MCP_CAPABILITIES.keys())
+        elif intent_task_type == "log_analysis":
             return (
-                "MIXED",
-                available_servers,
+                "LOG_ANALYSIS",
+                ["management-logs", "quantum-management"],
                 [],
-                """This is a MIXED query (or general query).
-ALLOWED servers: All servers available"""
+                """This is LOG ANALYSIS query - examining traffic patterns/behavior (descriptive).
+ACTION: Retrieve and analyze traffic logs for patterns, NOT diagnosing problems.
+REQUIRED servers:
+  • management-logs (PRIMARY: traffic logs, connection logs, all blade logs)
+  • quantum-management (OPTIONAL: for context like rules, gateways)
+FORBIDDEN servers: None
+
+FOCUS: Descriptive analysis of traffic patterns, not troubleshooting.
+Examples: "show logs from IP X", "traffic to port 443", "what hit rule 5" """
+            )
+        elif intent_task_type == "network_analysis":
+            return (
+                "NETWORK_ANALYSIS",
+                ["quantum-management", "quantum-gw-cli", "quantum-gaia"],
+                ["management-logs"],
+                """This is NETWORK ANALYSIS query - understanding network infrastructure/topology/status.
+ACTION: Provide network topology, gateway status, interface/routing information.
+REQUIRED servers:
+  • quantum-management (network objects, gateways, VPN communities)
+  • quantum-gw-cli (routing tables, interface status, ARP, cluster state)
+  • quantum-gaia (system network configuration)
+FORBIDDEN servers: management-logs (not needed for infrastructure queries)
+
+FOCUS: Network structure, topology, and infrastructure status."""
             )
         else:  # general_info or unknown
             available_servers = list(self.MCP_CAPABILITIES.keys())
@@ -295,8 +342,8 @@ ALLOWED servers: All servers available"""
                 "GENERAL",
                 available_servers,
                 [],
-                """This is a GENERAL query.
-ALLOWED servers: All servers available"""
+                """This is a GENERAL query - informational or help request.
+ALLOWED servers: All servers available (use as needed)"""
             )
     
     def _validate_execution_results(self, results: Dict[str, Any], query_type: str) -> tuple[bool, str]:
@@ -727,11 +774,48 @@ Return a JSON object describing the user's intent with IOCs and entities extract
 {{
     "task_type": "log_analysis | security_investigation | troubleshooting | policy_review | network_analysis | threat_assessment | general_info",
     
-    CLASSIFICATION GUIDANCE:
-    - policy_review: Simple display/show/list queries (e.g., "show rules", "list policies", "what are the firewall rules")
-    - troubleshooting: Diagnostic queries about WHY something isn't working (e.g., "why can't user X connect", "debug connectivity issue")
-    - security_investigation: Looking for threats/attacks (e.g., "any suspicious activity", "detect threats")
-    - log_analysis: Analyzing traffic logs for patterns (e.g., "show me logs from IP X", "what traffic hit this rule")
+    COMPREHENSIVE INTENT CLASSIFICATION GUIDE:
+    
+    1. policy_review - Display/View Configuration (NO analysis, just show data):
+       Examples: "show firewall rules", "list NAT rules", "what VPN communities exist", "display IPS profiles",
+                 "get gateway configuration", "show access layers", "unused rules", "zero hit rules"
+       Action: Return raw data without interpretation
+    
+    2. troubleshooting - Diagnose WHY something is broken/not working:
+       Examples: "why can't user X connect to Y", "debug connectivity from A to B", "connection failing",
+                 "traffic being dropped", "why is this slow", "investigate connection timeout"
+       Action: Root cause analysis with logs + rules + diagnostics
+    
+    3. security_investigation - Hunt for threats/attacks/malicious activity:
+       Examples: "any suspicious activity", "detect threats", "find malware", "intrusion attempts",
+                 "compromised hosts", "exploit detection", "attack patterns"
+       Action: Threat-focused analysis of security events
+    
+    4. log_analysis - Examine traffic patterns/behavior (descriptive, not diagnostic):
+       Examples: "show logs from IP X", "traffic to port 443", "what hit rule 5", "connections last hour",
+                 "bandwidth usage patterns", "top talkers", "application usage statistics"
+       Action: Descriptive traffic analysis
+    
+    5. network_analysis - Understand network topology/structure/status:
+       Examples: "network topology", "show all networks", "gateway status", "interface information",
+                 "routing tables", "VPN tunnels", "cluster state", "HA status"
+       Action: Network infrastructure analysis
+    
+    6. threat_assessment - Evaluate security posture/risk (forward-looking):
+       Examples: "security posture", "vulnerability assessment", "risk analysis", "compliance check",
+                 "policy gaps", "security recommendations"
+       Action: Security assessment and recommendations
+    
+    7. general_info - General questions/help:
+       Examples: "how does this work", "explain X", "capabilities", "what can you do"
+       Action: Informational response
+    
+    CLASSIFICATION RULES:
+    • If query contains "show/list/display/what/get" + object → policy_review
+    • If query contains "why/debug/investigate/diagnose" + problem → troubleshooting  
+    • If query contains "threat/attack/malware/suspicious" → security_investigation
+    • If query contains "logs/traffic from" + entity → log_analysis
+    • If query asks about "unused/zero-hit/compliance" → policy_review (not threat_assessment)
     
     "primary_goal": "What the user wants to achieve",
     "data_requirements": {{
