@@ -85,9 +85,18 @@ class QueryOrchestrator:
             package="@chkp/quantum-gw-cli-mcp",
             capabilities=[
                 "gateway diagnostics", "system commands", "interface status",
-                "routing information", "security status"
+                "routing information", "security status", "deep troubleshooting"
             ],
-            data_types=["gateway status", "interface data", "routing tables"]
+            data_types=["gateway status", "interface data", "routing tables", "debug info"],
+            tools=[
+                "show_route", "netstat_route", "ip_route_show",  # Routing diagnostics
+                "show_interfaces", "show_interface",  # Interface status
+                "fw_stat", "cpstat_fw", "cpstat_os", "cpview",  # Firewall/system stats
+                "cphaprob_stat", "cphaprob_if", "cphaprob_syncstat",  # HA cluster status
+                "fw_accel_stats", "fw_ctl_pstat", "fw_tab_connections",  # Performance/connection tracking
+                "dmidecode", "cpinfo_all", "show_asset_all",  # System/hardware info
+                "top_output", "free_memory", "df_disk"  # Resource monitoring
+            ]
         ),
         "quantum-gw-connection-analysis": MCPServerCapability(
             server_type="quantum-gw-connection-analysis",
@@ -4282,17 +4291,55 @@ The AI model failed to analyze your query due to an API issue.
         return (analysis_text, final_model)
     
     def _build_capabilities_description(self) -> str:
-        """Build a description of all MCP server capabilities"""
+        """Build a description of all MCP server capabilities with explicit tool-to-server mapping"""
         desc_lines = []
+        
+        # Header with critical instruction
+        desc_lines.append("═══ CRITICAL: TOOL-TO-SERVER MAPPING ═══")
+        desc_lines.append("⚠️  EACH SERVER HAS DIFFERENT TOOLS - DO NOT REQUEST TOOLS FROM WRONG SERVER!")
+        desc_lines.append("")
         
         for server_type, capability in self.MCP_CAPABILITIES.items():
             caps = ", ".join(capability.capabilities)
             data = ", ".join(capability.data_types)
-            tools = ", ".join(capability.tools) if capability.tools else "auto-detect"
+            
+            # Format tools with explicit server attribution
+            if capability.tools:
+                tools_str = ", ".join(capability.tools)
+                tools_display = f"✓ AVAILABLE TOOLS: [{tools_str}]"
+            else:
+                tools_display = "⚙️ Tools: auto-detect from server"
+            
             desc_lines.append(
-                f"- {server_type} ({capability.package}): "
-                f"Capabilities: [{caps}] | Data Types: [{data}] | Tools: [{tools}]"
+                f"• {server_type.upper()} ({capability.package}):\n"
+                f"  Capabilities: {caps}\n"
+                f"  Data Types: {data}\n"
+                f"  {tools_display}"
             )
+            desc_lines.append("")
+        
+        # Add explicit troubleshooting guidance
+        desc_lines.append("═══ TROUBLESHOOTING TOOL SELECTION GUIDE ═══")
+        desc_lines.append("")
+        desc_lines.append("FOR CONNECTIVITY/TROUBLESHOOTING QUERIES:")
+        desc_lines.append("  1. quantum-management → Policy/Rules analysis:")
+        desc_lines.append("     Tools: show_access_rulebase, show_nat_rulebase, show_gateways_and_servers")
+        desc_lines.append("")
+        desc_lines.append("  2. management-logs → Traffic logs:")
+        desc_lines.append("     Tools: show_logs")
+        desc_lines.append("")
+        desc_lines.append("  3. quantum-gw-cli → Gateway diagnostics (DEEP DEBUG):")
+        desc_lines.append("     - Routing: show_route, netstat_route, ip_route_show")
+        desc_lines.append("     - Interfaces: show_interfaces, show_interface")
+        desc_lines.append("     - Performance: fw_stat, cpstat_fw, cpstat_os, cpview")
+        desc_lines.append("     - Cluster/HA: cphaprob_stat, cphaprob_if")
+        desc_lines.append("     - Connection tracking: fw_tab_connections, fw_ctl_pstat")
+        desc_lines.append("     - System info: dmidecode, cpinfo_all, top_output, free_memory")
+        desc_lines.append("")
+        desc_lines.append("⚠️  COMMON MISTAKE: Do NOT request 'show_logs' from quantum-gw-cli")
+        desc_lines.append("⚠️  COMMON MISTAKE: Do NOT request 'show_access_rulebase' from quantum-gw-cli")
+        desc_lines.append("✓  CORRECT: Request gateway diagnostic tools from quantum-gw-cli only")
+        desc_lines.append("")
         
         return "\n".join(desc_lines)
     
