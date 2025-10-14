@@ -141,8 +141,15 @@ class NetworkContextService:
             cached_vpn = cache.get('vpn_communities', management_context=management_context)
             
             if cached_vpn:
-                print(f"[NetworkContext] ✓ Using cached VPN communities ({len(cached_vpn)} communities)")
-                for community in cached_vpn:
+                # Handle dict format: {'star': [...], 'meshed': [...], 'remote_access': [...]}
+                if isinstance(cached_vpn, dict):
+                    all_communities = cached_vpn.get('star', []) + cached_vpn.get('meshed', []) + cached_vpn.get('remote_access', [])
+                else:
+                    # Legacy format: flat list
+                    all_communities = cached_vpn
+                
+                print(f"[NetworkContext] ✓ Using cached VPN communities ({len(all_communities)} communities)")
+                for community in all_communities:
                     vpn_name = community.get('name', 'VPN')
                     vpn_networks.append(vpn_name)
                     print(f"[NetworkContext] Found VPN community: {vpn_name}")

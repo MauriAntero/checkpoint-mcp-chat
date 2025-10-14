@@ -119,15 +119,20 @@ class DiscoveryBootstrapService:
             vpn_meshed = self.mgmt_client.get_vpn_communities_meshed()
             vpn_remote = self.mgmt_client.get_vpn_communities_remote_access()
             
-            # Combine all VPN types into single cache entry
-            all_vpn_communities = vpn_star + vpn_meshed + vpn_remote
+            # Store in dict format (same as _fetch_all_vpn_communities returns)
+            vpn_communities_dict = {
+                'star': vpn_star,
+                'meshed': vpn_meshed,
+                'remote_access': vpn_remote
+            }
             
-            if all_vpn_communities:
+            total_count = len(vpn_star) + len(vpn_meshed) + len(vpn_remote)
+            if total_count > 0:
                 # Write to intelligent cache with 10-minute TTL (stable data)
-                self._write_to_cache('vpn_communities', all_vpn_communities, ttl=600)
+                self._write_to_cache('vpn_communities', vpn_communities_dict, ttl=600)
                 results['datasets_fetched'].append('vpn_communities')
                 results['cache_entries_written'] += 1
-                print(f"[Discovery] [{_ts()}] ✓ Cached {len(all_vpn_communities)} VPN communities")
+                print(f"[Discovery] [{_ts()}] ✓ Cached {total_count} VPN communities")
             else:
                 print(f"[Discovery] [{_ts()}] ℹ️ No VPN communities found (may not be configured)")
         except Exception as e:
