@@ -123,7 +123,9 @@ class NetworkContextService:
             networks_result = await query_mcp_server_async(
                 package_name,
                 server_env,
-                ['show_networks']
+                ['show_networks'],
+                discovery_mode=False,  # Disable smart prioritization - we want exactly this tool
+                user_query="Get all network objects"
             )
             
             # Parse network objects from tool_results
@@ -173,7 +175,9 @@ class NetworkContextService:
             vpn_result = await query_mcp_server_async(
                 package_name,
                 server_env,
-                ['show_vpn_communities']
+                ['show_vpn_communities'],
+                discovery_mode=False,  # Disable smart prioritization - we want exactly this tool
+                user_query="Get VPN communities"
             )
             
             # Parse VPN communities

@@ -726,6 +726,13 @@ User Query: "{user_query}"
 Return a JSON object describing the user's intent with IOCs and entities extracted:
 {{
     "task_type": "log_analysis | security_investigation | troubleshooting | policy_review | network_analysis | threat_assessment | general_info",
+    
+    CLASSIFICATION GUIDANCE:
+    - policy_review: Simple display/show/list queries (e.g., "show rules", "list policies", "what are the firewall rules")
+    - troubleshooting: Diagnostic queries about WHY something isn't working (e.g., "why can't user X connect", "debug connectivity issue")
+    - security_investigation: Looking for threats/attacks (e.g., "any suspicious activity", "detect threats")
+    - log_analysis: Analyzing traffic logs for patterns (e.g., "show me logs from IP X", "what traffic hit this rule")
+    
     "primary_goal": "What the user wants to achieve",
     "data_requirements": {{
         "data_types": ["logs | policies | configs | threat_data | network_topology | etc."],
