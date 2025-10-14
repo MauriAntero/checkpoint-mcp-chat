@@ -222,6 +222,19 @@ class ManagementAPIClient:
                     install_on = rule.get('install-on', [])
                     clean_rule['install-on'] = [i.get('name') if isinstance(i, dict) else i for i in install_on]
                     
+                    # Extract VPN column data (encryption/decryption/directional)
+                    vpn = rule.get('vpn')
+                    if vpn:
+                        if isinstance(vpn, dict):
+                            # VPN can be directional, encrypt, decrypt, or community objects
+                            vpn_type = vpn.get('name') or vpn.get('directional', {}).get('name')
+                            clean_rule['vpn'] = vpn_type
+                        elif isinstance(vpn, list):
+                            # Multiple VPN communities
+                            clean_rule['vpn'] = [v.get('name') if isinstance(v, dict) else v for v in vpn]
+                        else:
+                            clean_rule['vpn'] = vpn
+                    
                     all_rules.append(clean_rule)
             
             # Check if we've retrieved all rules
@@ -507,6 +520,89 @@ class ManagementAPIClient:
             'rulebase': all_rules,
             'total': total or len(all_rules)
         }
+    
+    def get_vpn_communities_star(self) -> List[Dict[str, Any]]:
+        """Get all Star VPN communities (hub-and-spoke)"""
+        print(f"[MGMT_API] [{_ts()}] Fetching Star VPN communities...")
+        
+        data = self._call_api("show-vpn-communities-star", {"details-level": "standard"})
+        if not data or 'objects' not in data:
+            return []
+        
+        communities = []
+        for comm in data['objects']:
+            # Extract center gateways (hub)
+            center_gws = comm.get('center-gateways', [])
+            center_names = [gw.get('name') if isinstance(gw, dict) else gw for gw in center_gws]
+            
+            # Extract satellite gateways (spoke)
+            satellite_gws = comm.get('satellite-gateways', [])
+            satellite_names = [gw.get('name') if isinstance(gw, dict) else gw for gw in satellite_gws]
+            
+            communities.append({
+                'name': comm.get('name'),
+                'uid': comm.get('uid'),
+                'type': 'star',
+                'center-gateways': center_names,
+                'satellite-gateways': satellite_names,
+                'encryption-method': comm.get('encryption-method'),
+                'encryption-suite': comm.get('encryption-suite')
+            })
+        
+        print(f"[MGMT_API] [{_ts()}] ✓ Found {len(communities)} Star VPN communities")
+        return communities
+    
+    def get_vpn_communities_meshed(self) -> List[Dict[str, Any]]:
+        """Get all Meshed VPN communities (site-to-site)"""
+        print(f"[MGMT_API] [{_ts()}] Fetching Meshed VPN communities...")
+        
+        data = self._call_api("show-vpn-communities-meshed", {"details-level": "standard"})
+        if not data or 'objects' not in data:
+            return []
+        
+        communities = []
+        for comm in data['objects']:
+            # Extract member gateways
+            gateways = comm.get('gateways', [])
+            gateway_names = [gw.get('name') if isinstance(gw, dict) else gw for gw in gateways]
+            
+            communities.append({
+                'name': comm.get('name'),
+                'uid': comm.get('uid'),
+                'type': 'meshed',
+                'gateways': gateway_names,
+                'encryption-method': comm.get('encryption-method'),
+                'encryption-suite': comm.get('encryption-suite')
+            })
+        
+        print(f"[MGMT_API] [{_ts()}] ✓ Found {len(communities)} Meshed VPN communities")
+        return communities
+    
+    def get_vpn_communities_remote_access(self) -> List[Dict[str, Any]]:
+        """Get all Remote Access VPN communities"""
+        print(f"[MGMT_API] [{_ts()}] Fetching Remote Access VPN communities...")
+        
+        data = self._call_api("show-vpn-communities-remote-access", {"details-level": "standard"})
+        if not data or 'objects' not in data:
+            return []
+        
+        communities = []
+        for comm in data['objects']:
+            # Extract gateways
+            gateways = comm.get('gateways', [])
+            gateway_names = [gw.get('name') if isinstance(gw, dict) else gw for gw in gateways]
+            
+            communities.append({
+                'name': comm.get('name'),
+                'uid': comm.get('uid'),
+                'type': 'remote-access',
+                'gateways': gateway_names,
+                'encryption-method': comm.get('encryption-method'),
+                'encryption-suite': comm.get('encryption-suite')
+            })
+        
+        print(f"[MGMT_API] [{_ts()}] ✓ Found {len(communities)} Remote Access VPN communities")
+        return communities
     
     def get_gateways(self) -> List[Dict[str, Any]]:
         """Get all gateways and servers"""
