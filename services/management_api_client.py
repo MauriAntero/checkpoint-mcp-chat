@@ -482,6 +482,43 @@ class ManagementAPIClient:
         print(f"[MGMT_API] [{_ts()}] ✓ Found {len(layers)} threat layers")
         return layers
     
+    def _get_threat_profile(self, profile_uid: str) -> Dict[str, Any]:
+        """Get threat prevention profile details (IPS, Anti-Virus, Anti-Bot settings)"""
+        try:
+            data = self._call_api("show-threat-profile", {
+                "uid": profile_uid,
+                "details-level": "full"
+            })
+            
+            if not data:
+                return None
+            
+            # Extract key protection settings
+            profile = {
+                'name': data.get('name'),
+                'uid': data.get('uid'),
+                'ips': data.get('ips', False),
+                'ips-settings': {},
+                'anti-bot': data.get('anti-bot', False),
+                'anti-virus': data.get('anti-virus', False),
+                'threat-emulation': data.get('threat-emulation', False),
+                'anti-malware': data.get('activate-protections-against-malicious-courier-sites', False)
+            }
+            
+            # Get IPS-specific settings if enabled
+            if data.get('ips-protections-from-version'):
+                profile['ips-settings']['protections-from-version'] = data.get('ips-protections-from-version')
+            if data.get('use-indicators'):
+                profile['ips-settings']['use-indicators'] = data.get('use-indicators')
+            if data.get('malicious-mail-policy-settings'):
+                profile['ips-settings']['malicious-mail-policy'] = data.get('malicious-mail-policy-settings')
+            
+            return profile
+            
+        except Exception as e:
+            print(f"[MGMT_API] Warning: Could not fetch threat profile {profile_uid}: {e}")
+            return None
+    
     def get_threat_rulebase(self, layer_name: str) -> Dict[str, Any]:
         """Get threat prevention rulebase (IPS, Anti-Virus, Anti-Bot, etc.) with pagination"""
         print(f"[MGMT_API] [{_ts()}] Fetching threat rulebase: layer={layer_name}")
@@ -520,10 +557,17 @@ class ManagementAPIClient:
                         'comments': rule.get('comments', ''),
                     }
                     
-                    # Extract action
+                    # Extract action and expand threat prevention profiles
                     action = rule.get('action')
                     if isinstance(action, dict):
-                        clean_rule['action'] = action.get('name')
+                        action_name = action.get('name')
+                        clean_rule['action'] = action_name
+                        
+                        # If action references a threat prevention profile, expand it
+                        if action.get('uid'):
+                            profile_details = self._get_threat_profile(action.get('uid'))
+                            if profile_details:
+                                clean_rule['action_profile'] = profile_details
                     else:
                         clean_rule['action'] = action
                     
@@ -562,7 +606,7 @@ class ManagementAPIClient:
         """Get all Star VPN communities (hub-and-spoke)"""
         print(f"[MGMT_API] [{_ts()}] Fetching Star VPN communities...")
         
-        data = self._call_api("show-vpn-communities-star", {"details-level": "standard"})
+        data = self._call_api("show-vpn-communities-star", {"details-level": "full"})
         if not data or 'objects' not in data:
             return []
         
@@ -593,7 +637,7 @@ class ManagementAPIClient:
         """Get all Meshed VPN communities (site-to-site)"""
         print(f"[MGMT_API] [{_ts()}] Fetching Meshed VPN communities...")
         
-        data = self._call_api("show-vpn-communities-meshed", {"details-level": "standard"})
+        data = self._call_api("show-vpn-communities-meshed", {"details-level": "full"})
         if not data or 'objects' not in data:
             return []
         
@@ -619,7 +663,7 @@ class ManagementAPIClient:
         """Get all Remote Access VPN communities"""
         print(f"[MGMT_API] [{_ts()}] Fetching Remote Access VPN communities...")
         
-        data = self._call_api("show-vpn-communities-remote-access", {"details-level": "standard"})
+        data = self._call_api("show-vpn-communities-remote-access", {"details-level": "full"})
         if not data or 'objects' not in data:
             return []
         
