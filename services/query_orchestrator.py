@@ -1918,6 +1918,37 @@ Technical Execution Plan:"""
                 })
                 discovered_resources['show_gateways_and_servers'] = gateways
         
+        # VPN Communities - ALWAYS fetch for posture assessment (provides critical VPN context)
+        # Fetch all three types: Star (hub-spoke), Meshed (site-to-site), Remote Access
+        print(f"[MGMT_API] Fetching VPN communities for complete security posture...")
+        
+        star_communities = self.mgmt_api_client.get_vpn_communities_star()
+        if star_communities:
+            tool_results.append({
+                'tool_name': 'show_vpn_communities_star',
+                'result': {'objects': star_communities},
+                'metadata': {'source': 'management_api'}
+            })
+            discovered_resources['show_vpn_communities_star'] = star_communities
+        
+        meshed_communities = self.mgmt_api_client.get_vpn_communities_meshed()
+        if meshed_communities:
+            tool_results.append({
+                'tool_name': 'show_vpn_communities_meshed',
+                'result': {'objects': meshed_communities},
+                'metadata': {'source': 'management_api'}
+            })
+            discovered_resources['show_vpn_communities_meshed'] = meshed_communities
+        
+        remote_communities = self.mgmt_api_client.get_vpn_communities_remote_access()
+        if remote_communities:
+            tool_results.append({
+                'tool_name': 'show_vpn_communities_remote_access',
+                'result': {'objects': remote_communities},
+                'metadata': {'source': 'management_api'}
+            })
+            discovered_resources['show_vpn_communities_remote_access'] = remote_communities
+        
         print(f"[QueryOrchestrator] Direct Management API returned {len(tool_results)} results")
         
         return {
