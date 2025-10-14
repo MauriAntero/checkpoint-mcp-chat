@@ -621,7 +621,17 @@ ALLOWED servers: All servers available"""
         Args:
             tool_results: Tool results from quantum-management MCP server
         """
+        # Defensive check: ensure tool_results is a list
+        if not isinstance(tool_results, list):
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ⚠️ tool_results is not a list: {type(tool_results)}")
+            return
+        
         for tool_result in tool_results:
+            # Defensive check: ensure each tool_result is a dict
+            if not isinstance(tool_result, dict):
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ⚠️ Skipping non-dict tool_result: {type(tool_result)} = {tool_result[:100] if isinstance(tool_result, str) else tool_result}")
+                continue
+                
             tool_name = tool_result.get('tool', '')
             
             # Check if this is a gateway discovery tool
