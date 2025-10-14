@@ -1382,44 +1382,55 @@ def show_chat_interface():
                                         if exec_data.get('errors'):
                                             st.warning(f"Issues: {', '.join(exec_data['errors'])}")
             else:
-                st.markdown("""
-                <div style='text-align: center; padding: 40px; color: #666;'>
-                    <h3>Welcome to Check Point MCP Chat</h3>
-                    <p>AI-powered security operations across 11 specialized Check Point services with intelligent intent discovery.</p>
+                st.markdown("<div style='text-align: center;'>", unsafe_allow_html=True)
+                st.markdown("### Welcome to Check Point MCP Chat")
+                st.markdown("*AI-powered security operations across 11 specialized Check Point services*")
+                st.markdown("</div>", unsafe_allow_html=True)
+                
+                st.markdown("---")
+                st.markdown("#### 🎯 Intelligent Intent Discovery System")
+                st.markdown("*The LLM automatically detects your intent and routes queries to the right services:*")
+                st.markdown("")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("**📋 Policy Review** _(show, list, display)_")
+                    st.markdown("• *Show all firewall rules*")
+                    st.markdown("• *List unused access rules across all gateways*")
+                    st.markdown("")
                     
-                    <p style='font-size: 0.95em; margin-top: 25px; color: #444;'><strong>🎯 Intelligent Intent Discovery System</strong></p>
-                    <p style='font-size: 0.85em; margin-bottom: 20px;'>The LLM automatically detects your intent and routes queries to the right services with optimal analysis:</p>
+                    st.markdown("**🔧 Troubleshooting** _(why, debug, investigate)_")
+                    st.markdown("• *Why can't user 10.1.5.20 access 192.168.10.5?*")
+                    st.markdown("• *Investigate performance issues on cp-gw-01*")
+                    st.markdown("")
                     
-                    <div style='text-align: left; max-width: 800px; margin: 0 auto;'>
-                        <p style='font-size: 0.9em; margin-top: 15px;'><strong>📋 Policy Review</strong> <em>(show, list, display)</em></p>
-                        <p style='font-size: 0.85em; margin-left: 20px;'>• "Show all firewall rules" — Clean data display without analysis</p>
-                        <p style='font-size: 0.85em; margin-left: 20px;'>• "List unused access rules across all gateways"</p>
-                        
-                        <p style='font-size: 0.9em; margin-top: 15px;'><strong>🔧 Troubleshooting</strong> <em>(why, debug, investigate, diagnose)</em></p>
-                        <p style='font-size: 0.85em; margin-left: 20px;'>• "Why can't user 10.1.5.20 access 192.168.10.5?" — Root cause with iterative diagnostics</p>
-                        <p style='font-size: 0.85em; margin-left: 20px;'>• "Investigate performance issues on cp-gw-01" — Auto-executes gateway diagnostics</p>
-                        
-                        <p style='font-size: 0.9em; margin-top: 15px;'><strong>🛡️ Security Investigation</strong> <em>(threats, suspicious, malware)</em></p>
-                        <p style='font-size: 0.85em; margin-left: 20px;'>• "Any suspicious activity in the last 24 hours?" — Threat event hunting</p>
-                        <p style='font-size: 0.85em; margin-left: 20px;'>• "Find all malware detections this week across infrastructure"</p>
-                        
-                        <p style='font-size: 0.9em; margin-top: 15px;'><strong>🎯 Threat Assessment</strong> <em>(assess, evaluate, compliance)</em></p>
-                        <p style='font-size: 0.85em; margin-left: 20px;'>• "Assess security posture of my infrastructure" — Posture evaluation with recommendations</p>
-                        <p style='font-size: 0.85em; margin-left: 20px;'>• "Vulnerability assessment for all gateways" — Forward-looking analysis</p>
-                        
-                        <p style='font-size: 0.9em; margin-top: 15px;'><strong>📊 Log Analysis</strong> <em>(traffic, bandwidth, connections)</em></p>
-                        <p style='font-size: 0.85em; margin-left: 20px;'>• "Show all traffic from 172.16.50.10 today" — Traffic pattern analysis</p>
-                        <p style='font-size: 0.85em; margin-left: 20px;'>• "What hit firewall rule 15 in the last hour?" — Descriptive log analysis</p>
-                        
-                        <p style='font-size: 0.9em; margin-top: 15px;'><strong>🌐 Network Analysis</strong> <em>(topology, routing, infrastructure)</em></p>
-                        <p style='font-size: 0.85em; margin-left: 20px;'>• "Show network topology and gateway status" — Infrastructure overview</p>
-                        <p style='font-size: 0.85em; margin-left: 20px;'>• "Display routing tables for all gateways" — Network infrastructure details</p>
-                        
-                        <p style='font-size: 0.9em; margin-top: 15px;'><strong>💡 General Info</strong> <em>(help, what can you do)</em></p>
-                        <p style='font-size: 0.85em; margin-left: 20px;'>• "What services can you access?" — Capabilities overview</p>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+                    st.markdown("**🛡️ Security Investigation** _(threats, suspicious)_")
+                    st.markdown("• *Any suspicious activity in the last 24 hours?*")
+                    st.markdown("• *Find all malware detections this week*")
+                    st.markdown("")
+                    
+                    st.markdown("**🎯 Threat Assessment** _(assess, evaluate)_")
+                    st.markdown("• *Assess security posture of my infrastructure*")
+                    st.markdown("• *Vulnerability assessment for all gateways*")
+                
+                with col2:
+                    st.markdown("**📊 Log Analysis** _(traffic, bandwidth)_")
+                    st.markdown("• *Show all traffic from 172.16.50.10 today*")
+                    st.markdown("• *What hit firewall rule 15 in the last hour?*")
+                    st.markdown("")
+                    
+                    st.markdown("**🌐 Network Analysis** _(topology, routing)_")
+                    st.markdown("• *Show network topology and gateway status*")
+                    st.markdown("• *Display routing tables for all gateways*")
+                    st.markdown("")
+                    
+                    st.markdown("**💡 General Info** _(help, capabilities)_")
+                    st.markdown("• *What services can you access?*")
+                    st.markdown("• *How does intent discovery work?*")
+                
+                st.markdown("---")
+                st.markdown("<div style='text-align: center; color: #888; font-size: 0.9em;'>Start by asking a question about your Check Point infrastructure</div>", unsafe_allow_html=True)
         
         # Chat input (fixed at bottom)
         st.markdown("<br><br>", unsafe_allow_html=True)
