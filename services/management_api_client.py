@@ -226,13 +226,45 @@ class ManagementAPIClient:
                     vpn = rule.get('vpn')
                     if vpn:
                         if isinstance(vpn, dict):
-                            # VPN can be directional, encrypt, decrypt, or community objects
-                            vpn_type = vpn.get('name') or vpn.get('directional', {}).get('name')
-                            clean_rule['vpn'] = vpn_type
+                            # Check for directional VPN (site-to-site with to/from members)
+                            if 'directional' in vpn:
+                                directional = vpn['directional']
+                                if isinstance(directional, dict):
+                                    clean_rule['vpn'] = {
+                                        'type': 'directional',
+                                        'from': directional.get('from', {}).get('name') if isinstance(directional.get('from'), dict) else directional.get('from'),
+                                        'to': directional.get('to', {}).get('name') if isinstance(directional.get('to'), dict) else directional.get('to'),
+                                        'encryption-mode': directional.get('encryption-mode')
+                                    }
+                                else:
+                                    clean_rule['vpn'] = {'type': 'directional', 'value': directional}
+                            # Check for standard community (name-based)
+                            elif 'name' in vpn:
+                                clean_rule['vpn'] = {'type': 'community', 'name': vpn['name']}
+                            # Check for encryption/decryption indicators
+                            elif 'encrypt' in vpn or 'decrypt' in vpn:
+                                clean_rule['vpn'] = {
+                                    'type': 'encrypt-decrypt',
+                                    'encrypt': vpn.get('encrypt'),
+                                    'decrypt': vpn.get('decrypt')
+                                }
+                            else:
+                                # Fallback: capture whatever structure exists
+                                clean_rule['vpn'] = vpn
                         elif isinstance(vpn, list):
-                            # Multiple VPN communities
-                            clean_rule['vpn'] = [v.get('name') if isinstance(v, dict) else v for v in vpn]
+                            # Multiple VPN communities - process each
+                            clean_vpn_list = []
+                            for v in vpn:
+                                if isinstance(v, dict):
+                                    if 'name' in v:
+                                        clean_vpn_list.append({'type': 'community', 'name': v['name']})
+                                    else:
+                                        clean_vpn_list.append(v)
+                                else:
+                                    clean_vpn_list.append(v)
+                            clean_rule['vpn'] = clean_vpn_list
                         else:
+                            # Simple string value
                             clean_rule['vpn'] = vpn
                     
                     all_rules.append(clean_rule)
