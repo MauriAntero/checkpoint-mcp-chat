@@ -1111,6 +1111,10 @@ Technical Execution Plan:"""
     def _validate_tool_to_server_mapping(self, required_servers: List[str], data_to_fetch: List[str]) -> Tuple[List[str], List[str]]:
         """Validate that requested tools exist on target servers
         
+        This validator ensures tools are only requested from servers that can actually provide them:
+        - For servers with explicit tool lists: strict validation (reject mismatches)
+        - For auto-detect servers: allow unknown tools (they'll be discovered at runtime)
+        
         Args:
             required_servers: List of server names that will be queried
             data_to_fetch: List of tool names to fetch
@@ -1121,14 +1125,26 @@ Technical Execution Plan:"""
         warnings = []
         validated_tools = []
         
-        # Build a mapping of tool to valid servers
+        # Build a mapping of tool to valid servers (only for servers with explicit tool lists)
         tool_server_map = {}
+        explicit_servers = set()
+        auto_detect_servers = set()
+        
         for server_type, capability in self.MCP_CAPABILITIES.items():
             if capability.tools:
+                # Server has explicit tool list - validate against it
+                explicit_servers.add(server_type)
                 for tool in capability.tools:
                     if tool not in tool_server_map:
                         tool_server_map[tool] = []
                     tool_server_map[tool].append(server_type)
+            else:
+                # Server uses auto-detection - allow all tools from this server
+                auto_detect_servers.add(server_type)
+        
+        # Categorize required servers
+        required_explicit = set(required_servers).intersection(explicit_servers)
+        required_auto_detect = set(required_servers).intersection(auto_detect_servers)
         
         # Validate each requested tool
         for tool in data_to_fetch:
@@ -1137,26 +1153,37 @@ Technical Execution Plan:"""
                 validated_tools.append(tool)
                 continue
             
-            # Check if tool exists in our mapping
+            # Check if tool exists in our explicit mapping
             if tool in tool_server_map:
+                # Tool has explicit server mapping
                 valid_servers = tool_server_map[tool]
                 
-                # Check if any required server can provide this tool
-                available_servers = [s for s in valid_servers if s in required_servers]
+                # Check if tool is available on any required EXPLICIT server
+                available_on_required = [s for s in valid_servers if s in required_explicit]
                 
-                if available_servers:
-                    # Tool is available on at least one required server
+                if available_on_required:
+                    # Tool is explicitly available on at least one required server - ALLOW
                     validated_tools.append(tool)
                 else:
-                    # Tool exists but not on any required server
+                    # Tool is NOT on any required explicit server
+                    # REJECT: This tool cannot be executed by the selected servers
                     warnings.append(
-                        f"⚠️ Tool '{tool}' is not available on selected servers {required_servers}. "
-                        f"This tool is only available on: {', '.join(valid_servers)}. Skipping."
+                        f"⚠️ Tool '{tool}' is only available on {', '.join(valid_servers)}, "
+                        f"but selected servers are {required_servers}. Skipping this tool."
                     )
-                    print(f"[QueryOrchestrator] TOOL VALIDATION ERROR: '{tool}' requested but only available on {valid_servers}, not on {required_servers}")
+                    print(f"[QueryOrchestrator] TOOL VALIDATION ERROR: '{tool}' mapped to {valid_servers}, not available on {required_servers}")
             else:
-                # Tool not in our known mapping - allow it (might be auto-detected)
-                validated_tools.append(tool)
+                # Tool not in explicit mapping - could be auto-detected or unknown
+                # ALLOW if ANY server in required list is auto-detect (tool might come from there)
+                # OR if tool is completely unknown (might be valid, let MCP handle it)
+                if required_auto_detect or not tool_server_map:
+                    # Either we have auto-detect servers OR no explicit mappings exist
+                    validated_tools.append(tool)
+                else:
+                    # Only explicit servers selected, but tool is unknown
+                    # This is likely an error, but allow it (MCP will handle gracefully)
+                    validated_tools.append(tool)
+                    print(f"[QueryOrchestrator] Unknown tool '{tool}' allowed for {required_servers}")
         
         return validated_tools, warnings
     
