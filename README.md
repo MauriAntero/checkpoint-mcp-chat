@@ -396,4 +396,4 @@ Built with Check Point MCP servers, Streamlit, and LLM infrastructure (Ollama/Op
 
 ---
 
-**Version 0.0.1** | Check Point Security Operations Platform
+**Version 0.0.1** | Build for Check Point administrators! 
