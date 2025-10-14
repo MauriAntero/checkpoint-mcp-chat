@@ -455,12 +455,14 @@ ALLOWED servers: All servers available"""
         
         # Exact phrase matches (high confidence troubleshooting indicators)
         exact_troubleshooting_phrases = [
-            'troubleshoot',
+            'troubleshoot', 'debug', 'diagnose', 'investigate',
             'connectivity issue', 'connectivity problem', 'connectivity fail',
             'connection issue', 'connection problem', 'connection fail',
             'cannot connect', 'unable to connect', 'can\'t connect', 'not connecting',
             'cannot reach', 'unable to reach', 'not reachable',
             'connection refused', 'connection timeout', 'connection reset',
+            'performance issue', 'performance problem', 'performance degradation',
+            'slow connection', 'high latency', 'packet loss', 'packet drop',
             'vpn down', 'vpn not working', 'vpn fail', 'vpn issue',
             'tunnel down', 'tunnel not working', 'tunnel fail', 'tunnel issue',
             'network down', 'network not working', 'network fail', 'network issue',
@@ -4755,10 +4757,12 @@ The AI model failed to analyze your query due to an API issue.
             self.progress_callback("🔍 Analyzing results...")
         
         # Check if this is a troubleshooting query - use iterative analysis
-        is_troubleshooting = self._detect_troubleshooting_intent(user_query)
+        # Use Stage 1 intent classification if available (more comprehensive than keyword detection)
+        task_type = plan.get('intent', {}).get('task_type', '')
+        is_troubleshooting = (task_type == 'troubleshooting') or self._detect_troubleshooting_intent(user_query)
         
         if is_troubleshooting:
-            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Using iterative troubleshooting analysis")
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Using iterative troubleshooting analysis (intent: {task_type or 'keyword-detected'})")
             final_analysis, model_used = self.analyze_iterative_troubleshooting(plan, execution_results, security_model)
         else:
             final_analysis, model_used = self.analyze_with_model(plan, execution_results, security_model)
