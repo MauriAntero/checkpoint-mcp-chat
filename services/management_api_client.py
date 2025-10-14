@@ -23,30 +23,57 @@ class ManagementAPIClient:
         self.base_url = f"https://{host}:{port}/web_api"
         self.session_id = None
         
-    def login(self) -> bool:
-        """Login to Management API and obtain session ID"""
-        try:
-            url = f"{self.base_url}/login"
-            data = {"user": self.username, "password": self.password}
-            
-            print(f"[MGMT_API] [{_ts()}] Logging in to {self.host}...")
-            resp = requests.post(url, json=data, verify=False, timeout=30)
-            
-            if resp.status_code != 200:
-                print(f"[MGMT_API] Login failed: {resp.status_code} - {resp.text}")
-                return False
-            
-            self.session_id = resp.json().get('sid')
-            if not self.session_id:
-                print(f"[MGMT_API] No session ID received")
-                return False
-            
-            print(f"[MGMT_API] [{_ts()}] ✓ Logged in successfully")
-            return True
-            
-        except Exception as e:
-            print(f"[MGMT_API] Login error: {e}")
-            return False
+    def login(self, max_retries: int = 3) -> bool:
+        """Login to Management API and obtain session ID with retry logic for rate limiting"""
+        import time
+        
+        for attempt in range(max_retries):
+            try:
+                url = f"{self.base_url}/login"
+                data = {"user": self.username, "password": self.password}
+                
+                if attempt > 0:
+                    print(f"[MGMT_API] [{_ts()}] Login attempt {attempt + 1}/{max_retries}...")
+                else:
+                    print(f"[MGMT_API] [{_ts()}] Logging in to {self.host}...")
+                
+                resp = requests.post(url, json=data, verify=False, timeout=30)
+                
+                # Check for rate limiting
+                if resp.status_code == 403:
+                    try:
+                        error_data = resp.json()
+                        if error_data.get('code') == 'err_too_many_requests':
+                            # Rate limited - retry with exponential backoff
+                            wait_time = (2 ** attempt) * 2  # 2s, 4s, 8s
+                            print(f"[MGMT_API] [{_ts()}] Rate limited - waiting {wait_time}s before retry...")
+                            time.sleep(wait_time)
+                            continue
+                    except:
+                        pass
+                
+                if resp.status_code != 200:
+                    print(f"[MGMT_API] Login failed: {resp.status_code} - {resp.text}")
+                    return False
+                
+                self.session_id = resp.json().get('sid')
+                if not self.session_id:
+                    print(f"[MGMT_API] No session ID received")
+                    return False
+                
+                print(f"[MGMT_API] [{_ts()}] ✓ Logged in successfully")
+                return True
+                
+            except Exception as e:
+                print(f"[MGMT_API] Login error: {e}")
+                if attempt < max_retries - 1:
+                    wait_time = (2 ** attempt) * 2
+                    print(f"[MGMT_API] [{_ts()}] Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    return False
+        
+        return False
     
     def logout(self):
         """Logout from Management API"""

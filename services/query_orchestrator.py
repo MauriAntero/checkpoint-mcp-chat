@@ -1421,11 +1421,11 @@ Technical Execution Plan:"""
                     requesting_policy_data = any(tool in str(data_to_fetch) for tool in policy_tools)
                     
                     if requesting_policy_data:
-                        # Try direct Management API first (clean data, no bugs)
-                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Policy data requested - trying direct Management API first...")
+                        # Try direct Management API first (clean data, no bugs, with retry on rate limit)
+                        print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Policy data requested - using direct Management API (with retry logic)...")
                         mgmt_result = await self._query_management_api_async(data_to_fetch, user_parameter_selections)
                         
-                        # FALLBACK: If Management API returns empty data (rate limit/auth failure), use MCP as backup
+                        # Check if Management API succeeded
                         discovered = mgmt_result.get('discovered_resources', {})
                         tool_results = mgmt_result.get('tool_results', [])
                         is_empty = (len(discovered.get('show_packages', [])) == 0 and 
@@ -1433,10 +1433,11 @@ Technical Execution Plan:"""
                                    len(tool_results) == 0)
                         
                         if is_empty:
-                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ⚠️ Management API returned empty data - falling back to MCP server")
+                            # Management API failed even after retries - this is serious
+                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ❌ Management API failed after retries - falling back to MCP (may have data quality issues)")
                             mgmt_result = await self._query_mcp_server_async('quantum-management', data_to_fetch, user_parameter_selections, query_text)
                         else:
-                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ✓ Management API succeeded - using clean policy data")
+                            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] ✓ Management API succeeded - using authoritative policy data (no bugs)")
                     else:
                         # Use MCP server for non-policy data
                         mgmt_result = await self._query_mcp_server_async('quantum-management', data_to_fetch, user_parameter_selections, query_text)
