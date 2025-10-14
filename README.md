@@ -97,10 +97,11 @@ Optional feature for executing diagnostic commands on Check Point gateways via M
 ## Installation
 
 ### Prerequisites
-- Python 3.8+
+- Python 3.11+
 - Node.js 16+
 - Git
 - LLM Provider: [Ollama](https://ollama.ai) (local) or [OpenRouter](https://openrouter.ai) API key (cloud)
+- **Windows only**: Microsoft C++ Build Tools may be required for cryptography package (see Windows installation notes)
 
 ---
 
@@ -122,7 +123,7 @@ git clone https://github.com/MauriAntero/checkpoint-mcp-chat.git
 cd checkpoint-mcp-chat
 python3 -m venv venv
 source venv/bin/activate
-pip install streamlit cryptography pandas plotly psutil pyyaml requests gitpython
+pip install -e .
 ```
 
 #### 4. Run application
@@ -148,7 +149,7 @@ git clone https://github.com/MauriAntero/checkpoint-mcp-chat.git
 cd checkpoint-mcp-chat
 python3 -m venv venv
 source venv/bin/activate
-pip install streamlit cryptography pandas plotly psutil pyyaml requests gitpython
+pip install -e .
 ```
 
 #### 3. Run application
@@ -208,14 +209,21 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 #### 6. Install Python dependencies
 ```cmd
-pip install streamlit cryptography pandas plotly psutil pyyaml requests gitpython
+pip install -e .
 ```
 
-**Troubleshooting**: If `pip` command fails:
+**Troubleshooting**:
+
+If `pip` command fails:
 ```cmd
 python -m pip install --upgrade pip
-python -m pip install streamlit cryptography pandas plotly psutil pyyaml requests gitpython
+python -m pip install -e .
 ```
+
+If you see errors about `cryptography` package or "Microsoft Visual C++ 14.0 is required":
+- Download and install [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+- During installation, select "Desktop development with C++"
+- Restart Command Prompt/PowerShell and retry `pip install -e .`
 
 #### 7. Verify Streamlit configuration
 The `.streamlit/config.toml` file is included. If missing, create it:
@@ -349,7 +357,7 @@ source venv/bin/activate  # macOS/Linux
 venv\Scripts\activate     # Windows
 
 # Reinstall dependencies
-pip install streamlit cryptography pandas plotly psutil pyyaml requests gitpython
+pip install -e .
 ```
 
 ### MCP Package Installation Failure
