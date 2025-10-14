@@ -76,6 +76,7 @@ netstat -rn                       # Routing table (numeric)
 netstat -i                        # Interface statistics
 netstat -tulnp                    # Network connections and listening ports
 arp -a                            # ARP table
+ethtool -g <interface>            # Show ring buffer parameters for interface (read-only)
 ```
 
 ---

@@ -3538,14 +3538,24 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
             client, model_name = self._get_client_for_model(security_model) if security_model else (self.ollama_client, self.ollama_client.security_model)
             
             try:
-                response = client.chat(
-                    model=model_name,
-                    messages=[{
-                        "role": "user",
-                        "content": analysis_prompt
-                    }],
-                    temperature=0.1  # Low temperature for deterministic troubleshooting
-                )
+                # Use correct method based on client type
+                if hasattr(client, 'generate_response_with_history'):
+                    # OpenRouter client - uses messages format
+                    response = client.generate_response_with_history(
+                        messages=[{
+                            "role": "user",
+                            "content": analysis_prompt
+                        }],
+                        model=model_name,
+                        temperature=0.1  # Low temperature for deterministic troubleshooting
+                    )
+                else:
+                    # Ollama client - uses prompt format
+                    response = client.generate_response(
+                        prompt=analysis_prompt,
+                        model=model_name,
+                        temperature=0.1
+                    )
                 
                 # Parse structured response
                 analysis_result = self._parse_iterative_response(response)
