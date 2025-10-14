@@ -1108,6 +1108,58 @@ Technical Execution Plan:"""
             print(f"Response was: {response}")
             return self._create_fallback_plan(user_query)
     
+    def _validate_tool_to_server_mapping(self, required_servers: List[str], data_to_fetch: List[str]) -> Tuple[List[str], List[str]]:
+        """Validate that requested tools exist on target servers
+        
+        Args:
+            required_servers: List of server names that will be queried
+            data_to_fetch: List of tool names to fetch
+            
+        Returns:
+            Tuple of (validated_data_to_fetch, warnings)
+        """
+        warnings = []
+        validated_tools = []
+        
+        # Build a mapping of tool to valid servers
+        tool_server_map = {}
+        for server_type, capability in self.MCP_CAPABILITIES.items():
+            if capability.tools:
+                for tool in capability.tools:
+                    if tool not in tool_server_map:
+                        tool_server_map[tool] = []
+                    tool_server_map[tool].append(server_type)
+        
+        # Validate each requested tool
+        for tool in data_to_fetch:
+            # Skip run_script commands (gateway executor handles these separately)
+            if isinstance(tool, str) and tool.startswith("run_script:"):
+                validated_tools.append(tool)
+                continue
+            
+            # Check if tool exists in our mapping
+            if tool in tool_server_map:
+                valid_servers = tool_server_map[tool]
+                
+                # Check if any required server can provide this tool
+                available_servers = [s for s in valid_servers if s in required_servers]
+                
+                if available_servers:
+                    # Tool is available on at least one required server
+                    validated_tools.append(tool)
+                else:
+                    # Tool exists but not on any required server
+                    warnings.append(
+                        f"⚠️ Tool '{tool}' is not available on selected servers {required_servers}. "
+                        f"This tool is only available on: {', '.join(valid_servers)}. Skipping."
+                    )
+                    print(f"[QueryOrchestrator] TOOL VALIDATION ERROR: '{tool}' requested but only available on {valid_servers}, not on {required_servers}")
+            else:
+                # Tool not in our known mapping - allow it (might be auto-detected)
+                validated_tools.append(tool)
+        
+        return validated_tools, warnings
+    
     def execute_plan(self, plan: Dict[str, Any], user_parameter_selections: Optional[Dict[str, str]] = None, user_query: Optional[str] = None) -> Dict[str, Any]:
         """Execute the plan by querying MCP servers and collecting data
         
@@ -1138,7 +1190,13 @@ Technical Execution Plan:"""
         self._update_session_context(query_text, plan, intent)  # Pass plan and intent for full context extraction
         
         # Apply session context to data_to_fetch (inject cached gateway if applicable)
-        data_to_fetch = self._apply_session_context(plan.get("data_to_fetch", []), query_text)
+        data_to_fetch = plan.get("data_to_fetch", [])
+        data_to_fetch = self._apply_session_context(data_to_fetch, query_text)
+        
+        # TOOL-TO-SERVER VALIDATION: Verify requested tools exist on target servers
+        data_to_fetch, validation_warnings = self._validate_tool_to_server_mapping(required_servers, data_to_fetch)
+        if validation_warnings:
+            results["warnings"].extend(validation_warnings)
         
         # PRIORITY VALIDATION: Ensure management sources are primary for ANY data-oriented queries
         # This runs for ALL queries to ensure management-logs is used when needed
