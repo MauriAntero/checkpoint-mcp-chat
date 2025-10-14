@@ -4038,10 +4038,30 @@ Errors: {', '.join(errors) if errors else 'None'}{warnings_text}
         # Use shared robust troubleshooting detection (single source of truth)
         is_troubleshooting = self._detect_troubleshooting_intent(user_query)
         
-        # Detect threat assessment intent from analysis_type
+        # Detect other intent types from analysis_type
         is_threat_assessment = analysis_type in ['threat_assessment', 'security_risk_analysis']
+        is_security_investigation = analysis_type == 'security_investigation'
+        is_log_analysis = analysis_type == 'log_analysis'
+        is_network_analysis = analysis_type == 'network_analysis'
         
-        if is_threat_assessment:
+        if is_security_investigation:
+            # Make security investigation (threat hunting) intent EXPLICIT
+            task_type_header = """
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                  🔍 SECURITY INVESTIGATION & THREAT HUNTING 🔍                 ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+TASK OBJECTIVE:
+• Hunt for threats, attacks, and malicious activity in security logs
+• Identify indicators of compromise (IOCs) and suspicious patterns
+• Analyze security events to detect intrusions or exploit attempts
+• Investigate potential compromised hosts or ongoing attacks
+
+YOUR ROLE: Security analyst conducting threat hunting and incident investigation
+TASK: Analyze security events to identify threats, attacks, and malicious activity
+
+"""
+        elif is_threat_assessment:
             # Make threat assessment intent EXTREMELY EXPLICIT at the very top
             task_type_header = """
 ╔═══════════════════════════════════════════════════════════════════════════════╗
@@ -4056,6 +4076,40 @@ TASK OBJECTIVE:
 
 YOUR ROLE: Security analyst conducting a comprehensive security assessment
 TASK: Assess security posture, identify risks, and provide actionable recommendations
+
+"""
+        elif is_log_analysis:
+            # Make log analysis intent EXPLICIT
+            task_type_header = """
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                     📊 TRAFFIC PATTERN & LOG ANALYSIS 📊                      ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+TASK OBJECTIVE:
+• Examine traffic patterns and connection behavior (descriptive analysis)
+• Analyze logs from specific sources, destinations, or services
+• Provide traffic statistics and usage patterns
+• Describe what occurred without diagnosing why (not troubleshooting)
+
+YOUR ROLE: Security analyst providing descriptive traffic analysis
+TASK: Analyze and describe traffic patterns, connections, and log data
+
+"""
+        elif is_network_analysis:
+            # Make network analysis intent EXPLICIT
+            task_type_header = """
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                  🌐 NETWORK INFRASTRUCTURE & TOPOLOGY ANALYSIS 🌐             ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+TASK OBJECTIVE:
+• Analyze network infrastructure, topology, and configuration
+• Review gateway status, interfaces, and routing tables
+• Examine VPN tunnels, cluster state, and HA status
+• Understand network structure and connectivity paths
+
+YOUR ROLE: Network engineer analyzing infrastructure and topology
+TASK: Analyze network infrastructure, configuration, and operational status
 
 """
         elif is_troubleshooting:
@@ -4079,8 +4133,58 @@ TASK: Determine why connections failed and what security controls enforced the a
         # Add intent-specific analysis guidance
         troubleshooting_analysis_rules = ""
         threat_assessment_analysis_rules = ""
+        security_investigation_analysis_rules = ""
+        log_analysis_analysis_rules = ""
+        network_analysis_analysis_rules = ""
         
-        if is_threat_assessment:
+        if is_security_investigation:
+            security_investigation_analysis_rules = """
+SECURITY INVESTIGATION REQUIREMENTS:
+
+**REPORT FORMAT: Threat Hunting Investigation Report**
+
+Your response MUST follow this investigation report structure:
+
+1. **INVESTIGATION SUMMARY**
+   • Threat indicators identified (malware, exploits, suspicious IPs, etc.)
+   • Attack patterns or tactics detected
+   • Timeframe of malicious activity
+   • Affected systems or users
+
+2. **INDICATORS OF COMPROMISE (IOCs)**
+   ✓ Malicious IPs, domains, or URLs identified
+   ✓ Malware signatures or file hashes detected
+   ✓ Suspicious processes or commands
+   ✓ Anomalous user behavior
+   ✓ Exploit attempts or attack signatures
+
+3. **THREAT ANALYSIS**
+   ✓ Attack vector and entry point
+   ✓ Lateral movement or privilege escalation attempts
+   ✓ Data exfiltration indicators
+   ✓ Command & control (C2) communications
+   ✓ Security blade detections (IPS, Anti-Bot, Anti-Virus, etc.)
+
+4. **IMPACT ASSESSMENT**
+   ✓ Compromised systems or accounts
+   ✓ Data exposure or breach indicators
+   ✓ Business impact and severity
+   ✓ Ongoing vs. historical threat
+
+5. **RECOMMENDED ACTIONS** (Prioritized by urgency)
+   • Immediate: Critical containment and remediation steps
+   • Short-term: Investigation and eradication actions
+   • Long-term: Prevention and hardening measures
+
+**CRITICAL OUTPUT REQUIREMENTS:**
+• Focus on ACTUAL threats and malicious activity found in logs
+• Use threat hunting language: "indicators", "compromise", "malicious activity"
+• Prioritize IPS, Anti-Bot, Anti-Virus, and threat prevention logs
+• Identify specific IOCs with timestamps and evidence
+• Provide actionable incident response recommendations
+
+"""
+        elif is_threat_assessment:
             threat_assessment_analysis_rules = """
 SECURITY POSTURE ASSESSMENT REQUIREMENTS:
 
@@ -4125,6 +4229,99 @@ Your response MUST follow this assessment report structure:
 • Provide forward-looking recommendations, NOT backward-looking diagnosis
 • Format as structured assessment report with clear sections
 • Include security ratings and risk levels where appropriate
+
+"""
+        elif is_log_analysis:
+            log_analysis_analysis_rules = """
+LOG ANALYSIS REQUIREMENTS:
+
+**REPORT FORMAT: Descriptive Traffic Analysis Report**
+
+Your response MUST follow this descriptive analysis structure:
+
+1. **TRAFFIC SUMMARY**
+   • Total connections analyzed
+   • Timeframe covered
+   • Primary sources and destinations
+   • Protocol and service distribution
+
+2. **TRAFFIC PATTERNS**
+   ✓ Top source IPs and their activity
+   ✓ Top destination IPs and services accessed
+   ✓ Most active ports and protocols
+   ✓ Application usage statistics
+   ✓ Bandwidth or connection volume trends
+
+3. **CONNECTION BEHAVIOR**
+   ✓ Allowed vs. blocked traffic ratio
+   ✓ Rule hit distribution (which rules matched)
+   ✓ NAT translations observed
+   ✓ Service and application patterns
+   ✓ Temporal patterns (time-based trends)
+
+4. **NOTABLE OBSERVATIONS**
+   ✓ Unusual traffic volumes or spikes
+   ✓ Unexpected protocols or services
+   ✓ Interesting connection patterns
+   ✓ Traffic anomalies (descriptive, not diagnostic)
+
+**CRITICAL OUTPUT REQUIREMENTS:**
+• Use DESCRIPTIVE language: "observed", "shows", "indicates", "patterns reveal"
+• DO NOT diagnose problems or provide root cause analysis
+• DO NOT troubleshoot or recommend fixes
+• Focus on WHAT happened, not WHY it happened
+• Present statistics, counts, and trends from the data
+• Describe traffic behavior and patterns objectively
+
+"""
+        elif is_network_analysis:
+            network_analysis_analysis_rules = """
+NETWORK ANALYSIS REQUIREMENTS:
+
+**REPORT FORMAT: Network Infrastructure Analysis Report**
+
+Your response MUST follow this infrastructure analysis structure:
+
+1. **NETWORK TOPOLOGY OVERVIEW**
+   • Gateway and server inventory
+   • Network objects and address ranges
+   • VPN communities and connectivity
+   • Cluster and HA configuration
+
+2. **GATEWAY STATUS & CONFIGURATION**
+   ✓ Gateway operational status
+   ✓ Network interfaces and IP addresses
+   ✓ Routing table and default routes
+   ✓ Installed policies and versions
+   ✓ Security blade status
+
+3. **CONNECTIVITY INFRASTRUCTURE**
+   ✓ VPN tunnel status and endpoints
+   ✓ Network address translation (NAT) configuration
+   ✓ Access layer and policy structure
+   ✓ Inter-gateway communication paths
+   ✓ External connectivity points
+
+4. **OPERATIONAL STATUS**
+   ✓ Cluster state and synchronization
+   ✓ High availability status
+   ✓ Interface states and statistics
+   ✓ Daemon and service health
+   ✓ System resource utilization
+
+5. **NETWORK ARCHITECTURE SUMMARY**
+   • Network segmentation approach
+   • Trust zones and security boundaries
+   • Critical infrastructure components
+   • Connectivity dependencies
+
+**CRITICAL OUTPUT REQUIREMENTS:**
+• Use infrastructure language: "topology", "architecture", "configuration"
+• Focus on network structure and connectivity paths
+• Describe WHAT exists in the network, not problems or issues
+• Present gateway status, routing, and VPN tunnel information
+• Provide network diagram-like descriptions where helpful
+• Use technical network terminology appropriately
 
 """
         elif is_troubleshooting:
@@ -4521,7 +4718,7 @@ INVESTIGATION CAPABILITIES:
 Now analyze the data above and provide your structured response following the REQUIRED RESPONSE FORMAT."""
         
         analysis_prompt = f"""{task_type_header}{contextual_preamble}
-{data_source_context}{command_legend_text}{threat_assessment_analysis_rules}{troubleshooting_analysis_rules}
+{data_source_context}{command_legend_text}{security_investigation_analysis_rules}{threat_assessment_analysis_rules}{log_analysis_analysis_rules}{network_analysis_analysis_rules}{troubleshooting_analysis_rules}
 {anti_hallucination_rules}
 
 {structured_response_template}
