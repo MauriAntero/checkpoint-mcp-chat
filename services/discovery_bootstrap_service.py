@@ -112,16 +112,24 @@ class DiscoveryBootstrapService:
             print(f"[Discovery] [{_ts()}] ℹ️ HTTPS layers not available: {e}")
             results['datasets_failed'].append('https_inspection_layers')
         
-        # Dataset 5: VPN Communities (already handled by management_api_client caching)
+        # Dataset 5: VPN Communities (combine all 3 types and write to cache)
         try:
             print(f"[Discovery] [{_ts()}] Fetching VPN communities...")
             vpn_star = self.mgmt_client.get_vpn_communities_star()
             vpn_meshed = self.mgmt_client.get_vpn_communities_meshed()
             vpn_remote = self.mgmt_client.get_vpn_communities_remote_access()
-            total_vpn = len(vpn_star) + len(vpn_meshed) + len(vpn_remote)
-            if total_vpn > 0:
+            
+            # Combine all VPN types into single cache entry
+            all_vpn_communities = vpn_star + vpn_meshed + vpn_remote
+            
+            if all_vpn_communities:
+                # Write to intelligent cache with 10-minute TTL (stable data)
+                self._write_to_cache('vpn_communities', all_vpn_communities, ttl=600)
                 results['datasets_fetched'].append('vpn_communities')
-                print(f"[Discovery] [{_ts()}] ✓ Cached {total_vpn} VPN communities")
+                results['cache_entries_written'] += 1
+                print(f"[Discovery] [{_ts()}] ✓ Cached {len(all_vpn_communities)} VPN communities")
+            else:
+                print(f"[Discovery] [{_ts()}] ℹ️ No VPN communities found (may not be configured)")
         except Exception as e:
             print(f"[Discovery] [{_ts()}] ⚠️ Failed to fetch VPN communities: {e}")
             results['datasets_failed'].append('vpn_communities')

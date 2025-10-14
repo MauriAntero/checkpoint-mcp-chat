@@ -743,6 +743,46 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                 discovered_resources = {}
                 if discovery_mode:
                     print(f"[MCP_DEBUG] [{_ts()}] === Phase 1: Resource Discovery ===")
+                    
+                    # Check intelligent cache first (populated by discovery bootstrap)
+                    from services.intelligent_cache import get_cache
+                    cache = get_cache()
+                    
+                    # Build management context for cache lookups
+                    host = env_vars.get('MANAGEMENT_HOST', '')
+                    port = env_vars.get('PORT', '443')
+                    management_context = f"{host}:{port}"
+                    
+                    # Try to load from intelligent cache first
+                    gateways_cache_key = f"{management_context}:gateways_and_servers"
+                    layers_cache_key = f"{management_context}:access_layers"
+                    packages_cache_key = f"{management_context}:policy_packages"
+                    
+                    cached_gateways = cache.get(gateways_cache_key)
+                    cached_layers = cache.get(layers_cache_key)
+                    cached_packages = cache.get(packages_cache_key)
+                    
+                    if cached_gateways:
+                        print(f"[MCP_DEBUG] [{_ts()}] ✓ Using cached gateways/servers ({len(cached_gateways)} items)")
+                        discovered_resources['show_gateways_and_servers'] = [
+                            {'name': gw.get('name'), 'uid': gw.get('uid'), 'type': 'gateway'}
+                            for gw in cached_gateways if gw.get('type') in ['simple-gateway', 'simple-cluster']
+                        ]
+                    
+                    if cached_layers:
+                        print(f"[MCP_DEBUG] [{_ts()}] ✓ Using cached access layers ({len(cached_layers)} items)")
+                        discovered_resources['show_access_layers'] = [
+                            {'name': layer.get('name'), 'uid': layer.get('uid')}
+                            for layer in cached_layers
+                        ]
+                    
+                    if cached_packages:
+                        print(f"[MCP_DEBUG] [{_ts()}] ✓ Using cached policy packages ({len(cached_packages)} items)")
+                        discovered_resources['show_packages'] = [
+                            {'name': pkg.get('name'), 'uid': pkg.get('uid')}
+                            for pkg in cached_packages
+                        ]
+                    
                     # Identify discovery tools (tools that list/show available resources)
                     # Normalize both hyphens and underscores for matching
                     # NOTE: show_objects is excluded here - it's called separately with proper filters below
@@ -753,8 +793,23 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                     
                     print(f"[MCP_DEBUG] [{_ts()}] Found {len(discovery_tools)} discovery tools: {[t.name for t in discovery_tools]}")
                     
-                    # Call ALL discovery tools (no limit) to ensure we find policy packages, gateways, etc.
+                    # Call discovery tools ONLY if not cached
                     for tool in discovery_tools:
+                        # Skip if already in cache
+                        tool_lower = tool.name.lower().replace('-', '_')
+                        if 'gateway' in tool_lower and cached_gateways:
+                            print(f"[MCP_DEBUG] [{_ts()}] Discovery: Skipping {tool.name} (using cache)")
+                            continue
+                        if 'access' in tool_lower and 'layer' in tool_lower and cached_layers:
+                            print(f"[MCP_DEBUG] [{_ts()}] Discovery: Skipping {tool.name} (using cache)")
+                            continue
+                        if 'package' in tool_lower and cached_packages:
+                            print(f"[MCP_DEBUG] [{_ts()}] Discovery: Skipping {tool.name} (using cache)")
+                            continue
+                        if tool.name == 'init':
+                            # init is lightweight, always run it
+                            pass
+                        
                         try:
                             print(f"[MCP_DEBUG] [{_ts()}] Discovery: Calling {tool.name}")
                             tool_result = await call_tool_with_retry(session, tool.name, arguments={})
@@ -787,33 +842,36 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                         except Exception as e:
                             print(f"[MCP_DEBUG] [{_ts()}] Discovery tool {tool.name} failed: {e}")
                     
-                    # EXPLICIT POLICY PACKAGE DISCOVERY
+                    # EXPLICIT POLICY PACKAGE DISCOVERY (skip if cached)
                     # Call show_objects with type='package' to get policy packages
                     show_objects_tool = next((t for t in tools_result.tools if t.name == 'show_objects'), None)
                     if show_objects_tool:
-                        try:
-                            print(f"[MCP_DEBUG] [{_ts()}] Discovery: Calling show_objects with type='package' for policy packages")
-                            tool_result = await call_tool_with_retry(session, 'show_objects', arguments={'type': 'package'})
-                            content_serializable = convert_to_dict(tool_result.content)
-                            
-                            # Extract policy packages FIRST (needs uid/name structure intact)
-                            resources = extract_resource_identifiers('show_packages', content_serializable)
-                            
-                            # Extract UUID mappings BEFORE cleaning
-                            uuid_mappings = extract_uuid_mappings(content_serializable)
-                            
-                            # Clean UUIDs AFTER extraction
-                            content_serializable = clean_uuids_from_data(content_serializable)
-                            
-                            # Resolve UUID references using extracted mappings
-                            if uuid_mappings:
-                                content_serializable = resolve_uuid_references(content_serializable, uuid_mappings)
-                            
-                            if resources:
-                                discovered_resources['show_packages'] = resources
-                                print(f"[MCP_DEBUG] [{_ts()}] ✓ Discovered {len(resources)} policy packages from show_objects(type='package')")
-                        except Exception as e:
-                            print(f"[MCP_DEBUG] [{_ts()}] show_objects(type='package') failed: {e}")
+                        if not cached_packages:
+                            try:
+                                print(f"[MCP_DEBUG] [{_ts()}] Discovery: Calling show_objects with type='package' for policy packages")
+                                tool_result = await call_tool_with_retry(session, 'show_objects', arguments={'type': 'package'})
+                                content_serializable = convert_to_dict(tool_result.content)
+                                
+                                # Extract policy packages FIRST (needs uid/name structure intact)
+                                resources = extract_resource_identifiers('show_packages', content_serializable)
+                                
+                                # Extract UUID mappings BEFORE cleaning
+                                uuid_mappings = extract_uuid_mappings(content_serializable)
+                                
+                                # Clean UUIDs AFTER extraction
+                                content_serializable = clean_uuids_from_data(content_serializable)
+                                
+                                # Resolve UUID references using extracted mappings
+                                if uuid_mappings:
+                                    content_serializable = resolve_uuid_references(content_serializable, uuid_mappings)
+                                
+                                if resources:
+                                    discovered_resources['show_packages'] = resources
+                                    print(f"[MCP_DEBUG] [{_ts()}] ✓ Discovered {len(resources)} policy packages from show_objects(type='package')")
+                            except Exception as e:
+                                print(f"[MCP_DEBUG] [{_ts()}] show_objects(type='package') failed: {e}")
+                        else:
+                            print(f"[MCP_DEBUG] [{_ts()}] Discovery: Skipping show_objects(type='package') (using cache)")
                     
                     results["discovered_resources"] = discovered_resources
                     print(f"[MCP_DEBUG] [{_ts()}] === Discovery Complete: {len(discovered_resources)} resource types found ===")

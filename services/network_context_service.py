@@ -93,6 +93,7 @@ class NetworkContextService:
         """Discover networks from Check Point Management API
         
         Uses Direct Management API for reliable network object discovery.
+        Checks intelligent cache first to avoid redundant API calls.
         
         Returns:
             Dict with 'internal_networks', 'vpn_networks', 'all_objects'
@@ -115,6 +116,7 @@ class NetworkContextService:
         
         try:
             from services.management_api_client import ManagementAPIClient
+            from services.intelligent_cache import get_cache
             
             server_config = all_servers['quantum-management']
             server_env = server_config.get('env', {})
@@ -124,6 +126,7 @@ class NetworkContextService:
             port = server_env.get('PORT', '443')
             username = server_env.get('USERNAME', '')
             password = server_env.get('PASSWORD', '')
+            management_context = f"{host}:{port}"
             
             if not all([host, username, password]):
                 print(f"[NetworkContext] Missing Management API credentials")
@@ -133,7 +136,19 @@ class NetworkContextService:
                     'all_objects': all_objects
                 }
             
-            # Use Direct Management API
+            # Check intelligent cache first for VPN communities (discovery bootstrap pre-populates this)
+            cache = get_cache()
+            vpn_cache_key = f"{management_context}:vpn_communities"
+            cached_vpn = cache.get(vpn_cache_key)
+            
+            if cached_vpn:
+                print(f"[NetworkContext] ✓ Using cached VPN communities ({len(cached_vpn)} communities)")
+                for community in cached_vpn:
+                    vpn_name = community.get('name', 'VPN')
+                    vpn_networks.append(vpn_name)
+                    print(f"[NetworkContext] Found VPN community: {vpn_name}")
+            
+            # Use Direct Management API for hosts and networks (not cached by discovery bootstrap)
             print(f"[NetworkContext] Using Direct Management API for network discovery...")
             mgmt_client = ManagementAPIClient(host, port, username, password)
             
@@ -185,16 +200,17 @@ class NetworkContextService:
                             internal_networks.append(cidr)
                             print(f"[NetworkContext] Found internal network: {cidr} ({name})")
             
-            # Query 3: Get VPN communities using Management API client's VPN methods
-            print(f"[NetworkContext] Fetching VPN communities...")
-            vpn_star = mgmt_client.get_vpn_communities_star()
-            vpn_meshed = mgmt_client.get_vpn_communities_meshed()
-            vpn_remote = mgmt_client.get_vpn_communities_remote_access()
-            
-            for community in vpn_star + vpn_meshed + vpn_remote:
-                vpn_name = community.get('name', 'VPN')
-                vpn_networks.append(vpn_name)
-                print(f"[NetworkContext] Found VPN community: {vpn_name}")
+            # Query 3: Get VPN communities (only if not already cached)
+            if not cached_vpn:
+                print(f"[NetworkContext] Fetching VPN communities from API...")
+                vpn_star = mgmt_client.get_vpn_communities_star()
+                vpn_meshed = mgmt_client.get_vpn_communities_meshed()
+                vpn_remote = mgmt_client.get_vpn_communities_remote_access()
+                
+                for community in vpn_star + vpn_meshed + vpn_remote:
+                    vpn_name = community.get('name', 'VPN')
+                    vpn_networks.append(vpn_name)
+                    print(f"[NetworkContext] Found VPN community: {vpn_name}")
             
             # Logout
             mgmt_client.logout()
