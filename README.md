@@ -8,81 +8,97 @@
 
 ---
 
-## Why Choose a Specialized Security Platform?
+## Overview
 
-Generic AI assistants lack the infrastructure connectivity, automation capabilities, and security expertise required for enterprise operations. Check Point MCP Chat bridges this gap by providing:
+Check Point MCP Chat provides a conversational interface for Check Point infrastructure management through direct integration with Model Context Protocol (MCP) servers. The platform employs a dual LLM architecture to orchestrate queries across 11 specialized Check Point MCP servers, enabling administrators to perform fleet-wide analysis, policy reviews, and troubleshooting operations through natural language.
 
-### **Direct Infrastructure Integration**
-- **Real-time data access** from Check Point management servers and gateways
-- **Automated query orchestration** across 11 specialized MCP servers
-- **Fleet-wide operations** aggregating data from all managed devices
-- **No manual data export** or copy-paste workflows required
+### Key Features
 
-### **Security-Optimized AI Architecture**
-- **Dual LLM design**: Intent Analyzer for orchestration + Security Model for Check Point-specific analysis
-- **Anti-hallucination safeguards** with intelligent parameter extraction and validation
-- **Context-aware processing** handling API pagination, rate limiting, and resource discovery automatically
-- **Structured output formatting** matching Check Point GUI tables (NAT, Access, HTTPS rules)
+**Infrastructure Integration**
+- Direct API connectivity to Check Point management servers and gateways
+- Automated query orchestration across 11 MCP server types
+- Fleet-wide data aggregation with automatic pagination and deduplication
+- Real-time access to policies, logs, configurations, and diagnostics
 
-### **Enterprise-Grade Security**
-- **Military-grade encryption** (AES-256-CBC) for all credentials
-- **Local or cloud LLM deployment** options (Ollama for data sovereignty, OpenRouter for frontier models)
-- **Zero plaintext secrets** on disk with master password protection
-- **Complete audit trail** with persistent logging of all operations
+**AI Architecture**
+- Dual LLM design: Intent Analyzer for query planning, Security Model for Check Point-specific analysis
+- Intelligent parameter extraction (gateway names, time ranges, IOCs, layer names)
+- Anti-hallucination safeguards with validation and error handling
+- Structured output formatting matching Check Point GUI tables (NAT, Access, HTTPS rules)
 
-### **Operational Efficiency**
-Transform hours of manual work into seconds of natural language queries:
-- **Incident Response**: "Debug SSL decryption failures on cp-gw for the past 2 hours" → 45 seconds vs. 30-60 minutes
-- **Policy Review**: "Review all firewall policies and identify overly permissive rules" → 60 seconds vs. 2-4 hours
-- **Threat Hunting**: "Search all gateways for connections to IP 185.220.101.45" → Instant vs. 1-2 hours
-- **Performance Analysis**: "Analyze gateway metrics across all production gateways" → Parallel execution with visual comparisons
+**Security**
+- AES-256-CBC encryption for credential storage
+- Master password-based key derivation
+- Runtime credential decryption to environment variables
+- Persistent audit logging
+- Local (Ollama) or cloud (OpenRouter) LLM deployment options
 
----
-
-## Core Capabilities
-
-### **Intelligent Query Orchestration**
-Two-stage LLM architecture analyzes admin intent, extracts parameters (gateway names, time ranges, IOCs), and automatically routes queries across Check Point infrastructure with intelligent tool prioritization.
-
-### **Fleet-Wide Analysis**
-Aggregate data from all managed gateways, analyze policies across the entire infrastructure, and identify anomalies at scale with automatic pagination and deduplication.
-
-### **Policy & Rule Intelligence**
-Universal output formatting with GUI-matching structure (8-column NAT tables, 7-column Access rules, HTTPS inspection with Site Categories). AI-powered analysis highlights security risks and compliance gaps.
-
-### **Advanced Threat Analysis**
-Native file upload with asynchronous Check Point Threat Emulation cloud sandbox integration, hash verification, and detailed XML report retrieval. Correlate IOCs across fleet-wide logs.
-
-### **Gateway Script Executor** *(Optional)*
-Execute safe diagnostic commands on gateways via Management API's run-script endpoint with multi-layer validation (whitelist, pattern blocking, special character filtering). 120+ approved commands for diagnostics without service disruption.
+**Operational Capabilities**
+- Policy and rule analysis with compliance gap identification
+- Multi-gateway threat hunting and IOC correlation
+- SSL/TLS inspection troubleshooting with certificate validation
+- Gateway performance diagnostics with parallel tool execution
+- File-based malware analysis via Threat Emulation cloud sandbox
 
 ---
 
-## Supported Check Point MCP Servers
+## Supported MCP Servers
 
-| Server Type | Description |
-|-------------|-------------|
-| **Management** | Policy/object management, network topology |
-| **Management Logs** | Connection and audit log analysis |
-| **Threat Prevention** | Threat policies, profiles, IOC feeds |
-| **HTTPS Inspection** | SSL/TLS decryption policies and exceptions |
-| **Gateway CLI** | Comprehensive gateway diagnostics (26+ tools) |
-| **Connection Analysis** | Connection issue debugging and troubleshooting |
-| **Threat Emulation** | Cloud-based malware analysis sandbox |
-| **Reputation Service** | URL, IP, and file reputation queries |
-| **GAIA** | Network interface configuration |
-| **Harmony SASE** | SASE regions, networks, applications |
-| **Spark Management** | Quantum Spark appliance management |
+| Server Type | Package | Capabilities |
+|-------------|---------|--------------|
+| **Management** | `@chkp/quantum-management-mcp` | Policy/object management, network topology |
+| **Management Logs** | `@chkp/management-logs-mcp` | Connection and audit log analysis |
+| **Threat Prevention** | `@chkp/threat-prevention-mcp` | Threat policies, profiles, IOC feeds |
+| **HTTPS Inspection** | `@chkp/https-inspection-mcp` | SSL/TLS decryption policies and exceptions |
+| **Gateway CLI** | `@chkp/quantum-gw-cli-mcp` | Gateway diagnostics (26+ tools) |
+| **Connection Analysis** | `@chkp/quantum-gw-connection-analysis-mcp` | Connection troubleshooting |
+| **Threat Emulation** | `@chkp/threat-emulation-mcp` | Cloud-based malware analysis |
+| **Reputation Service** | `@chkp/reputation-service-mcp` | URL, IP, and file reputation queries |
+| **GAIA** | `@chkp/quantum-gaia-mcp` | Network interface configuration |
+| **Harmony SASE** | `@chkp/harmony-sase-mcp` | SASE infrastructure management |
+| **Spark Management** | `@chkp/spark-management-mcp` | Quantum Spark appliance management |
 
-**Check Point MCP GitHub**: [https://github.com/CheckPointSW](https://github.com/CheckPointSW)
+**Check Point MCP Repository**: [https://github.com/CheckPointSW](https://github.com/CheckPointSW)
+
+---
+
+## Gateway Script Executor
+
+Optional feature for executing diagnostic commands on Check Point gateways via Management API's `run-script` endpoint.
+
+**Security Model**
+- Whitelist validation (120+ approved commands from Check Point R81/R82 CLI Reference)
+- Pattern-based blocking of destructive operations (cpstop, kill, rm, configuration changes)
+- Special character filtering (pipes, redirects, command substitution)
+- Non-interactive enforcement (snapshot commands only)
+- Persistent audit logging with timestamps
+
+**Approved Command Categories**
+- System diagnostics: `show version`, `fw ver`, `uptime`
+- Network status: `ifconfig`, `netstat -rn`, `ip route show`
+- Firewall inspection: `fw stat`, `fw ctl pstat`, `fwaccel stat`
+- Cluster HA: `cphaprob state`, `cphaprob -a if`
+- Performance monitoring: `top -n 1`, `cpstat os -f all`
+- VPN status: `vpn tu tlist`, `cpstat vpn`
+
+**Blocked Operations**
+- Service control: `cpstop`, `cpstart`, `api restart`
+- Process termination: `kill`, `pkill`, `killall`
+- File system modifications: `rm`, `mv`, `chmod`, `dd`
+- Configuration changes: `set`, `add`, `delete`, `commit`
+- Interactive shells: `vpn shell`, `cpview`, `cpconfig`
+
+**Prerequisites**
+- Management API user with "Gateways → Scripts (Write)" permission
+- Enable in Settings UI under "Gateway Script Executor (Advanced)"
 
 ---
 
 ## Installation
 
 ### Prerequisites
-- Python 3.8 or higher
-- Node.js 16 or higher
+- Python 3.8+
+- Node.js 16+
 - Git
 - LLM Provider: [Ollama](https://ollama.ai) (local) or [OpenRouter](https://openrouter.ai) API key (cloud)
 
@@ -90,7 +106,7 @@ Execute safe diagnostic commands on gateways via Management API's run-script end
 
 ### macOS
 
-#### 1. Install Homebrew (if not already installed)
+#### 1. Install Homebrew (if not installed)
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
@@ -236,74 +252,77 @@ Access at: **http://localhost:5000**
 
 ---
 
-## First-Time Configuration
+## Configuration
 
-### 1. Security Setup
-- Set a **master password** for credential encryption
-- Choose deployment mode: **Cloud** (S1C), **On-Premise**, or **Dual**
+### Initial Setup
+1. Set master password for credential encryption
+2. Configure LLM provider (Ollama or OpenRouter)
+3. Add MCP server credentials
 
-### 2. LLM Provider Configuration
+### LLM Provider Configuration
 
-#### Option A: Ollama (Local - Data Sovereignty)
+#### Ollama (Local Deployment)
 ```bash
-# Install Ollama from https://ollama.ai
+# Install from https://ollama.ai
 ollama serve
 
-# Pull recommended models
+# Pull models
 ollama pull llama3.1:70b    # Planner model
 ollama pull llama3.1:8b     # Security model
 ```
-Configure in app: Ollama Server → `http://localhost:11434`
+Configure Ollama server: `http://localhost:11434`
 
-#### Option B: OpenRouter (Cloud - Best Performance)
-1. Get API key from [openrouter.ai](https://openrouter.ai)
-2. Configure in app settings
+#### OpenRouter (Cloud Deployment)
+1. Obtain API key from [openrouter.ai](https://openrouter.ai)
+2. Configure in application settings
 3. Recommended models:
-   - **Planner**: `anthropic/claude-3.5-sonnet`
-   - **Security**: `meta-llama/llama-3.2-1b-instruct`
+   - Planner: `anthropic/claude-3.5-sonnet`
+   - Security: `meta-llama/llama-3.2-1b-instruct`
 
-**Performance Note**: Testing shows OpenRouter models significantly outperform local models for complex security analysis. Local models struggle with multi-step reasoning and rule correlation.
+**Note**: Testing indicates OpenRouter models provide superior performance for complex security analysis compared to local models.
 
-### 3. MCP Server Configuration
-1. Navigate to **Settings** (⚙️ icon)
-2. Expand desired MCP server
+### MCP Server Configuration
+1. Navigate to Settings (⚙️)
+2. Expand target MCP server
 3. Enter credentials:
    - **Cloud**: S1C URL, Client ID, Secret Key, Tenant ID
    - **On-Premise**: Management Host, API Key
-4. Click **Save Configuration** (auto-installs package)
-5. Click **Start Server**
+4. Save configuration (auto-installs npm package)
+5. Start server
 
 ---
 
-## Usage Examples
+## Usage
 
-### Basic Queries
+### Query Examples
+
+**Basic Operations**
 ```
 "Show all firewall policies"
 "Analyze recent security threats"
 "Check HTTPS inspection status on cp-gw"
-"List all VPN tunnels"
+"List VPN tunnels"
 ```
 
-### Advanced Operations
+**Advanced Operations**
 ```
 "Troubleshoot connectivity from 192.168.1.15 to 212.59.66.78 in last 24 hours"
 "Review NAT and Access policies on prod-gw and identify overly permissive rules"
-"Search all gateways for connections to malicious IP 185.220.101.45"
-"Debug SSL decryption failures with certificate and layer analysis"
-"Analyze gateway performance metrics across all production gateways"
+"Search all gateways for connections to IP 185.220.101.45"
+"Debug SSL decryption failures with certificate analysis"
+"Analyze gateway performance metrics across production infrastructure"
 ```
 
-### Malware Analysis
+**Malware Analysis**
 1. Upload file via UI
 2. Query: `"Analyze this file for malware"`
-3. System automatically: computes hash → submits to Threat Emulation → retrieves verdict → presents analysis
+3. System executes: hash computation → Threat Emulation submission → report retrieval
 
 ---
 
 ## Troubleshooting
 
-### Port Already in Use
+### Port Conflict
 ```bash
 # macOS/Linux
 lsof -i :5000
@@ -314,18 +333,18 @@ netstat -ano | findstr :5000
 streamlit run app.py --server.port 8501
 ```
 
-### Ollama Connection Failed
+### Ollama Connection Failure
 ```bash
-# Verify Ollama is running
+# Verify service status
 curl http://localhost:11434/api/version
 
-# Start Ollama
+# Start service
 ollama serve
 ```
 
-### Module Not Found
+### Python Module Errors
 ```bash
-# Ensure virtual environment is activated
+# Activate virtual environment
 source venv/bin/activate  # macOS/Linux
 venv\Scripts\activate     # Windows
 
@@ -333,12 +352,12 @@ venv\Scripts\activate     # Windows
 pip install streamlit cryptography pandas plotly psutil pyyaml requests gitpython
 ```
 
-### MCP Package Installation Fails
+### MCP Package Installation Failure
 ```bash
 # Update npm
 npm install -g npm@latest
 
-# Clear cache and retry
+# Clear cache
 npm cache clean --force
 ```
 
@@ -346,16 +365,16 @@ npm cache clean --force
 
 ## Architecture
 
-### Dual LLM Design
-1. **Planner Model** - Intent analysis, parameter extraction, technical execution planning
-2. **Security Model** - Check Point-specific analysis, threat correlation, actionable insights
+### Dual LLM System
+1. **Planner Model**: Intent analysis, parameter extraction, execution planning
+2. **Security Model**: Check Point domain analysis, threat correlation, policy interpretation
 
-### Security Features
-- AES-256-CBC encryption for all credentials
-- Master password derivation (never stored)
-- Runtime decryption into environment variables
+### Security Implementation
+- AES-256-CBC credential encryption
+- Master password key derivation (PBKDF2)
+- Runtime environment variable injection
+- Persistent audit logging with timestamps
 - Zero plaintext secrets on disk
-- Complete audit logging
 
 ---
 
@@ -365,8 +384,8 @@ MIT License - See LICENSE file for details
 
 ## Acknowledgments
 
-Built with Check Point MCP servers, Streamlit, and modern LLM infrastructure (Ollama/OpenRouter)
+Built with Check Point MCP servers, Streamlit, and LLM infrastructure (Ollama/OpenRouter)
 
 ---
 
-**Version 0.0.1** | Engineered for Check Point Security Administrators
+**Version 0.0.1** | Check Point Security Operations Platform
