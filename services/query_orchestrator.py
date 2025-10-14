@@ -4230,6 +4230,20 @@ Your response MUST follow this assessment report structure:
 • Format as structured assessment report with clear sections
 • Include security ratings and risk levels where appropriate
 
+**POLICY DISPLAY REQUIREMENTS:**
+• When discussing firewall rules, NAT rules, or HTTPS inspection policies, ALWAYS display the relevant policy table from the data
+• Extract and show the actual policy configuration that you're analyzing
+• Use markdown tables or code blocks to present policy rules clearly
+• Example: If discussing HTTPS inspection, show the HTTPS rulebase table with columns for rule number, source, destination, site-category, action
+• Example: If discussing firewall policy, show the access rulebase table with rule numbers, sources, destinations, services, actions
+• This makes the assessment concrete and allows admins to see what you're analyzing
+
+**API ERROR HANDLING:**
+• If you successfully retrieved policy data (firewall, HTTPS, NAT), DO NOT claim "limited visibility"
+• Only mention API errors if they genuinely prevented you from accessing critical data for the assessment
+• Focus on analyzing what data IS available rather than what's missing
+• If specific tools failed but you have the main policy data, proceed with the assessment
+
 """
         elif is_log_analysis:
             log_analysis_analysis_rules = """
