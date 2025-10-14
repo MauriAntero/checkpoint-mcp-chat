@@ -680,6 +680,9 @@ ALLOWED servers: All servers available"""
         """
         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Stage 1: Analyzing user intent...")
         
+        if self.progress_callback:
+            self.progress_callback("📊 Stage 1: Analyzing user intent...")
+        
         # Build full MCP capabilities description (same as Phase 2 for complete context)
         capabilities_desc = self._build_capabilities_description()
         
@@ -848,6 +851,9 @@ Intent Analysis:"""
             intent = self.analyze_user_intent(user_query, planner_model)
         
         print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Stage 2: Creating technical execution plan from intent...")
+        
+        if self.progress_callback:
+            self.progress_callback("🔧 Stage 2: Creating technical execution plan...")
         
         # Build capabilities description with API specifications
         capabilities_desc = self._build_capabilities_description()
@@ -1304,6 +1310,8 @@ Technical Execution Plan:"""
             # This populates the gateway directory before other servers need it
             if 'quantum-management' in required_servers and 'quantum-management' in all_servers:
                 print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Phase 1: Querying quantum-management first (gateway directory dependency)")
+                if self.progress_callback:
+                    self.progress_callback("🔍 Querying quantum-management (gateway discovery)...")
                 try:
                     mgmt_result = await self._query_mcp_server_async('quantum-management', data_to_fetch, user_parameter_selections, query_text)
                     all_results.append(mgmt_result)
@@ -1327,6 +1335,10 @@ Technical Execution Plan:"""
             
             # Phase 2: Execute remaining servers in parallel
             if remaining_servers:
+                if self.progress_callback:
+                    server_names = ', '.join(remaining_servers)
+                    self.progress_callback(f"🔌 Querying {len(remaining_servers)} MCP server(s): {server_names}...")
+                
                 tasks = []
                 task_start_index = len(all_results)
                 
@@ -3411,10 +3423,14 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
                 # First iteration: Full data (logs + rulebase)
                 context_data = current_data
                 iteration_context = "ITERATION 1 - INITIAL ANALYSIS (Logs + Firewall Rulebase)"
+                if self.progress_callback:
+                    self.progress_callback(f"🔍 Iteration 1/{max_iterations}: Initial troubleshooting analysis...")
             else:
                 # Subsequent iterations: Summary + new data only
                 context_data = self._build_summarized_context(iteration_history, current_data)
                 iteration_context = f"ITERATION {iteration} - DEEP DIVE ANALYSIS"
+                if self.progress_callback:
+                    self.progress_callback(f"🔍 Iteration {iteration}/{max_iterations}: Deep-dive analysis...")
             
             # Build iterative analysis prompt
             analysis_prompt = self._build_iterative_prompt(
@@ -3462,6 +3478,10 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
                     
                     print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] 📊 LLM requests: {data_needed}")
                     print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] 🔧 Commands: {commands}")
+                    
+                    if self.progress_callback:
+                        cmd_str = ', '.join(commands[:3]) + ('...' if len(commands) > 3 else '') if commands else data_needed
+                        self.progress_callback(f"🔧 Collecting diagnostics: {cmd_str}")
                     
                     # Collect requested data
                     new_data = self._collect_additional_data(data_needed, commands, plan)
@@ -3733,9 +3753,13 @@ RESPOND WITH VALID JSON ONLY (no markdown, no explanations outside JSON):
         data_collected = self._apply_smart_log_sampling(data_collected, timeframe_hours=timeframe_hours, query_type=query_type)
         
         # Apply intelligent log field filtering to reduce token usage while preserving valuable security information
+        if self.progress_callback:
+            self.progress_callback("🔄 Processing data (filtering unnecessary fields)...")
         data_collected = self._filter_log_fields(data_collected)
         
         # Remove duplicate data across MCP servers
+        if self.progress_callback:
+            self.progress_callback("🔄 Removing duplicate data across servers...")
         data_collected = self._remove_duplicate_data(data_collected)
         
         # DEBUG LOGGING: Analyze for duplicate data (should be 0 after deduplication)
