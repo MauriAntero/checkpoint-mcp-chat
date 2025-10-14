@@ -976,9 +976,28 @@ VPN TRAFFIC DISTINCTION (CRITICAL):
 - For connectivity troubleshooting: Consider BOTH logs AND gateway diagnostic tools (run_script) when available
 
 CONNECTIVITY TROUBLESHOOTING GUIDANCE:
-- For connection/connectivity issues: Combine management-logs (traffic analysis) with gateway diagnostic tools
-- Gateway diagnostics can reveal routing, interface, or tunnel issues not visible in logs alone
-- Example tools: Check routing tables, interface status, VPN tunnel state, connection tracking
+
+**BASIC TROUBLESHOOTING** (logs + policy only):
+- management-logs: show_logs (for traffic/connection logs)
+- quantum-management: show_access_rulebase, show_nat_rulebase (for policy analysis)
+
+**DEEP DEBUGGING** (when user requests "debug deeply", "troubleshoot", "investigate", "diagnose"):
+ALWAYS include quantum-gw-cli with gateway diagnostic tools:
+
+FROM quantum-gw-cli, request:
+  - Routing diagnostics: show_route, netstat_route, ip_route_show
+  - Interface status: show_interfaces (for all interfaces), show_interface (for specific interface)
+  - Firewall status: fw_stat, cpstat_fw (firewall statistics and connection counts)
+  - Performance metrics: cpstat_os, cpview (system resources, memory, CPU)
+  - HA/Cluster state: cphaprob_stat, cphaprob_if (if clustered environment)
+  - Connection tracking: fw_tab_connections, fw_ctl_pstat (connection table analysis)
+  - System info: dmidecode, cpinfo_all, top_output, free_memory (hardware/system details)
+
+Gateway diagnostics reveal routing issues, interface problems, anti-spoofing, NAT exhaustion, 
+and other issues NOT visible in logs alone. For deep debugging, ALWAYS combine:
+  1. management-logs (traffic logs) → What happened
+  2. quantum-management (policy/rules) → Why it was blocked
+  3. quantum-gw-cli (gateway diagnostics) → Network/system-level root cause
 
 Return a JSON execution plan:
 {{
