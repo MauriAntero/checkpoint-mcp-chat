@@ -4255,8 +4255,12 @@ AVOID: Speculating without evidence, jumping to conclusions before checking basi
 
 """
         
-        # Build anti-hallucination rules - CLEAN VERSION for troubleshooting (no security language)
-        if is_troubleshooting:
+        # Build anti-hallucination rules based on intent type
+        if analysis_type == "policy_review":
+            # For policy_review: Just display data without hallucination concerns
+            anti_hallucination_rules = ""
+        elif is_troubleshooting:
+            # CLEAN VERSION for troubleshooting (no security language)
             anti_hallucination_rules = f"""CRITICAL INSTRUCTIONS - EVIDENCE-ONLY REPORTING:
 1. **Report Only What Exists in Data**: Only report findings that are explicitly present in the provided data above
    - Never invent IPs, timestamps, rule numbers, or any other details
@@ -4318,8 +4322,38 @@ NOTE: The rulebase data below has been pre-formatted as markdown tables for easy
   → NAT rules don't control Drop/Accept actions
 """
         
-        # Build structured response template
-        structured_response_template = """
+        # Build structured response template based on intent/analysis type
+        # For policy_review: Simple display without analysis
+        # For troubleshooting/investigation: Detailed analysis with findings/recommendations
+        if analysis_type == "policy_review":
+            structured_response_template = """
+════════════════════════════════════════════════════════════════════════════════
+                         REQUIRED RESPONSE FORMAT
+════════════════════════════════════════════════════════════════════════════════
+
+This is a DISPLAY query - the user wants to SEE the data, NOT analyze it.
+
+YOUR TASK: Display the requested information clearly WITHOUT interpretation or analysis.
+
+RESPONSE FORMAT:
+1. Provide a brief 1-sentence introduction (e.g., "Here are the firewall rules from your security policy")
+2. Display the data using the pre-formatted markdown tables from the MCP server results
+3. DO NOT add analysis, findings, recommendations, or executive summaries
+4. DO NOT interpret what the rules mean or suggest changes
+5. Just show the requested data in a clean, readable format
+
+EXAMPLE - For "show me the firewall rules":
+```
+Here are the firewall rules from policy package 'Network':
+
+[Display the firewall rules table exactly as provided in the data above]
+```
+
+CRITICAL: This is a DISPLAY-ONLY request. Do not analyze or interpret the data.
+"""
+        else:
+            # Detailed analysis template for troubleshooting/investigation/assessment
+            structured_response_template = """
 ════════════════════════════════════════════════════════════════════════════════
                          REQUIRED RESPONSE FORMAT
 ════════════════════════════════════════════════════════════════════════════════
@@ -4358,12 +4392,19 @@ Provide actionable steps with specific details:
 • Commands to run (if applicable)
 """
         
-        analysis_prompt = f"""{task_type_header}{contextual_preamble}
-{data_source_context}{command_legend_text}{troubleshooting_analysis_rules}
-{anti_hallucination_rules}
+        # Build final requirements based on intent type
+        if analysis_type == "policy_review":
+            critical_requirements = """
+CRITICAL REQUIREMENTS:
+✓ Display the data clearly using the pre-formatted tables from the MCP results
+✓ DO NOT analyze, interpret, or provide recommendations
+✓ DO NOT add executive summaries or findings sections
+✓ Just show what the user asked for in a clean, readable format
+✓ Display object names WITHOUT UUIDs (use human-readable names only)
 
-{structured_response_template}
-
+Now display the data above following the REQUIRED RESPONSE FORMAT."""
+        else:
+            critical_requirements = f"""
 CRITICAL REQUIREMENTS:
 ✓ You MUST reference specific rule numbers, actions, and services in your findings
 ✓ You MUST quote actual evidence from the logs/rulebase data
@@ -4375,6 +4416,14 @@ INVESTIGATION CAPABILITIES:
 {'Discovered resources in the data above are available for further investigation if needed.' if has_discovered_resources else 'You can request investigation using available MCP servers and tools if additional data is needed.'}
 
 Now analyze the data above and provide your structured response following the REQUIRED RESPONSE FORMAT."""
+        
+        analysis_prompt = f"""{task_type_header}{contextual_preamble}
+{data_source_context}{command_legend_text}{troubleshooting_analysis_rules}
+{anti_hallucination_rules}
+
+{structured_response_template}
+
+{critical_requirements}"""
         
         # Determine which client to use based on model prefix
         if isinstance(final_model, str) and (":" in final_model):
