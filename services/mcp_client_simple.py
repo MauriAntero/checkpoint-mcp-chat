@@ -103,6 +103,7 @@ def _get_correct_actions_from_api(layer_name: str, package_name: str, credential
         action_map = {}
         
         # Extract action values from each rule
+        # CRITICAL: Also create mapping with truncated UIDs (first 8 chars) to match sanitized data
         if 'rulebase' in data:
             for rule in data['rulebase']:
                 if isinstance(rule, dict) and 'uid' in rule and 'action' in rule:
@@ -110,12 +111,23 @@ def _get_correct_actions_from_api(layer_name: str, package_name: str, credential
                     action = rule['action']
                     
                     # Extract action name
+                    action_name = None
                     if isinstance(action, dict) and 'name' in action:
-                        action_map[rule_uid] = action['name']
+                        action_name = action['name']
                     elif isinstance(action, str):
-                        action_map[rule_uid] = action
+                        action_name = action
+                    
+                    if action_name:
+                        # Store both full UID and truncated UID (first 8 chars) for matching
+                        action_map[rule_uid] = action_name
+                        
+                        # Truncated UID format used by sanitizer: first 8 chars
+                        if len(rule_uid) >= 8:
+                            truncated_uid = rule_uid[:8]
+                            action_map[truncated_uid] = action_name
+                            action_map[f"<uuid-{truncated_uid}>"] = action_name  # Exact sanitizer format
         
-        print(f"[ACTION_FIX] [{_ts()}] ✓ Retrieved {len(action_map)} correct action values from API")
+        print(f"[ACTION_FIX] [{_ts()}] ✓ Retrieved {len(action_map)} correct action values from API (with UID variants)")
         
         # Step 3: Logout
         requests.post(f"{base_url}/logout", headers=headers, verify=False, timeout=10)
@@ -1502,9 +1514,16 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                     print(f"[MCP_DEBUG] [{_ts()}] Multiple HTTPS layers found ({len(https_layers)}) - need user selection for {tool.name}.name")
                                     skip_tool = True  # Skip this tool until user selects
                             else:
-                                # Fallback: try "Standard Layer" as default if no layers discovered yet
-                                args['name'] = 'Standard Layer'
-                                print(f"[MCP_DEBUG] [{_ts()}] No HTTPS layers discovered, trying default 'Standard Layer' for {tool.name}")
+                                # Fallback: Use package name as HTTPS layer name (CheckPoint naming convention)
+                                # If package is "Standard", HTTPS layer is likely "Standard" too
+                                package_name_for_https = next((p.get('name') for p in all_discovered if p.get('type') == 'policy-package'), None)
+                                if package_name_for_https:
+                                    args['name'] = package_name_for_https
+                                    print(f"[MCP_DEBUG] [{_ts()}] No HTTPS layers discovered, using package name '{package_name_for_https}' as layer name for {tool.name}")
+                                else:
+                                    # Last resort: skip this tool as we can't determine the layer
+                                    print(f"[MCP_DEBUG] [{_ts()}] ⚠️ No HTTPS layers or packages discovered, skipping {tool.name}")
+                                    skip_tool = True
                         
                         # Set details-level to "full" for complete rule information (names, objects, etc.)
                         if 'details-level' not in args:
@@ -1527,6 +1546,13 @@ async def query_mcp_server_async(package_name: str, env_vars: Dict[str, str],
                                 print(f"[MCP_DEBUG] [{_ts()}] Set show_raw=true for {tool.name} (bypass server formatting, get raw JSON)")
                             else:
                                 print(f"[MCP_DEBUG] [{_ts()}] Skipping show_raw for {tool.name} (threat-prevention MCP server incompatibility)")
+                                
+                                # ADDITIONAL FIX: threat-prevention MCP server has buggy tools that ALWAYS add 'body' parameter
+                                # Skip these tools entirely and rely on show_threat_layers + other working tools
+                                buggy_tp_tools = ['show_threat_rulebase', 'show_threat_rule_exception_rulebase']
+                                if tool.name in buggy_tp_tools:
+                                    print(f"[MCP_DEBUG] [{_ts()}] ⚠️ Skipping {tool.name} - known threat-prevention MCP server bug (invalid 'body' parameter)")
+                                    skip_tool = True
                     
                     # FIX: Special handling for show_access_rule, show_access_section, show_nat_section
                     # These tools have specific parameter requirements that differ from rulebases
