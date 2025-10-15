@@ -101,7 +101,7 @@ Optional feature for executing diagnostic commands on Check Point gateways via M
 - Node.js 16+
 - Git
 - LLM Provider: [Ollama](https://ollama.ai) (local) or [OpenRouter](https://openrouter.ai) API key (cloud)
-- **Windows only**: Microsoft C++ Build Tools may be required for cryptography package (see Windows installation notes)
+- **Windows only**: CMake and Microsoft C++ Build Tools required (auto-installed via Node.js setup - see Windows installation notes)
 
 ---
 
@@ -179,10 +179,18 @@ Access at: **http://localhost:5000**
   - Required for MCP npm packages and Python cryptography package
   - Saves troubleshooting later
 - Complete the installation and allow the post-install script to run (opens PowerShell window)
+- **After Node.js installation completes**, install CMake (required for PyArrow dependency):
+  - If Chocolatey was installed in previous step, run in **PowerShell as Administrator**:
+    ```powershell
+    choco install cmake -y
+    ```
+  - **OR** download CMake installer from [cmake.org/download](https://cmake.org/download/) and install manually
+- **Restart your terminal/PowerShell** after CMake installation
 - Verify installation:
   ```cmd
   node --version
   npm --version
+  cmake --version
   ```
 
 #### 3. Install Git
@@ -227,6 +235,11 @@ python -m pip install -e .
 If you see errors about `cryptography` package or "Microsoft Visual C++ 14.0 is required":
 - Download and install [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
 - During installation, select "Desktop development with C++"
+- Restart Command Prompt/PowerShell and retry `pip install -e .`
+
+If you see errors about `PyArrow` or "CMake must be installed":
+- Install CMake: `choco install cmake -y` (PowerShell as Administrator)
+- OR download from [cmake.org/download](https://cmake.org/download/)
 - Restart Command Prompt/PowerShell and retry `pip install -e .`
 
 #### 7. Verify Streamlit configuration
