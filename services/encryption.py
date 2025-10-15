@@ -76,7 +76,7 @@ class EncryptionService:
                 verification_data = {'verify': 'checkpoint_mcp_chat'}
                 encrypted_verify = self.encrypt_data(verification_data)
                 verification_file.parent.mkdir(parents=True, exist_ok=True)
-                with open(verification_file, 'w') as f:
+                with open(verification_file, 'w', encoding='utf-8') as f:
                     f.write(encrypted_verify)
             else:
                 # Login attempt but no verification file - this should not happen
@@ -85,7 +85,7 @@ class EncryptionService:
             
             # Save encrypted key marker
             self.key_file_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.key_file_path, 'w') as f:
+            with open(self.key_file_path, 'w', encoding='utf-8') as f:
                 f.write("encryption_initialized")
             
             return True
@@ -174,7 +174,7 @@ class EncryptionService:
             encrypted_string = self.encrypt_data(data)
             
             file_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(file_path, 'w') as f:
+            with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(encrypted_string)
             
             return True

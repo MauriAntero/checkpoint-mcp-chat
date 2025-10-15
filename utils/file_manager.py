@@ -33,7 +33,7 @@ class FileManager:
             config_data['updated_at'] = time.time()
             config_data['version'] = "1.0"
             
-            with open(self.config_file, 'w') as f:
+            with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(config_data, f, indent=2)
             
             self.log_activity(f"Configuration saved")
@@ -333,7 +333,7 @@ class FileManager:
             if 'servers' in import_data:
                 for server_name, server_config in import_data['servers'].items():
                     server_config_file = self.data_dir / f"{server_name}_config.json"
-                    with open(server_config_file, 'w') as f:
+                    with open(server_config_file, 'w', encoding='utf-8') as f:
                         json.dump(server_config, f, indent=2)
             
             # Import credentials if available and encryption is initialized
@@ -357,7 +357,7 @@ class FileManager:
             file_path = Path(file_path)
             file_path.parent.mkdir(parents=True, exist_ok=True)
             
-            with open(file_path, 'w') as f:
+            with open(file_path, 'w', encoding='utf-8') as f:
                 yaml.dump(data, f, default_flow_style=False, indent=2)
             
             self.log_activity(f"YAML config saved: {file_path}")
@@ -392,7 +392,7 @@ class FileManager:
             
             file_path.parent.mkdir(parents=True, exist_ok=True)
             
-            with open(file_path, 'w') as f:
+            with open(file_path, 'w', encoding='utf-8') as f:
                 f.write("# CheckPoint MCP Manager Environment Variables\n")
                 f.write(f"# Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
                 
