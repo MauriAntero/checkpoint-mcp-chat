@@ -38,7 +38,7 @@ class GatewayDirectory:
     def _save_cache(self):
         """Save gateway cache to disk"""
         try:
-            with open(self.cache_file, 'w') as f:
+            with open(self.cache_file, 'w', encoding='utf-8') as f:
                 json.dump(self.gateways, f, indent=2)
         except Exception as e:
             print(f"[GatewayDirectory] Error saving cache: {e}")

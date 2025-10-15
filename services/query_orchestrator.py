@@ -4152,7 +4152,7 @@ RESPOND WITH VALID JSON ONLY (no markdown, no explanations outside JSON):
         try:
             import os
             os.makedirs("./logs", exist_ok=True)
-            with open(debug_file_path, 'w') as f:
+            with open(debug_file_path, 'w', encoding='utf-8') as f:
                 json.dump({
                     "timestamp": datetime.now().isoformat(),
                     "filtered_data": data_collected,
@@ -5026,7 +5026,7 @@ Now analyze the data above and provide your structured response following the RE
         # DEBUG LOGGING: Write full LLM context to file for analysis
         debug_context_file = "./logs/llm_full_context.txt"
         try:
-            with open(debug_context_file, 'w') as f:
+            with open(debug_context_file, 'w', encoding='utf-8') as f:
                 f.write("="*80 + "\n")
                 f.write("FULL CONTEXT SENT TO LLM\n")
                 f.write(f"Timestamp: {datetime.now().isoformat()}\n")

@@ -443,7 +443,7 @@ class NetworkContextService:
     def _save_cache(self, context: Dict):
         """Save network context to cache file"""
         try:
-            with open(self.cache_file, 'w') as f:
+            with open(self.cache_file, 'w', encoding='utf-8') as f:
                 json.dump(context, f, indent=2)
             print(f"[NetworkContext] Saved context to cache: {self.cache_file}")
         except Exception as e:

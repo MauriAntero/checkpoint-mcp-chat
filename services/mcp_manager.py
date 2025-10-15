@@ -102,7 +102,7 @@ class MCPManager:
                 cleaned_config[server_name] = cleaned_server
             
             print(f"[MCPManager] Saving metadata only (env field stripped)")
-            with open(self.servers_config_file, 'w') as f:
+            with open(self.servers_config_file, 'w', encoding='utf-8') as f:
                 json.dump(cleaned_config, f, indent=2)
             print(f"[MCPManager] File written successfully")
             # Verify the file was written
