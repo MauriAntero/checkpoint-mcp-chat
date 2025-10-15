@@ -63,7 +63,7 @@ class DiscoveryBootstrapService:
                 results['datasets_fetched'].append('gateways_and_servers')
                 results['cache_entries_written'] += 1
                 print(f"[Discovery] [{_ts()}] ✓ Cached {len(gateways_data)} gateways/servers")
-            time.sleep(0.5)  # Rate limit protection
+            time.sleep(1.0)  # Rate limit protection (increased for slower machines)
         except Exception as e:
             print(f"[Discovery] [{_ts()}] ⚠️ Failed to fetch gateways: {e}")
             results['datasets_failed'].append('gateways_and_servers')
@@ -77,7 +77,7 @@ class DiscoveryBootstrapService:
                 results['datasets_fetched'].append('policy_packages')
                 results['cache_entries_written'] += 1
                 print(f"[Discovery] [{_ts()}] ✓ Cached {len(packages)} policy packages")
-            time.sleep(0.5)
+            time.sleep(1.0)  # Rate limit protection (increased for slower machines)
         except Exception as e:
             print(f"[Discovery] [{_ts()}] ⚠️ Failed to fetch packages: {e}")
             results['datasets_failed'].append('policy_packages')
@@ -91,7 +91,7 @@ class DiscoveryBootstrapService:
                 results['datasets_fetched'].append('access_layers')
                 results['cache_entries_written'] += 1
                 print(f"[Discovery] [{_ts()}] ✓ Cached {len(layers)} access layers")
-            time.sleep(0.5)
+            time.sleep(1.0)  # Rate limit protection (increased for slower machines)
         except Exception as e:
             print(f"[Discovery] [{_ts()}] ⚠️ Failed to fetch access layers: {e}")
             results['datasets_failed'].append('access_layers')
@@ -107,7 +107,7 @@ class DiscoveryBootstrapService:
                 print(f"[Discovery] [{_ts()}] ✓ Cached {len(https_layers)} HTTPS layers")
             else:
                 print(f"[Discovery] [{_ts()}] ℹ️ No HTTPS inspection layers found (may not be configured)")
-            time.sleep(0.5)
+            time.sleep(1.0)  # Rate limit protection (increased for slower machines)
         except Exception as e:
             print(f"[Discovery] [{_ts()}] ℹ️ HTTPS layers not available: {e}")
             results['datasets_failed'].append('https_inspection_layers')

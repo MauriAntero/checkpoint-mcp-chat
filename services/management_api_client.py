@@ -26,7 +26,7 @@ class ManagementAPIClient:
         self.cache = get_cache()  # Use global intelligent cache
         self.management_context = f"{host}:{port}"  # Unique identifier for this management server
         
-    def login(self, max_retries: int = 5) -> bool:
+    def login(self, max_retries: int = 8) -> bool:
         """Login to Management API and obtain session ID with retry logic for rate limiting"""
         import time
         
@@ -45,7 +45,7 @@ class ManagementAPIClient:
                 else:
                     print(f"[MGMT_API] [{_ts()}] Logging in to {self.host}...")
                 
-                resp = requests.post(url, json=data, verify=False, timeout=30)
+                resp = requests.post(url, json=data, verify=False, timeout=60)
                 
                 # Check for rate limiting
                 if resp.status_code == 403:
@@ -53,7 +53,7 @@ class ManagementAPIClient:
                         error_data = resp.json()
                         if error_data.get('code') == 'err_too_many_requests':
                             # Rate limited - retry with longer exponential backoff
-                            wait_time = (2 ** attempt) * 3  # 3s, 6s, 12s, 24s, 48s
+                            wait_time = (2 ** attempt) * 5  # 5s, 10s, 20s, 40s, 80s, 160s, 320s, 640s
                             print(f"[MGMT_API] [{_ts()}] Rate limited - waiting {wait_time}s before retry...")
                             time.sleep(wait_time)
                             continue
@@ -75,7 +75,7 @@ class ManagementAPIClient:
             except Exception as e:
                 print(f"[MGMT_API] Login error: {e}")
                 if attempt < max_retries - 1:
-                    wait_time = (2 ** attempt) * 3
+                    wait_time = (2 ** attempt) * 5
                     print(f"[MGMT_API] [{_ts()}] Retrying in {wait_time}s...")
                     time.sleep(wait_time)
                 else:
@@ -107,7 +107,7 @@ class ManagementAPIClient:
             url = f"{self.base_url}/{endpoint}"
             headers = {"X-chkp-sid": self.session_id, "Content-Type": "application/json"}
             
-            resp = requests.post(url, json=data, headers=headers, verify=False, timeout=30)
+            resp = requests.post(url, json=data, headers=headers, verify=False, timeout=60)
             
             if resp.status_code != 200:
                 print(f"[MGMT_API] API error: {resp.status_code} - {resp.text}")
