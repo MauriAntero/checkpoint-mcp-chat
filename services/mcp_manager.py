@@ -483,11 +483,15 @@ class MCPManager:
     def install_mcp_package(self, package_name: str) -> Tuple[bool, str]:
         """Install an MCP package using npm"""
         try:
+            import platform
+            is_windows = platform.system() == "Windows"
+            
             result = subprocess.run(
                 ["npm", "install", "-g", package_name],
                 capture_output=True,
                 text=True,
-                timeout=300  # 5 minutes timeout
+                timeout=300,  # 5 minutes timeout
+                shell=is_windows  # Required on Windows to find npm in PATH
             )
             
             if result.returncode == 0:
@@ -505,11 +509,15 @@ class MCPManager:
     def update_mcp_package(self, package_name: str) -> Tuple[bool, str]:
         """Update an MCP package to latest version"""
         try:
+            import platform
+            is_windows = platform.system() == "Windows"
+            
             result = subprocess.run(
                 ["npm", "update", "-g", package_name],
                 capture_output=True,
                 text=True,
-                timeout=300  # 5 minutes timeout
+                timeout=300,  # 5 minutes timeout
+                shell=is_windows  # Required on Windows to find npm in PATH
             )
             
             if result.returncode == 0:
@@ -525,11 +533,15 @@ class MCPManager:
     def get_installed_version(self, package_name: str) -> Optional[str]:
         """Get currently installed version of a package"""
         try:
+            import platform
+            is_windows = platform.system() == "Windows"
+            
             result = subprocess.run(
                 ['npm', 'list', '-g', package_name, '--depth=0', '--json'],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
+                shell=is_windows  # Required on Windows to find npm in PATH
             )
             
             if result.returncode == 0:
@@ -592,11 +604,15 @@ class MCPManager:
     def uninstall_mcp_package(self, package_name: str) -> Tuple[bool, str]:
         """Uninstall an MCP package globally using npm"""
         try:
+            import platform
+            is_windows = platform.system() == "Windows"
+            
             result = subprocess.run(
                 ['npm', 'uninstall', '-g', package_name],
                 capture_output=True,
                 text=True,
-                timeout=120
+                timeout=120,
+                shell=is_windows  # Required on Windows to find npm in PATH
             )
             
             if result.returncode == 0:
