@@ -1563,13 +1563,18 @@ Technical Execution Plan:"""
             try:
                 # Try to get the running event loop (Streamlit/async contexts)
                 loop = asyncio.get_running_loop()
-                # If we have a running loop, we need to use nest_asyncio or run in executor
+                # If we have a running loop, run async code in a separate thread to avoid conflicts
                 import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, run_queries_with_dependencies())
+                
+                def run_in_new_loop():
+                    """Run async code in a new event loop (separate thread)"""
+                    return asyncio.run(run_queries_with_dependencies())
+                
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(run_in_new_loop)
                     parallel_results, server_task_map = future.result()
             except RuntimeError:
-                # No running event loop, safe to use asyncio.run()
+                # No running event loop, safe to use asyncio.run() directly
                 parallel_results, server_task_map = asyncio.run(run_queries_with_dependencies())
             
             # Process results from parallel execution
