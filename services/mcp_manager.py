@@ -285,6 +285,9 @@ class MCPManager:
             port = self._find_available_port()
             
             # Start the MCP server process with stdin/stdout/stderr pipes for JSON-RPC communication
+            import platform
+            is_windows = platform.system() == "Windows"
+            
             cmd = ["npx", package_name]
             
             process = subprocess.Popen(
@@ -294,7 +297,8 @@ class MCPManager:
                 stdout=subprocess.PIPE,  # Enable stdout for receiving JSON-RPC responses
                 stderr=subprocess.PIPE,  # Enable stderr for logs
                 text=True,
-                bufsize=1  # Line buffered
+                bufsize=1,  # Line buffered
+                shell=is_windows  # Required on Windows to find npx in PATH
             )
             
             # Create server instance
