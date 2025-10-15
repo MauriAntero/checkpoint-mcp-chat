@@ -97,7 +97,7 @@ Optional feature for executing diagnostic commands on Check Point gateways via M
 ## Installation
 
 ### Prerequisites
-- Python 3.11+
+- **Python 3.11, 3.12, or 3.13** (Python 3.14+ not yet supported due to dependency constraints)
 - Node.js 16+
 - Git
 - LLM Provider: [Ollama](https://ollama.ai) (local) or [OpenRouter](https://openrouter.ai) API key (cloud)
@@ -164,13 +164,20 @@ Access at: **http://localhost:5000**
 ### Windows
 
 #### 1. Install Python
-- Download Python 3.11+ from [python.org](https://www.python.org/downloads/)
+- Download **Python 3.12** or **3.13** from [python.org](https://www.python.org/downloads/)
+  - ⚠️ **Do NOT use Python 3.14** - dependencies (PyArrow) don't have wheels for it yet
+  - Recommended: Python 3.12 LTS for maximum compatibility
 - **CRITICAL**: Check **"Add Python to PATH"** during installation
 - Verify installation:
   ```cmd
   python --version
   pip --version
   ```
+- Verify you have Python 3.12 or 3.13:
+  ```cmd
+  python --version
+  ```
+  Should show: `Python 3.12.x` or `Python 3.13.x`
 
 #### 2. Install Node.js
 - Download Node.js 18+ LTS from [nodejs.org](https://nodejs.org/)

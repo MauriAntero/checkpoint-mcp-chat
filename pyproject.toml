@@ -2,7 +2,7 @@
 name = "checkpoint-mcp-chat"
 version = "0.1.0"
 description = "Check Point MCP Chat - Intelligent chat interface for Check Point MCP servers"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "cryptography>=46.0.2",
     "mcp>=1.16.0",
