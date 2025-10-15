@@ -390,8 +390,23 @@ ALLOWED servers: All servers available (use as needed)"""
                 elif 'rulebase' in server_data:
                     # Direct Management API returns firewall/NAT rules in 'rulebase' field
                     total_items += len(server_data.get('rulebase', []))
-                elif isinstance(server_data, list):
-                    total_items += len(server_data)
+                
+                # CRITICAL: Check tool_results for Management API data
+                tool_results = server_data.get('tool_results', [])
+                for tool_result in tool_results:
+                    if isinstance(tool_result, dict):
+                        result = tool_result.get('result', {})
+                        if isinstance(result, dict):
+                            # Management API returns rulebases in tool_result['result']['rulebase']
+                            if 'rulebase' in result:
+                                total_items += len(result.get('rulebase', []))
+                            # Also check for other data structures
+                            elif 'objects' in result:
+                                total_items += len(result.get('objects', []))
+                            elif 'data' in result:
+                                total_items += len(result.get('data', []))
+            elif isinstance(server_data, list):
+                total_items += len(server_data)
         
         if total_items == 0:
             return False, f"Primary data sources returned no items for {query_type} query"
@@ -3650,6 +3665,16 @@ Please acknowledge receipt. Store this data in your memory. DO NOT analyze yet -
                 continue
             
             print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Server '{server_name}' has keys: {list(server_data.keys())}")
+            
+            # DEBUG: Check if tool_results exists and has data
+            tool_results = server_data.get('tool_results', [])
+            print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] DEBUG: Server '{server_name}' has {len(tool_results)} tool_results")
+            if tool_results and len(tool_results) > 0:
+                first_tool = tool_results[0]
+                print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] DEBUG: First tool_result keys: {list(first_tool.keys()) if isinstance(first_tool, dict) else 'not a dict'}")
+                if isinstance(first_tool, dict) and 'result' in first_tool:
+                    result = first_tool['result']
+                    print(f"[QueryOrchestrator] [{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] DEBUG: First tool result keys: {list(result.keys()) if isinstance(result, dict) else 'not a dict'}")
                 
             filtered_server_data = {}
             
