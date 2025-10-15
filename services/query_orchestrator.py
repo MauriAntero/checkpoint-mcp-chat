@@ -387,6 +387,9 @@ ALLOWED servers: All servers available (use as needed)"""
                     total_items += len(server_data.get('objects', []))
                 elif 'data' in server_data:
                     total_items += len(server_data.get('data', []))
+                elif 'rulebase' in server_data:
+                    # Direct Management API returns firewall/NAT rules in 'rulebase' field
+                    total_items += len(server_data.get('rulebase', []))
                 elif isinstance(server_data, list):
                     total_items += len(server_data)
         
