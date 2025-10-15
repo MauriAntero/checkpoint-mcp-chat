@@ -101,7 +101,7 @@ Optional feature for executing diagnostic commands on Check Point gateways via M
 - Node.js 16+
 - Git
 - LLM Provider: [Ollama](https://ollama.ai) (local) or [OpenRouter](https://openrouter.ai) API key (cloud)
-- **Windows only**: CMake and Microsoft C++ Build Tools required (auto-installed via Node.js setup - see Windows installation notes)
+- **Windows only**: Microsoft C++ Build Tools recommended (auto-installed via Node.js setup - see Windows installation notes)
 
 ---
 
@@ -179,18 +179,11 @@ Access at: **http://localhost:5000**
   - Required for MCP npm packages and Python cryptography package
   - Saves troubleshooting later
 - Complete the installation and allow the post-install script to run (opens PowerShell window)
-- **After Node.js installation completes**, install CMake (required for PyArrow dependency):
-  - If Chocolatey was installed in previous step, run in **PowerShell as Administrator**:
-    ```powershell
-    choco install cmake -y
-    ```
-  - **OR** download CMake installer from [cmake.org/download](https://cmake.org/download/) and install manually
-- **Restart your terminal/PowerShell** after CMake installation
+- **Restart your terminal/PowerShell** after installation completes
 - Verify installation:
   ```cmd
   node --version
   npm --version
-  cmake --version
   ```
 
 #### 3. Install Git
@@ -221,26 +214,24 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 #### 6. Install Python dependencies
 ```cmd
+pip install --upgrade pip
 pip install -e .
 ```
 
 **Troubleshooting**:
 
-If `pip` command fails:
-```cmd
-python -m pip install --upgrade pip
-python -m pip install -e .
-```
+If you see errors about `PyArrow` build failures or CMake generator issues:
+- **Solution**: Force pip to use pre-built wheels instead of building from source:
+  ```cmd
+  pip install --upgrade pip setuptools wheel
+  pip install pyarrow --only-binary=:all:
+  pip install -e .
+  ```
 
 If you see errors about `cryptography` package or "Microsoft Visual C++ 14.0 is required":
 - Download and install [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
 - During installation, select "Desktop development with C++"
-- Restart Command Prompt/PowerShell and retry `pip install -e .`
-
-If you see errors about `PyArrow` or "CMake must be installed":
-- Install CMake: `choco install cmake -y` (PowerShell as Administrator)
-- OR download from [cmake.org/download](https://cmake.org/download/)
-- Restart Command Prompt/PowerShell and retry `pip install -e .`
+- Restart Command Prompt/PowerShell and retry installation
 
 #### 7. Verify Streamlit configuration
 The `.streamlit/config.toml` file is included. If missing, create it:
