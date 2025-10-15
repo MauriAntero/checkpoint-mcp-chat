@@ -164,18 +164,16 @@ Access at: **http://localhost:5000**
 ### Windows
 
 #### 1. Install Python
-- Download **Python 3.12** or **3.13** from [python.org](https://www.python.org/downloads/)
+- Download **Python 3.12** (recommended) or **3.13**:
+  - **Python 3.12.12** (Recommended): [Direct Download](https://www.python.org/downloads/release/python-31212/) - Click "Windows installer (64-bit)"
+  - **Python 3.13.8**: [Direct Download](https://www.python.org/downloads/release/python-3138/) - Click "Windows installer (64-bit)"
+  - **Alternative**: Install from [Microsoft Store](https://apps.microsoft.com/detail/9ncvdn91xzqp) (Python 3.12) or [Store](https://apps.microsoft.com/detail/9pnrbtzxmb4z) (Python 3.13)
   - ⚠️ **Do NOT use Python 3.14** - dependencies (PyArrow) don't have wheels for it yet
-  - Recommended: Python 3.12 LTS for maximum compatibility
 - **CRITICAL**: Check **"Add Python to PATH"** during installation
 - Verify installation:
   ```cmd
   python --version
   pip --version
-  ```
-- Verify you have Python 3.12 or 3.13:
-  ```cmd
-  python --version
   ```
   Should show: `Python 3.12.x` or `Python 3.13.x`
 
