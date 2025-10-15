@@ -128,10 +128,10 @@ pip install -e .
 
 #### 4. Run application
 ```bash
-streamlit run app.py --server.port 5000
+streamlit run app.py --server.port 15000
 ```
 
-Access at: **http://localhost:5000**
+Access at: **http://localhost:15000**
 
 ---
 
@@ -154,10 +154,10 @@ pip install -e .
 
 #### 3. Run application
 ```bash
-streamlit run app.py --server.port 5000
+streamlit run app.py --server.port 15000
 ```
 
-Access at: **http://localhost:5000**
+Access at: **http://localhost:15000**
 
 ---
 
@@ -249,7 +249,7 @@ Paste this content:
 [server]
 headless = true
 address = "0.0.0.0"
-port = 5000
+port = 15000
 
 [theme]
 primaryColor = "#EE0C5D"
@@ -264,10 +264,10 @@ gatherUsageStats = false
 
 #### 8. Run application
 ```cmd
-streamlit run app.py --server.port 5000
+streamlit run app.py --server.port 15000
 ```
 
-Access at: **http://localhost:5000**
+Access at: **http://localhost:15000**
 
 **Note**: Windows Firewall may prompt for network access - click "Allow access"
 
@@ -346,11 +346,11 @@ Configure Ollama server: `http://localhost:11434`
 ### Port Conflict
 ```bash
 # macOS/Linux
-lsof -i :5000
+lsof -i :15000
 streamlit run app.py --server.port 8501
 
 # Windows
-netstat -ano | findstr :5000
+netstat -ano | findstr :15000
 streamlit run app.py --server.port 8501
 ```
 
