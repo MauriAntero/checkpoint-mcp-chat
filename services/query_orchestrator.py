@@ -4943,8 +4943,8 @@ NOTE: The rulebase data below has been pre-formatted as markdown tables for easy
   → Rule numbers in logs refer to ACCESS RULEBASE rule numbers
 
 • **NAT RULEBASE** - Network address translation rules only
-  → DO NOT use for firewall policy analysis
-  → NAT rules don't control Drop/Accept actions
+  → For ANALYSIS queries: DO NOT use NAT to troubleshoot firewall drops (NAT doesn't control Drop/Accept)
+  → For DISPLAY queries: Show NAT rules when requested
 """
         
         # Build structured response template based on intent/analysis type
@@ -4961,20 +4961,25 @@ This is a DISPLAY query - the user wants to SEE the data, NOT analyze it.
 YOUR TASK: Display the requested information clearly WITHOUT interpretation or analysis.
 
 RESPONSE FORMAT:
-1. Provide a brief 1-sentence introduction (e.g., "Here are the firewall rules from your security policy")
-2. Display the data using the pre-formatted markdown tables from the MCP server results
-3. DO NOT add analysis, findings, recommendations, or executive summaries
-4. DO NOT interpret what the rules mean or suggest changes
-5. Just show the requested data in a clean, readable format
+1. Provide a brief 1-sentence introduction
+2. Display ALL available policy data using the pre-formatted markdown tables from the MCP server results
+3. Show BOTH access (firewall) AND NAT rules if both are present in the data
+4. DO NOT add analysis, findings, recommendations, or executive summaries
+5. DO NOT interpret what the rules mean or suggest changes
+6. Just show the requested data in a clean, readable format
 
-EXAMPLE - For "show me the firewall rules":
+EXAMPLE - For "show me all firewall policies":
 ```
-Here are the firewall rules from policy package 'Network':
+Here are the security policies from policy package 'Network':
 
-[Display the firewall rules table exactly as provided in the data above]
+## Firewall Rules (Access Control)
+[Display the access rulebase table]
+
+## NAT Rules
+[Display the NAT rulebase table]
 ```
 
-CRITICAL: This is a DISPLAY-ONLY request. Do not analyze or interpret the data.
+CRITICAL: This is a DISPLAY-ONLY request. Show ALL available policy data without analysis.
 """
         else:
             # Detailed analysis template for troubleshooting/investigation/assessment
