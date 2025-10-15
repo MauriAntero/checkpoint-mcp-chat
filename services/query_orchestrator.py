@@ -296,22 +296,24 @@ FOCUS: Forward-looking security assessment and recommendations."""
         elif intent_task_type == "policy_review":
             return (
                 "PURE_POLICY",
-                ["quantum-management", "threat-prevention", "https-inspection", "management-logs"],
-                [],
+                ["quantum-management", "threat-prevention", "https-inspection"],
+                ["management-logs"],
                 """This is a PURE POLICY query - reviewing/displaying CONFIGURATION/SETTINGS (NO analysis).
 ACTION: Return raw data without interpretation - just display what was requested.
 ALLOWED servers: 
-  • quantum-management (firewall rules, NAT rules, gateways, network objects, VPN communities)
+  • quantum-management (firewall rules, NAT rules, gateways, network objects, VPN communities, unused rules)
   • threat-prevention (IPS/Anti-Bot/Anti-Virus profiles and settings)
   • https-inspection (HTTPS inspection policies)
-  • management-logs (for finding unused/zero-hit rules via audit data)
-FORBIDDEN servers: None
+FORBIDDEN servers:
+  • management-logs (logs contain events, not policy configuration)
 
-EXAMPLES:
-- "show firewall rules" → call show_access_rulebase, display as table
-- "list NAT rules" → call show_nat_rulebase, display as table
-- "unused rules" → call find_zero_hits_rules, display results
-- "what VPN communities" → call show_vpn_communities, display list"""
+CRITICAL - TOOL SELECTION:
+- "show firewall rules" → use show_access_rulebase (displays ALL rules from firewall policy)
+- "list NAT rules" → use show_nat_rulebase (displays ALL NAT rules)
+- "unused rules" → use find_zero_hits_rules (analyzes rule hit counters)
+- "what VPN communities" → use show_vpn_communities_* (lists VPN configs)
+
+NOTE: find_zero_hits_rules requires actual firewall rules, so ALWAYS pair with show_access_rulebase"""
             )
         elif intent_task_type == "log_analysis":
             return (
