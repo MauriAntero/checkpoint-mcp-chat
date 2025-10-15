@@ -174,7 +174,11 @@ Access at: **http://localhost:5000**
 
 #### 2. Install Node.js
 - Download Node.js 18+ LTS from [nodejs.org](https://nodejs.org/)
-- Install with default settings (includes npm)
+- **CRITICAL**: During installation, check the box **"Automatically install the necessary tools"**
+  - This installs Chocolatey and build tools (Python, Visual Studio Build Tools)
+  - Required for MCP npm packages and Python cryptography package
+  - Saves troubleshooting later
+- Complete the installation and allow the post-install script to run (opens PowerShell window)
 - Verify installation:
   ```cmd
   node --version
