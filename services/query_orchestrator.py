@@ -1198,6 +1198,20 @@ Technical Execution Plan:"""
             json_end = response.rfind('}') + 1
             if json_start >= 0 and json_end > json_start:
                 json_str = response[json_start:json_end]
+                
+                # Fix control characters that cause JSON parse errors
+                # Replace literal newlines, tabs, and other control chars in string values
+                import re
+                # Find all string values and escape control characters within them
+                def escape_control_chars(match):
+                    string_content = match.group(1)
+                    # Escape newlines, tabs, carriage returns
+                    string_content = string_content.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+                    return f'"{string_content}"'
+                
+                # Match quoted strings and escape control characters within them
+                json_str = re.sub(r'"([^"]*)"', escape_control_chars, json_str)
+                
                 plan = json.loads(json_str)
                 
                 # CRITICAL: ENFORCE server selection based on query classification
